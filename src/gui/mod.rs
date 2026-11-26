@@ -71,6 +71,8 @@ struct App {
     measured: Option<(Point, Point)>,
     /// Where the mouse is on the material (snapped), for the command card's live measurements.
     pointer_mm: Option<Point>,
+    /// Tab presses taken for dynamic input before egui could use them for focus.
+    dyn_tabs: usize,
     view: View,
     canvas_rect: Rect,
     textures: HashMap<u64, egui::TextureHandle>,
@@ -161,6 +163,7 @@ impl App {
             show_cmdline: false,
             measured: None,
             pointer_mm: None,
+            dyn_tabs: 0,
             view: View { offset: Vec2::ZERO, zoom: 3.0, auto_fit: true, fit_size: Vec2::ZERO },
             canvas_rect: Rect::NOTHING,
             textures: HashMap::new(),
@@ -403,6 +406,10 @@ impl App {
 }
 
 impl eframe::App for App {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.take_tabs(ctx, raw);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let (dirty, title) = {
@@ -423,6 +430,7 @@ impl eframe::App for App {
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
         egui::Panel::top("laser").show(ui, |ui| self.laser_bar(ui));
         self.aid_keys(&ctx);
+        self.dyn_keys(&ctx);
         self.keys(&ctx, pointer);
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui, pointer));
         if self.show_cmdline {

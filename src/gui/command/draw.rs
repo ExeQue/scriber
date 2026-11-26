@@ -4,7 +4,7 @@ use super::parse::{Entry, is_option, toward};
 use super::{App, Cmd, Step};
 use crate::gui::tools::Tool;
 use crate::model::geom::distance;
-use crate::model::{Contour, Op, Point, Shape};
+use crate::model::{Op, Point, Shape};
 
 pub(super) fn prompt(cmd: Cmd, placed: usize) -> &'static str {
     match (cmd, placed) {
@@ -151,9 +151,6 @@ impl App {
             return self.end();
         }
         let Some((name, mut shape)) = self.draft_shape(&pts) else { return };
-        if let (Tool::Rect, [a, b, ..]) = (self.tool, &pts[..]) {
-            shape = Shape::path(Contour::rect(a[0], a[1], b[0] - a[0], b[1] - a[1], self.cmdline.fillet));
-        }
         if close && let Shape::Path { contours } = &mut shape {
             contours[0].vertices.pop();
             contours[0].closed = true;

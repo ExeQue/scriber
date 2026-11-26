@@ -56,12 +56,16 @@ impl App {
     pub(super) fn curve_points(&self, cmd: Cmd) -> Option<usize> {
         match cmd {
             Cmd::Arc => Some(3),
+            Cmd::Rectang => Some(self.cmdline.rect_mode.points()),
             Cmd::Circle => Some(if self.cmdline.circle_mode == CircleMode::ThreePoint { 3 } else { 2 }),
             _ => None,
         }
     }
 
     pub(super) fn curve_prompt(&self, cmd: Cmd, placed: usize) -> Option<&'static str> {
+        if cmd == Cmd::Rectang {
+            return Some(self.rect_prompt(placed));
+        }
         let text = match (cmd, placed) {
             (Cmd::Arc, n) => match (self.cmdline.arc_mode, n) {
                 (ArcMode::ThreePoint, 0) => "Specify start point of arc or [Center]:",
@@ -99,6 +103,8 @@ impl App {
             Cmd::Arc if n == 1 && *arc == ArcMode::ThreePoint && is_option(word, "Center") => *arc = ArcMode::StartCenterEnd,
             Cmd::Arc if n == 1 && *arc == ArcMode::ThreePoint && is_option(word, "End") => *arc = ArcMode::StartEndRadius,
             Cmd::Circle if n == 0 && word == "3P" => *circle = CircleMode::ThreePoint,
+            Cmd::Rectang if n == 0 && is_option(word, "Center") => self.cmdline.rect_mode = super::rects::RectMode::Center,
+            Cmd::Rectang if n == 0 && word == "3P" => self.cmdline.rect_mode = super::rects::RectMode::ThreePoint,
             Cmd::Circle if n == 0 && word == "2P" => *circle = CircleMode::TwoPoint,
             _ => return false,
         }
@@ -124,6 +130,9 @@ impl App {
     /// The shape the placed points make, in the current mode; other tools use `Tool::shape`.
     pub(in crate::gui) fn draft_shape(&self, pts: &[Point]) -> Option<(&'static str, Shape)> {
         let cmd = self.active_cmd();
+        if cmd == Some(Cmd::Rectang) {
+            return self.rect_shape(pts).map(|s| ("rectangle", s));
+        }
         let c = match (cmd, pts) {
             (Some(Cmd::Arc), [a, b, c, ..]) => match self.cmdline.arc_mode {
                 ArcMode::ThreePoint => Contour::arc_3p(*a, *b, *c)?,

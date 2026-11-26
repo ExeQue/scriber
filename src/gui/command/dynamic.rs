@@ -5,11 +5,12 @@
 //! while the angle still follows the mouse; Enter places the point.
 
 use super::curves::{ArcMode, CircleMode};
+use super::rects::{RectMode, height_from};
 use super::parse::toward;
 use super::{App, Cmd, Step};
 use crate::model::Point;
 use crate::model::geom::distance;
-use eframe::egui::{self, DragValue, Event, Key, RichText, TextEdit};
+use eframe::egui::{self, DragValue, Event, Key, RichText};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Kind {
@@ -23,6 +24,8 @@ enum Kind {
     Sweep,
     /// A polygon: radius from the centre, and the number of sides.
     Polygon,
+    /// Height of a 3-point rectangle, from its first edge.
+    Height,
 }
 
 impl Kind {
@@ -35,6 +38,7 @@ impl Kind {
             Kind::Size => &[("Width", "mm"), ("Height", "mm")],
             Kind::Sweep => &[("Angle", "°")],
             Kind::Polygon => &[("Radius", "mm"), ("Sides", "")],
+            Kind::Height => &[("Height", "mm")],
         }
     }
 
@@ -52,15 +56,15 @@ impl Kind {
 pub struct DynInput {
     values: [f64; 2],
     locked: [bool; 2],
-    /// What is being typed in each field (empty = show the live value as a hint).
+    /// What is being typed in each field (empty = show the live value).
     texts: [String; 2],
-    /// The field that should take the keyboard next frame.
-    focus_next: Option<usize>,
+    /// The field the keyboard is typing into.
+    active: Option<usize>,
     /// What the values belong to; they reset when this changes.
-    key: Option<(Cmd, Step, usize)>,
+    key: Option<(Cmd, Step, usize, [u64; 2])>,
 }
 
-/// The character a number key types, for starting dynamic input without a focused field.
+/// The character a number key types (used when the platform sends no text event for it).
 fn key_char(key: Key) -> Option<char> {
     Some(match key {
         Key::Num0 => '0',
@@ -77,10 +81,6 @@ fn key_char(key: Key) -> Option<char> {
         Key::Period | Key::Comma => '.',
         _ => return None,
     })
-}
-
-fn field_id(i: usize) -> egui::Id {
-    egui::Id::unique("dynamic-input").with(i)
 }
 
 impl App {
@@ -100,7 +100,9 @@ impl App {
                 ArcMode::ThreePoint => return None,
             },
             (Cmd::Line | Cmd::Pline | Cmd::DimLinear | Cmd::Dist, Step::Draw, 1..) => Kind::LengthAngle,
+            (Cmd::Rectang, Step::Draw, 1) if self.rect_in(cmd, RectMode::ThreePoint) => Kind::LengthAngle,
             (Cmd::Rectang, Step::Draw, 1) => Kind::Size,
+            (Cmd::Rectang, Step::Draw, 2) => Kind::Height,
             (Cmd::Move | Cmd::Copy, Step::Second, _) => Kind::LengthAngle,
             _ => return None,
         })
@@ -112,7 +114,10 @@ impl App {
         match kind {
             Kind::Radius { .. } | Kind::Polygon => [distance(last, p), 0.0],
             Kind::LengthAngle => [distance(last, p), (last[1] - p[1]).atan2(p[0] - last[0]).to_degrees()],
+            // From the centre the size is twice the offset.
+            Kind::Size if self.rect_in(Cmd::Rectang, RectMode::Center) => [2.0 * (p[0] - last[0]).abs(), 2.0 * (p[1] - last[1]).abs()],
             Kind::Size => [p[0] - self.draft[0][0], p[1] - self.draft[0][1]],
+            Kind::Height => [height_from(self.draft[0], self.draft[1], p), 0.0],
             Kind::Sweep => {
                 let (centre, start) = if self.cmdline.arc_mode == ArcMode::StartCenterEnd { (self.draft[1], self.draft[0]) } else { (self.draft[0], self.draft[1]) };
                 let ang = |q: Point| (centre[1] - q[1]).atan2(q[0] - centre[0]).to_degrees();
@@ -147,13 +152,22 @@ impl App {
             Kind::Sweep => self.curve_number(cmd, a, Some(pointer))?,
             // Angles are counter-clockwise on screen; the model's y points down.
             Kind::LengthAngle => [last[0] + a * b.to_radians().cos(), last[1] - a * b.to_radians().sin()],
+            Kind::Size if self.rect_in(cmd, RectMode::Center) => [last[0] + a / 2.0, last[1] + b / 2.0],
             Kind::Size => [self.draft[0][0] + a, self.draft[0][1] + b],
+            Kind::Height => {
+                let (a0, b0) = (self.draft[0], self.draft[1]);
+                let len = distance(a0, b0).max(1e-12);
+                let n = [-(b0[1] - a0[1]) / len, (b0[0] - a0[0]) / len];
+                [b0[0] + n[0] * a, b0[1] + n[1] * a]
+            }
         })
     }
 
-    /// Reset when the command moves on to another point or step.
+    /// Reset when the command moves on to another point or step. The last point is part of the
+    /// key, so LINE starts fresh for every segment even though one point stays placed.
     fn track(&mut self) {
-        let key = self.cmdline.active.map(|(c, s)| (c, s, self.draft.len()));
+        let last = self.draft.last().map_or([0; 2], |p| [p[0].to_bits(), p[1].to_bits()]);
+        let key = self.cmdline.active.map(|(c, s)| (c, s, self.draft.len(), last));
         if self.cmdline.dynamic.key != key {
             self.cmdline.dynamic = DynInput { key, ..DynInput::default() };
         }
@@ -184,82 +198,142 @@ impl App {
         }
     }
 
-    /// The fields next to the cursor. Typing a number when no text field has the keyboard starts
-    /// editing the first one; Tab locks the field and moves on; Enter places the point.
+    /// Forget typed values (a new tool, or the point was placed).
+    pub(in crate::gui) fn dyn_reset(&mut self) {
+        self.cmdline.dynamic = DynInput::default();
+    }
+
+    /// Keyboard for dynamic input, run before the other shortcuts so its keys are not reused:
+    /// numbers type into the active field (the first one to start with), Backspace edits,
+    /// Tab locks the field and moves on, Enter places the point, Esc clears what was typed.
+    pub(in crate::gui) fn dyn_keys(&mut self, ctx: &egui::Context) {
+        let Some(kind) = self.dyn_kind() else { return };
+        self.track();
+        if ctx.text_edit_focused() {
+            return;
+        }
+        let count = kind.fields().len();
+        let events = ctx.input(|i| i.events.clone());
+        let has_text = events.iter().any(|e| matches!(e, Event::Text(_)));
+        let mut used = Vec::new();
+        let mut place = false;
+        for (n, e) in events.iter().enumerate() {
+            let typed: Option<String> = match e {
+                Event::Text(t) if t.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | ',' | '-')) => Some(t.replace(',', ".")),
+                Event::Key { key, pressed: true, modifiers, .. } if !has_text && !modifiers.command && !modifiers.alt => key_char(*key).map(String::from),
+                _ => None,
+            };
+            let d = &mut self.cmdline.dynamic;
+            if let Some(t) = typed {
+                let i = *d.active.get_or_insert(0);
+                d.texts[i].push_str(&t);
+                used.push(n);
+                continue;
+            }
+            let Event::Key { key, pressed: true, .. } = e else { continue };
+            match (key, d.active) {
+                (Key::Backspace, Some(i)) => {
+                    d.texts[i].pop();
+                    used.push(n);
+                }
+
+                (Key::Enter, Some(_)) => {
+                    place = true;
+                    used.push(n);
+                }
+                (Key::Escape, Some(_)) => {
+                    *d = DynInput { key: d.key, ..DynInput::default() };
+                    used.push(n);
+                }
+                _ => {}
+            }
+            // Keep a digit's key press away from the shortcuts too.
+            if matches!(e, Event::Key { key, .. } if key_char(*key).is_some() && d.active.is_some()) {
+                used.push(n);
+            }
+        }
+        // Tab presses were taken out of egui's input (see `take_tabs`), so egui does not move focus.
+        for _ in 0..std::mem::take(&mut self.dyn_tabs) {
+            let d = &mut self.cmdline.dynamic;
+            d.active = Some(d.active.map_or(0, |i| (i + 1) % count));
+        }
+        // Typed text becomes the field's value; an emptied field follows the mouse again.
+        for i in 0..count {
+            let text = self.cmdline.dynamic.texts[i].clone();
+            match text.trim().parse::<f64>() {
+                Ok(v) => self.set_field(kind, i, v),
+                Err(_) if text.is_empty() && self.cmdline.dynamic.active == Some(i) => self.unlock_field(kind, i),
+                Err(_) => {}
+            }
+        }
+        if !used.is_empty() {
+            ctx.input_mut(|i| {
+                let mut n = 0;
+                i.events.retain(|_| {
+                    n += 1;
+                    !used.contains(&(n - 1))
+                });
+            });
+        }
+        if place {
+            self.place_from_values();
+        }
+    }
+
+    /// Called from eframe's raw input hook: while dynamic input is open and no text field has the
+    /// keyboard, Tab cycles the measurement fields instead of moving egui's focus.
+    pub(in crate::gui) fn take_tabs(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if self.dyn_kind().is_none() || ctx.text_edit_focused() {
+            return;
+        }
+        raw.events.retain(|e| match e {
+            Event::Key { key: Key::Tab, pressed, .. } => {
+                if *pressed {
+                    self.dyn_tabs += 1;
+                }
+                false
+            }
+            _ => true,
+        });
+    }
+
+    fn unlock_field(&mut self, kind: Kind, i: usize) {
+        let slot = if matches!(kind, Kind::Radius { .. } | Kind::Polygon) { 0 } else { i };
+        self.cmdline.dynamic.locked[slot] = false;
+    }
+
+    /// The fields next to the cursor: the active one is highlighted, locked values show a lock.
     pub(in crate::gui) fn dyn_cursor(&mut self, ctx: &egui::Context) {
         let Some(kind) = self.dyn_kind() else { return };
         self.track();
         let Some(p) = self.pointer_mm else { return };
-        let count = kind.fields().len();
-        let focused = (0..count).find(|i| ctx.memory(|m| m.has_focus(field_id(*i))));
-
-        // Start typing anywhere: the first number goes into the first field.
-        if focused.is_none() && !ctx.text_edit_focused() {
-            let typed: Option<String> = ctx.input_mut(|i| {
-                // Text events carry the character; without a focused text field some platforms only
-                // send key presses, so map number keys too.
-                let is_number = |t: &str| !t.is_empty() && t.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ',' || c == '-');
-                if let Some(pos) = i.events.iter().position(|e| matches!(e, Event::Text(t) if is_number(t))) {
-                    let Event::Text(t) = i.events.remove(pos) else { return None };
-                    // Drop the matching key press, so it is not seen twice.
-                    i.events.retain(|e| !matches!(e, Event::Key { key, pressed: true, .. } if key_char(*key).is_some()));
-                    return Some(t.replace(',', "."));
-                }
-                let pos = i.events.iter().position(|e| matches!(e, Event::Key { key, pressed: true, modifiers, .. } if key_char(*key).is_some() && !modifiers.command && !modifiers.alt))?;
-                let Event::Key { key, .. } = i.events.remove(pos) else { return None };
-                key_char(key).map(String::from)
-            });
-            if let Some(t) = typed {
-                self.cmdline.dynamic.texts[0] = t;
-                self.cmdline.dynamic.focus_next = Some(0);
-            }
-        }
-        // Tab: lock what is typed and move to the next field.
-        if let Some(i) = focused
-            && ctx.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, Key::Tab))
-        {
-            if let Ok(v) = self.cmdline.dynamic.texts[i].trim().replace(',', ".").parse::<f64>() {
-                self.set_field(kind, i, v);
-            }
-            let next = (i + 1) % count;
-            self.cmdline.dynamic.texts[next].clear();
-            self.cmdline.dynamic.focus_next = Some(next);
-        }
-
         let values = self.effective(kind, p);
         let at = self.w2s(p) + egui::vec2(20.0, 20.0);
-        let mut enter = false;
-        egui::Area::new(egui::Id::unique("dynamic-input-area")).fixed_pos(at).order(egui::Order::Tooltip).interactable(true).show(ctx, |ui| {
+        let d = &self.cmdline.dynamic;
+        egui::Area::new(egui::Id::unique("dynamic-input-area")).fixed_pos(at).order(egui::Order::Tooltip).interactable(false).show(ctx, |ui| {
             egui::Frame::popup(ui.style()).inner_margin(6.0).show(ui, |ui| {
                 for (i, (label, unit)) in kind.fields().iter().enumerate() {
+                    let slot = if matches!(kind, Kind::Radius { .. }) || (kind == Kind::Polygon && i == 0) { 0 } else { i };
+                    let locked = !(kind == Kind::Polygon && i == 1) && d.locked[slot];
+                    let shown = self.shown(kind, i, values);
+                    let text = if d.active == Some(i) && !d.texts[i].is_empty() {
+                        d.texts[i].clone()
+                    } else if kind == Kind::Polygon && i == 1 {
+                        format!("{shown}")
+                    } else {
+                        format!("{shown:.2}")
+                    };
                     ui.horizontal(|ui| {
-                        let locked = match kind {
-                            Kind::Radius { .. } => self.cmdline.dynamic.locked[0],
-                            Kind::Polygon => i == 0 && self.cmdline.dynamic.locked[0],
-                            _ => self.cmdline.dynamic.locked[i],
-                        };
                         ui.label(RichText::new(*label).small().weak());
-                        let shown = self.shown(kind, i, values);
-                        let hint = if kind == Kind::Polygon && i == 1 { format!("{shown}") } else { format!("{shown:.2}") };
-                        let edit = TextEdit::singleline(&mut self.cmdline.dynamic.texts[i]).id(field_id(i)).hint_text(hint).desired_width(64.0);
-                        let r = ui.add(edit);
-                        if r.changed()
-                            && let Ok(v) = self.cmdline.dynamic.texts[i].trim().replace(',', ".").parse::<f64>()
-                        {
-                            self.set_field(kind, i, v);
-                        }
-                        enter |= r.lost_focus() && ui.input(|inp| inp.key_pressed(Key::Enter));
+                        let field = RichText::new(format!("{text:>8}")).monospace();
+                        let field = if d.active == Some(i) { field.background_color(ui.visuals().selection.bg_fill).strong() } else { field };
+                        ui.label(field);
                         ui.label(RichText::new(if locked { format!("{unit} 🔒") } else { (*unit).to_string() }).small().weak());
                     });
                 }
+                ui.label(RichText::new("Type · Tab next · Enter place").small().weak());
             });
         });
-        if let Some(i) = self.cmdline.dynamic.focus_next.take() {
-            ctx.memory_mut(|m| m.request_focus(field_id(i)));
-        }
-        if enter {
-            self.place_from_values();
-        }
     }
 
     /// The same measurements on the command card, with a button that places the point.

@@ -12,6 +12,7 @@ mod edit;
 mod infer;
 mod modify;
 mod parse;
+mod rects;
 mod preview;
 
 use super::App;
@@ -198,6 +199,7 @@ pub struct CommandLine {
     modify: modify::ModifyState,
     /// How ARC and CIRCLE are drawn (the last way used).
     arc_mode: curves::ArcMode,
+    rect_mode: rects::RectMode,
     /// Measurements on the command card (radius, length and angle, …).
     dynamic: dynamic::DynInput,
     circle_mode: curves::CircleMode,
@@ -221,6 +223,7 @@ impl CommandLine {
             checkpointed: false,
             modify: modify::ModifyState::new(),
             arc_mode: curves::ArcMode::default(),
+            rect_mode: rects::RectMode::default(),
             dynamic: dynamic::DynInput::default(),
             circle_mode: curves::CircleMode::default(),
             constrain: constrain::ConstrainState::default(),
@@ -253,6 +256,7 @@ impl App {
 
     pub(super) fn start(&mut self, cmd: Cmd) {
         self.cancel();
+        self.dyn_reset();
         self.measured = None;
         self.cmdline.last = Some(cmd);
         self.cmdline.checkpointed = false;
@@ -358,6 +362,9 @@ impl App {
     /// Feed one point to the running command. Every way of giving a point ends here: a click on
     /// the canvas, a snap, or coordinates typed on the command line.
     pub(super) fn place_point(&mut self, p: Point) {
+        // Locked measurements from dynamic input win over the mouse, also for clicks.
+        let p = self.dyn_point(p).unwrap_or(p);
+        self.dyn_reset();
         self.cmdline.log(format!("{} {:.2},{:.2}", self.prompt(), p[0], p[1]));
         self.answer(Entry::Point(p), Some(p));
     }

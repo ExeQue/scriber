@@ -38,6 +38,13 @@ impl App {
     pub(super) fn card_fields(&mut self, ui: &mut egui::Ui, cmd: Cmd, step: Step) {
         match (cmd, step) {
             (Cmd::Rectang, _) => {
+                ui.horizontal_wrapped(|ui| {
+                    for mode in super::rects::RectMode::ALL {
+                        if ui.selectable_label(self.cmdline.rect_mode == mode, mode.label()).clicked() {
+                            self.set_rect_mode(mode);
+                        }
+                    }
+                });
                 ui.horizontal(|ui| {
                     ui.label("Rounded corners");
                     ui.add(mm_value(&mut self.cmdline.fillet));
