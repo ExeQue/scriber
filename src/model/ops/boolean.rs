@@ -263,3 +263,134 @@ mod tests {
         assert!((area(u) - (900.0 - 400.0)).abs() < 1e-6);
     }
 }
+
+#[cfg(test)]
+mod circle_tests {
+    use super::*;
+    use crate::model::Shape;
+    use crate::model::geom::distance;
+    use std::f64::consts::PI;
+
+    /// (centre x, centre y, radius).
+    type Disc = (f64, f64, f64);
+
+    /// Exact area and outline length of the union of discs: the arcs of each circle outside all the
+    /// others, with the area from Green's theorem along them.
+    fn expected(ds: &[Disc]) -> (f64, f64) {
+        let (mut area, mut length) = (0.0, 0.0);
+        for (i, &(cx, cy, r)) in ds.iter().enumerate() {
+            // Where the other circles cross this one, as angles.
+            let mut cuts = vec![0.0, 2.0 * PI];
+            for (j, &(ox, oy, or)) in ds.iter().enumerate() {
+                let d = (ox - cx).hypot(oy - cy);
+                if i == j || d >= r + or || d <= (r - or).abs() {
+                    continue;
+                }
+                let (base, half) = ((oy - cy).atan2(ox - cx), ((d * d + r * r - or * or) / (2.0 * d * r)).acos());
+                cuts.extend([base - half, base + half].map(|t| t.rem_euclid(2.0 * PI)));
+            }
+            cuts.sort_by(f64::total_cmp);
+            for w in cuts.windows(2) {
+                let (t0, t1) = (w[0], w[1]);
+                let m = (t0 + t1) / 2.0;
+                let p = (cx + r * m.cos(), cy + r * m.sin());
+                if ds.iter().enumerate().any(|(j, o)| j != i && (p.0 - o.0).hypot(p.1 - o.1) < o.2) {
+                    continue;
+                }
+                length += r * (t1 - t0);
+                area += 0.5 * (r * r * (t1 - t0) + cx * r * (t1.sin() - t0.sin()) - cy * r * (t1.cos() - t0.cos()));
+            }
+        }
+        (area, length)
+    }
+
+    fn check(name: &str, cs: &[Contour], area: f64, length: f64) {
+        assert!(!cs.is_empty(), "{name}: empty");
+        for c in cs {
+            assert!(c.closed, "{name}: open {c:?}");
+            assert!(c.vertices.iter().all(|v| v.x.is_finite() && v.y.is_finite() && v.bulge.abs() <= 1.0 + 1e-9), "{name}: {c:?}");
+            let n = c.vertices.len();
+            for k in 0..n {
+                let (a, b) = (c.vertices[k], c.vertices[(k + 1) % n]);
+                assert!(distance([a.x, a.y], [b.x, b.y]) > 1e-6, "{name}: degenerate segment {k} in {c:?}");
+            }
+        }
+        let got_len: f64 = cs.iter().map(|c| c.length()).sum();
+        let shape = Shape::Path { contours: cs.to_vec() };
+        let got_area = shape.metrics().area.unwrap_or(0.0);
+        // The drawn outline follows the arcs, closed, with no jumps.
+        let drawn = shape.outline(0.001);
+        let flat: f64 = drawn.iter().map(|p| p.windows(2).map(|w| distance(w[0], w[1])).sum::<f64>()).sum();
+        assert!((got_area - area).abs() < 1e-6 * area.max(1.0), "{name}: area {got_area} vs {area}\n{cs:?}");
+        assert!((got_len - length).abs() < 1e-6 * length.max(1.0), "{name}: length {got_len} vs {length}\n{cs:?}");
+        assert!((flat - length).abs() < 1e-3 * length, "{name}: drawn length {flat} vs {length}\n{cs:?}");
+    }
+
+    fn discs(ds: &[Disc]) -> Vec<Vec<Contour>> {
+        ds.iter().map(|d| vec![Contour::circle(d.0, d.1, d.2)]).collect()
+    }
+
+    #[test]
+    fn union_of_overlapping_circles_keeps_whole_arcs() {
+        let cases: &[(&str, &[Disc])] = &[
+            ("two equal", &[(0.0, 0.0, 10.0), (12.0, 0.0, 10.0)]),
+            ("two different", &[(0.0, 0.0, 30.0), (35.0, 5.0, 12.0)]),
+            ("two diagonal", &[(10.0, 10.0, 20.0), (35.0, 32.0, 25.0)]),
+            ("near tangent", &[(0.0, 0.0, 10.0), (19.999, 0.0, 10.0)]),
+            ("near internal", &[(0.0, 0.0, 10.0), (4.999, 0.0, 5.0)]),
+            ("big, big, small", &[(50.0, 50.0, 40.0), (110.0, 60.0, 35.0), (25.0, 95.0, 15.0)]),
+            ("chain", &[(0.0, 0.0, 10.0), (15.0, 0.0, 8.0), (27.0, 3.0, 6.0)]),
+            ("small bites", &[(100.0, 100.0, 50.0), (150.0, 100.0, 5.0), (100.0, 152.0, 4.0)]),
+            ("triple", &[(50.0, 50.0, 40.0), (100.0, 50.0, 40.0), (75.0, 90.0, 15.0)]),
+            ("small on the crossing", &[(50.0, 50.0, 40.0), (100.0, 50.0, 40.0), (75.0, 50.0 + 1500f64.sqrt(), 8.0)]),
+            ("ring", &[(0.0, 0.0, 10.0), (15.0, 0.0, 8.0), (7.5, 13.0, 8.0), (-3.0, 8.0, 3.0)]),
+            ("tangent", &[(0.0, 0.0, 10.0), (20.0, 0.0, 10.0), (10.0, 10.0, 3.0)]),
+        ];
+        for (name, ds) in cases {
+            let (area, length) = expected(ds);
+            check(name, &boolean(BoolOp::Union, &discs(ds)), area, length);
+            // Any order gives the same outline.
+            let mut rev = ds.to_vec();
+            rev.reverse();
+            check(name, &boolean(BoolOp::Union, &discs(&rev)), area, length);
+        }
+    }
+
+    #[test]
+    fn random_circles_union_difference_intersection() {
+        let mut seed = 12345u64;
+        let mut rnd = |lo: f64, hi: f64| {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            lo + (hi - lo) * ((seed >> 11) as f64 / (1u64 << 53) as f64)
+        };
+        for n in 0..300 {
+            let count = 2 + n % 3;
+            let ds: Vec<Disc> = (0..count).map(|_| (rnd(0.0, 100.0), rnd(0.0, 100.0), rnd(3.0, 45.0))).collect();
+            let name = format!("case {n}: {ds:?}");
+            let (area, length) = expected(&ds);
+            check(&name, &boolean(BoolOp::Union, &discs(&ds)), area, length);
+            // Two discs: A ∩ B and A − B add up to A.
+            let two = discs(&ds[..2]);
+            let a = PI * ds[0].2 * ds[0].2;
+            let sum: f64 = [BoolOp::Intersection, BoolOp::Difference].iter().map(|&op| Shape::Path { contours: boolean(op, &two) }.metrics().area.unwrap_or(0.0)).sum();
+            assert!((sum - a).abs() < 1e-6 * a, "{name}: {sum} vs {a}");
+        }
+    }
+
+    #[test]
+    fn union_of_constrained_circles_in_a_document() {
+        use crate::model::{Document, Kind, Op, Ref};
+        let ds: &[Disc] = &[(50.0, 50.0, 40.0), (110.0, 60.0, 35.0), (25.0, 95.0, 15.0)];
+        let mut d = Document::new(300.0, 300.0);
+        let ids: Vec<u64> = ds.iter().map(|c| d.add("c", Op::Cut, Shape::path(Contour::circle(c.0, c.1, c.2)))).collect();
+        for &id in &ids {
+            d.add_dimension(Kind::DimRadial, vec![Ref::Segment { item: id, contour: 0, segment: 0 }], None, None, 0.0).unwrap();
+            d.add_constraint(Kind::Fix, vec![Ref::Centre { item: id, contour: 0, segment: 0 }]).unwrap();
+        }
+        d.settle(true).unwrap();
+        d.boolean(&ids, BoolOp::Union).unwrap();
+        d.settle(true).unwrap();
+        let (area, length) = expected(ds);
+        check("document", d.item(ids[0]).unwrap().shape.contours(), area, length);
+    }
+}
