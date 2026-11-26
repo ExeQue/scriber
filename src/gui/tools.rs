@@ -91,7 +91,7 @@ impl Tool {
     /// What to do next, given how many points are placed.
     pub fn hint(self, placed: usize) -> &'static str {
         match (self, placed) {
-            (Tool::Select, _) => "Click a shape to select it. Drag to move. Del deletes. Scroll to zoom, right-drag to pan.",
+            (Tool::Select, _) => "Click shapes to add them, Shift-click to remove. Click empty space twice for a window (left to right) or crossing (right to left). Drag grips to edit. Type a command below.",
             (Tool::Rect, 0) => "Click (or press and drag) the first corner.",
             (Tool::Rect, _) => "Click the opposite corner.",
             (Tool::Circle | Tool::Polygon, 0) => "Click the centre.",
