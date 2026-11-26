@@ -10,6 +10,8 @@ use crate::model::{Document, Img, Item, Op, Point, Shape};
 use eframe::egui::{self, Align2, Color32, FontId, Key, PointerButton, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use std::path::PathBuf;
 
+/// Half the length of the crosshair arms, in pixels.
+const CROSSHAIR: f32 = 20.0;
 const SELECTED: Color32 = Color32::from_rgb(255, 150, 0);
 /// Half the size of the pick box, in pixels; also how close a click must be to a line.
 const PICKBOX: f32 = 5.0;
@@ -256,9 +258,10 @@ impl App {
             snap::paint_marker(painter, at, s.kind);
             tooltip(painter, at, s.kind.label());
         }
-        let cross = Stroke::new(1.0, Color32::from_gray(140));
-        painter.line_segment([pos2(rect.left(), at.y), pos2(rect.right(), at.y)], cross);
-        painter.line_segment([pos2(at.x, rect.top()), pos2(at.x, rect.bottom())], cross);
+        // A short crosshair, like AutoCAD's default size, rather than lines across the whole canvas.
+        let cross = Stroke::new(1.0, Color32::from_gray(150));
+        painter.line_segment([at - vec2(CROSSHAIR, 0.0), at + vec2(CROSSHAIR, 0.0)], cross);
+        painter.line_segment([at - vec2(0.0, CROSSHAIR), at + vec2(0.0, CROSSHAIR)], cross);
         if self.tool == Tool::Select {
             let pick = Rect::from_center_size(at, vec2(PICKBOX * 2.0, PICKBOX * 2.0));
             painter.rect_filled(pick, 0.0, Color32::from_gray(33));

@@ -136,18 +136,14 @@ impl App {
         if response.clicked_by(PointerButton::Primary)
             && let Some(p) = raw
         {
-            if let Some(Drag::Box { start }) = self.drag {
-                self.drag = None;
-                self.finish_box(start, p, shift);
-            } else {
-                let mut d = doc.lock().unwrap();
-                match self.hit(&d, p) {
-                    Some(id) if shift => d.selection.retain(|s| *s != id),
-                    Some(id) if !d.selection.contains(&id) => d.selection.push(id),
-                    Some(_) => {}
-                    // A click on empty space starts a window; the next click ends it.
-                    None => self.drag = Some(Drag::Box { start: p }),
-                }
+            let mut d = doc.lock().unwrap();
+            match self.hit(&d, p) {
+                Some(id) if shift => d.selection.retain(|s| *s != id),
+                Some(id) if !d.selection.contains(&id) => d.selection.push(id),
+                Some(_) => {}
+                // A click on empty space clears the selection; window and crossing are made by dragging.
+                None if !shift => d.selection.clear(),
+                None => {}
             }
         }
         cursor

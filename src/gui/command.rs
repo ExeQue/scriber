@@ -4,6 +4,7 @@
 
 mod draw;
 mod edit;
+mod modify;
 mod parse;
 
 use super::App;
@@ -31,10 +32,18 @@ pub enum Cmd {
     Mirror,
     Undo,
     Redo,
+    Fillet,
+    Chamfer,
+    Offset,
+    Trim,
+    Array,
+    Union,
+    Subtract,
+    Intersect,
 }
 
 /// Name, alias and the canvas tool used while the command asks for points.
-const COMMANDS: [(Cmd, &str, &str, Tool); 17] = [
+const COMMANDS: [(Cmd, &str, &str, Tool); 25] = [
     (Cmd::Line, "LINE", "L", Tool::Line),
     (Cmd::Circle, "CIRCLE", "C", Tool::Circle),
     (Cmd::Arc, "ARC", "A", Tool::Arc),
@@ -52,6 +61,14 @@ const COMMANDS: [(Cmd, &str, &str, Tool); 17] = [
     (Cmd::Mirror, "MIRROR", "MI", Tool::Select),
     (Cmd::Undo, "UNDO", "U", Tool::Select),
     (Cmd::Redo, "REDO", "REDO", Tool::Select),
+    (Cmd::Fillet, "FILLET", "F", Tool::Pick),
+    (Cmd::Chamfer, "CHAMFER", "CHA", Tool::Pick),
+    (Cmd::Offset, "OFFSET", "O", Tool::Pick),
+    (Cmd::Trim, "TRIM", "TR", Tool::Pick),
+    (Cmd::Array, "ARRAY", "AR", Tool::Select),
+    (Cmd::Union, "UNION", "UNI", Tool::Select),
+    (Cmd::Subtract, "SUBTRACT", "SU", Tool::Select),
+    (Cmd::Intersect, "INTERSECT", "IN", Tool::Select),
 ];
 
 impl Cmd {
@@ -63,7 +80,7 @@ impl Cmd {
 
     /// The command a toolbar button runs.
     pub fn for_tool(t: Tool) -> Option<Cmd> {
-        COMMANDS.iter().find(|c| c.3 == t && t != Tool::Select).map(|c| c.0)
+        COMMANDS.iter().find(|c| c.3 == t && !matches!(t, Tool::Select | Tool::Pick)).map(|c| c.0)
     }
 
     fn row(self) -> &'static (Cmd, &'static str, &'static str, Tool) {
@@ -103,6 +120,14 @@ enum Step {
     /// Second point, rotation angle or scale factor.
     Second,
     EraseSource,
+    /// A distance, or the next number/option of ARRAY.
+    Value,
+    /// Clicking on an item (a corner, the part to trim, the object to offset).
+    Pick,
+    /// OFFSET: the side to offset to.
+    Side,
+    /// Selecting the objects for ARRAY or a boolean.
+    Choose,
 }
 
 pub struct CommandLine {
@@ -117,6 +142,7 @@ pub struct CommandLine {
     text_height: f64,
     /// The running command has made its undo step (one per command).
     checkpointed: bool,
+    modify: modify::ModifyState,
 }
 
 impl CommandLine {
@@ -130,6 +156,7 @@ impl CommandLine {
             fillet: 0.0,
             text_height: 10.0,
             checkpointed: false,
+            modify: modify::ModifyState::new(),
         }
     }
 
@@ -171,6 +198,7 @@ impl App {
                 }
             }
             c if c.edits() => self.start_edit(c),
+            c if c.modifies() => self.start_modify(c),
             Cmd::Polygon => self.begin(cmd, Step::Sides),
             _ => self.begin(cmd, Step::Draw),
         }
@@ -261,7 +289,7 @@ impl App {
             ("", None) => {}
             (word, _) => match Cmd::find(word) {
                 Some(cmd) => self.start(cmd),
-                None => self.cmdline.log(format!("Unknown command \"{word}\". Try LINE, CIRCLE, RECTANG, MOVE, …")),
+                None => self.cmdline.log(format!("Unknown command \"{word}\". Try LINE, CIRCLE, RECTANG, MOVE, FILLET, OFFSET, …")),
             },
         }
     }
@@ -270,6 +298,7 @@ impl App {
         let Some((cmd, step)) = self.cmdline.active else { return };
         let result = match step {
             Step::Select | Step::Base | Step::Second | Step::EraseSource => self.edit_step(cmd, step, entry, pointer),
+            Step::Value | Step::Pick | Step::Side | Step::Choose => self.modify_step(cmd, step, entry, pointer),
             _ => self.draw_step(cmd, step, entry, pointer),
         };
         if let Err(e) = result {
@@ -279,6 +308,9 @@ impl App {
 
     pub(super) fn prompt(&self) -> String {
         let Some((cmd, step)) = self.cmdline.active else { return "Command:".into() };
+        if cmd.modifies() {
+            return self.modify_prompt(cmd, step);
+        }
         let n = self.draft.len();
         let text = match (step, cmd) {
             (Step::Sides, _) => return format!("Enter number of sides <{}>:", self.sides),
@@ -296,6 +328,7 @@ impl App {
             (Step::Second, _) => "Specify second point:",
             (Step::EraseSource, _) => "Erase source objects? [Yes/No] <No>:",
             (Step::Draw, _) => draw::prompt(cmd, n),
+            (Step::Value | Step::Pick | Step::Side | Step::Choose, _) => "",
         };
         text.into()
     }
