@@ -71,6 +71,7 @@ impl App {
                 ui.checkbox(&mut self.snap, "Snap to grid");
                 ui.checkbox(&mut self.show_cmdline, "Command line (for CAD users)");
             });
+            ui.menu_button("Laser", |ui| self.laser_menu(ui));
             ui.menu_button("AI agents", |ui| {
                 if ui.button("Connect AI agents…").clicked() {
                     self.open_agents();

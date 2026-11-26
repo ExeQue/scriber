@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+mod laser;
+
 const INSTRUCTIONS: &str = "Scriber is a 2D CAD program for laser cutters. You edit the document that is open in the user's Scriber window; every change shows there live and the user can undo it.
 Units are millimetres. Origin is the top-left corner of the material, x grows right, y grows DOWN (like SVG). Angles are degrees, positive = clockwise on screen.
 Each item has an op for its lines: cut (red, cut through), score (blue, mark a line), engrave (black line), none (lines ignored) or annotate (notes and dimensions for people, never lasered). Separately, fill: true engraves the enclosed area (closed paths and text). Example: a coaster with an engraved face is op cut + fill true.
@@ -19,7 +21,8 @@ A path holds one or more contours; several contours make a compound path whose h
 CAD operations: fillet, chamfer, offset (also kerf compensation), boolean (union/difference/intersection), array_rectangular, array_polar and trim.
 Contours are polylines whose segments can be arcs: each vertex has a bulge = tan(sweep/4) for the segment to the next vertex (0 = straight). Prefer add_items with kind rect/circle/arc/polygon/line/polyline over building arcs by hand.
 Constraints (as in AutoCAD) bind geometry: add_constraint (coincident, parallel, tangent, …; the first object stays, the second moves), add_dimensional_constraint (a named parameter like d1 = 40 or d2 = d1 / 2 that drives the size), set_parameter, list_constraints, delete_constraints, auto_constrain. A reference names geometry in a path: {kind: point, item, vertex}, {kind: segment, item, segment} (segment k runs from vertex k to k+1; a circle is segment 0), {kind: centre, item, segment}, {kind: item, item}; contour defaults to 0. After every change the solver keeps all constraints satisfied, moving as little as possible; a change that cannot be satisfied is refused and undone, naming the conflicting constraints.
-Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. Call export_png without a path to look at the result.";
+Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. Call export_png without a path to look at the result.
+Laser settings: list_machines and list_materials show the user's machines and material library; set_laser_setup picks the document's machine, laser module and material, and get_laser_setup returns the power/speed/passes to use per operation.";
 
 // ---------- parameters ----------
 
@@ -377,12 +380,13 @@ fn summary(d: &Document) -> Value {
         "file": d.path, "unsaved_changes": d.dirty,
         "notes": d.s.notes, "selection": d.selection,
         "items": items, "images": images,
+        "machine": d.s.machine, "laser": d.s.laser, "material": d.s.material,
     })
 }
 
 impl Server {
     pub fn new(doc: Shared, repaint: Arc<dyn Fn() + Send + Sync>) -> Self {
-        Self { doc, repaint, tool_router: Self::tool_router() + Self::constraint_router() }
+        Self { doc, repaint, tool_router: Self::tool_router() + Self::constraint_router() + Self::laser_router() }
     }
 
     /// Run `f` on the locked document, then repaint the GUI.

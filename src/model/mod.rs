@@ -46,11 +46,18 @@ pub struct State {
     /// Geometric and dimensional constraints (see `constraints`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub constraints: Vec<Constraint>,
+    /// The machine, laser module and material from the library (ids), for the laser settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub laser: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<String>,
 }
 
 impl Default for State {
     fn default() -> Self {
-        Self { width: 300.0, height: 200.0, notes: String::new(), items: Vec::new(), images: BTreeMap::new(), next_id: 1, constraints: Vec::new() }
+        Self { width: 300.0, height: 200.0, notes: String::new(), items: Vec::new(), images: BTreeMap::new(), next_id: 1, constraints: Vec::new(), machine: None, laser: None, material: None }
     }
 }
 

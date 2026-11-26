@@ -172,6 +172,7 @@ impl App {
                 set_fill = Some(fill != Some(true));
             }
         });
+        super::library_window::pickers(ui, &mut d);
         if set_op.is_none() && set_fill.is_none() {
             return;
         }

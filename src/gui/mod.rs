@@ -11,6 +11,7 @@ mod geometry_cache;
 mod glyphs;
 mod grips;
 mod labels;
+mod library_window;
 mod panels;
 mod parameters;
 mod select;
@@ -89,6 +90,8 @@ struct App {
     confirm_close: bool,
     allow_close: bool,
     svg_dialog: Option<svg_import::SvgDialog>,
+    /// The open "Machines & materials" window.
+    library: Option<library_window::Editor>,
 }
 
 pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
@@ -164,6 +167,7 @@ impl App {
             confirm_close: false,
             allow_close: false,
             svg_dialog: None,
+            library: None,
         }
     }
 
@@ -422,6 +426,7 @@ impl eframe::App for App {
             self.agents_window(&ctx);
         }
         self.svg_import_window(&ctx);
+        self.library_window(&ctx);
         if self.confirm_close {
             self.close_dialog(&ctx);
         }

@@ -86,4 +86,10 @@ mod tests {
         assert_eq!(e.s.images.values().next().unwrap().w, 3);
         std::fs::remove_dir_all(dir).ok();
     }
+
+    #[test]
+    fn old_files_load_without_machine_and_material() {
+        let s: crate::model::State = serde_json::from_str(r#"{"width": 10, "height": 20, "items": [], "next_id": 1}"#).unwrap();
+        assert_eq!((s.machine, s.laser, s.material), (None, None, None));
+    }
 }

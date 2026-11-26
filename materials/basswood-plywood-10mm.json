@@ -1,0 +1,17 @@
+{
+  "id": "basswood-plywood-10mm",
+  "name": "Basswood plywood 10 mm",
+  "thickness": 10,
+  "notes": "",
+  "source": "xTool M2 FAQ, recommended cutting settings, https://support.xtool.com/article/3324, read 2026-11-26. All at 100 % power.",
+  "settings": [
+    {
+      "machine": "xtool-m2",
+      "laser": "diode-20w",
+      "operation": "cut",
+      "power": 100,
+      "speed": 3,
+      "passes": 1
+    }
+  ]
+}

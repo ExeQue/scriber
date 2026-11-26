@@ -1,6 +1,7 @@
 mod agents;
 mod export;
 mod gui;
+mod library;
 mod mcp;
 mod model;
 
