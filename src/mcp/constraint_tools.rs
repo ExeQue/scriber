@@ -52,9 +52,9 @@ pub struct AddDimension {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SetParameter {
     pub name: String,
-    /// A number or an expression of other parameters ("d1 * 2 + 5").
-    pub value: Value,
-    /// Rename the parameter (expressions that use it follow).
+    /// A number or an expression of other parameters ("d1 * 2 + 5"). Leave out to only rename.
+    pub value: Option<Value>,
+    /// Rename the parameter (expressions that use it follow); a letter, then letters, digits or _, not taken.
     pub rename: Option<String>,
 }
 
@@ -154,15 +154,18 @@ impl Server {
         })
     }
 
-    #[tool(description = "Set a parameter (a dimensional constraint) to a number or an expression such as \"d1 / 2\"; the geometry follows. Optionally rename it.")]
+    #[tool(description = "Set a parameter (a dimensional constraint) to a number or an expression such as \"d1 / 2\"; the geometry follows. Or rename it (e.g. d1 to width); expressions that use it follow.")]
     fn set_parameter(&self, Parameters(p): Parameters<SetParameter>) -> ToolResult {
-        let value = match value_text(&p.value) {
+        let value = match p.value.as_ref().map(value_text).transpose() {
             Ok(v) => v,
             Err(e) => return fail(e),
         };
         self.with(|d| {
             change(d, |d| {
-                d.set_parameter(&p.name, &value)?;
+                match &value {
+                    Some(value) => d.set_parameter(&p.name, value)?,
+                    None => _ = d.parameter(&p.name).ok_or_else(|| format!("there is no parameter \"{}\"", p.name))?,
+                }
                 let mut name = p.name.clone();
                 if let Some(new) = &p.rename {
                     d.rename_parameter(&p.name, new)?;

@@ -242,3 +242,40 @@ fn own_constraints_survive_when_inferred_ones_conflict() {
     assert_eq!(kinds, vec![Kind::Fix, Kind::DimAligned]);
     assert_eq!(d.parameter("d1").unwrap().expr, "30");
 }
+
+#[test]
+fn renaming_a_parameter_checks_the_name_and_expressions_follow() {
+    let mut d = Document::new(200.0, 200.0);
+    let r = add(&mut d, Contour::rect(0.0, 0.0, 40.0, 10.0, 0.0));
+    d.add_dimension(Kind::DimAligned, vec![seg(r, 0)], None, None, 5.0).unwrap();
+    d.add_dimension(Kind::DimAligned, vec![seg(r, 1)], Some("d10"), Some("d1 / 4"), 5.0).unwrap();
+    d.add_dimension(Kind::DimAligned, vec![seg(r, 2)], None, Some("d1*2 + d10"), 5.0).unwrap();
+    d.rename_parameter("d1", "width").unwrap();
+    assert_eq!(d.parameter("d10").unwrap().expr, "width / 4");
+    assert_eq!(d.parameter("d2").unwrap().expr, "width*2 + d10");
+    assert!(d.parameter("d1").is_none());
+    for bad in ["2x", "a b", "", "w-1"] {
+        assert!(d.rename_parameter("width", bad).unwrap_err().contains("not a valid name"), "{bad:?}");
+    }
+    assert!(d.rename_parameter("width", "d10").unwrap_err().contains("already"));
+    assert!(d.add_dimension(Kind::DimAligned, vec![seg(r, 3)], Some("width"), None, 5.0).unwrap_err().contains("already"));
+    assert!(d.rename_parameter("nope", "x").unwrap_err().contains("no parameter"));
+    assert_eq!(d.parameter("width").unwrap().expr, "40");
+}
+
+#[test]
+fn label_position_round_trips_and_old_files_load() {
+    let mut d = Document::new(200.0, 200.0);
+    let l = add(&mut d, Contour::line([0.0, 0.0], [40.0, 0.0]));
+    let id = d.add_dimension(Kind::DimAligned, vec![seg(l, 0)], None, None, 5.0).unwrap();
+    d.s.constraints.iter_mut().find(|c| c.id == id).unwrap().shift = 12.5;
+    let json = serde_json::to_value(&d.s.constraints).unwrap();
+    let back: Vec<super::Constraint> = serde_json::from_value(json).unwrap();
+    assert_eq!(back, d.s.constraints);
+    // Before labels could move, constraints had no `shift`: the label sits in the middle.
+    let old = r#"{"id": 3, "type": "dim_aligned", "refs": [{"kind": "segment", "item": 1, "segment": 0}], "name": "d1", "expr": "40", "offset": 5.0}"#;
+    let c: super::Constraint = serde_json::from_str(old).unwrap();
+    assert_eq!((c.offset, c.shift), (5.0, 0.0));
+    // A label in the middle writes no `shift`, so files stay as they were.
+    assert!(serde_json::to_value(&c).unwrap().get("shift").is_none());
+}

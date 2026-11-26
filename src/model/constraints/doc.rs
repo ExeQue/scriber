@@ -43,7 +43,7 @@ impl Document {
         }
         distinct(&refs)?;
         let id = self.s.next_id;
-        let c = Constraint { id, kind, refs, name: String::new(), expr: String::new(), offset: 0.0 };
+        let c = Constraint { id, kind, refs, name: String::new(), expr: String::new(), offset: 0.0, shift: 0.0 };
         System::default().add(&self.s, &c, 0.0)?;
         if self.s.constraints.iter().any(|o| o.kind == kind && same_refs(&o.refs, &c.refs)) {
             return Err(format!("that {} constraint is already there", kind.name()));
@@ -69,11 +69,9 @@ impl Document {
             Some(n) => n.trim().to_string(),
             None => (1..).map(|n| format!("{}{n}", kind.prefix())).find(|n| self.parameter(n).is_none()).unwrap(),
         };
-        if !expr::is_name(&name) || self.parameter(&name).is_some() {
-            return Err(format!("\"{name}\" is not a free parameter name (a letter, then letters, digits or _)"));
-        }
+        self.free_name(&name)?;
         let id = self.s.next_id;
-        let mut c = Constraint { id, kind, refs, name, expr: String::new(), offset };
+        let mut c = Constraint { id, kind, refs, name, expr: String::new(), offset, shift: 0.0 };
         let mut sys = System::default();
         sys.add(&self.s, &c, 0.0)?;
         let now = measure(kind, &sys.cons[0].g, &sys.x).ok_or("cannot measure that")?;
@@ -114,10 +112,8 @@ impl Document {
         if old == new {
             return Ok(());
         }
-        if !expr::is_name(new) || self.parameter(new).is_some() {
-            return Err(format!("\"{new}\" is not a free parameter name"));
-        }
         self.parameter(old).ok_or_else(|| format!("there is no parameter \"{old}\""))?;
+        self.free_name(new)?;
         for c in self.s.constraints.iter_mut().filter(|c| c.kind.is_dimension()) {
             if c.name == old {
                 c.name = new.to_string();
@@ -125,6 +121,17 @@ impl Document {
             c.expr = expr::rename(&c.expr, old, new);
         }
         self.touch();
+        Ok(())
+    }
+
+    /// A name a new or renamed parameter can take.
+    fn free_name(&self, name: &str) -> Result<(), String> {
+        if !expr::is_name(name) {
+            return Err(format!("\"{name}\" is not a valid name (a letter, then letters, digits or _)"));
+        }
+        if self.parameter(name).is_some() {
+            return Err(format!("\"{name}\" is already the name of another dimension"));
+        }
         Ok(())
     }
 

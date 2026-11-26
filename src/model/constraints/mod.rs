@@ -6,11 +6,13 @@
 //! - `geo`: constraints compiled into unknowns (vertex coordinates, arc bulges);
 //! - `residual`: how far each constraint is from satisfied, and what dimensions measure;
 //! - `solve`: the damped Gauss–Newton solver;
+//! - `dim_label`: where a dimension and its label are drawn;
 //! - `infer`: AUTOCONSTRAIN;
 //! - `attach`: constraints inferred while drawing (INFER);
 //! - `doc`: the `Document` commands, and `settle`, which runs the solver after every change.
 
 pub mod attach;
+pub mod dim_label;
 mod doc;
 pub mod expr;
 mod geo;
@@ -183,6 +185,14 @@ pub struct Constraint {
     /// aligned), the radius of its arc (angular), or the angle of its leader in degrees (radius, diameter).
     #[serde(default)]
     pub offset: f64,
+    /// Dimensional: how far its label is moved from the middle: along the dimension line in mm
+    /// (linear, aligned), around the arc in degrees (angular), or along the leader in mm (radius, diameter).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub shift: f64,
+}
+
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
 }
 
 impl Constraint {

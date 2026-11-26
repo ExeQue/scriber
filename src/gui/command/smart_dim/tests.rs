@@ -86,3 +86,28 @@ fn says_so_when_already_locked_or_refused() {
     assert!(app.message.starts_with("Cannot make it nope + 1"), "{}", app.message);
     assert_eq!(app.cmdline.active.map(|a| a.1), Some(Step::Location));
 }
+
+#[test]
+fn a_name_typed_on_the_card_names_the_dimension_and_its_label_drags() {
+    let (mut app, doc) = app();
+    add(&doc, Contour::rect(10.0, 10.0, 40.0, 20.0, 0.0));
+    app.start(Cmd::find("DIM").unwrap());
+    app.place_point([30.0, 10.0]);
+    app.cmdline.smart_dim.name = "width".into();
+    app.place_point([30.0, 2.0]);
+    let id = doc.lock().unwrap().parameter("width").expect("named width").id;
+    assert!(app.cmdline.smart_dim.name.is_empty(), "the next one gets the next free name");
+    // Dragging the label: grabbed 1 mm right of its anchor, let go at (60, -4).
+    let drag = app.grab_label(&doc.lock().unwrap(), id, [31.0, 2.0]);
+    let Some(crate::gui::select::Drag::Label { grab, .. }) = drag else { panic!("no label drag") };
+    app.drag_label(id, [60.0 - grab[0], -4.0 - grab[1]]);
+    let c = doc.lock().unwrap().constraint(id).unwrap().clone();
+    assert_eq!((c.offset, c.shift), (-14.0, 29.0));
+    // Its edit card (double-click on the label) renames it too.
+    app.edit_dimension(id);
+    assert_eq!(app.cmdline.constrain.name, "width");
+    app.cmdline.constrain.name = "w2".into();
+    app.cmdline.input = "45".into();
+    app.submit(None);
+    assert_eq!(doc.lock().unwrap().constraint(id).map(|c| (c.name.clone(), c.expr.clone())), Some(("w2".into(), "45".into())));
+}

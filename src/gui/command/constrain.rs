@@ -17,6 +17,8 @@ pub struct ConstrainState {
     refs: Vec<Ref>,
     /// The dimensional constraint whose value is being entered.
     pub editing: Option<u64>,
+    /// Its name as typed on the card (renames it when the value is entered).
+    pub name: String,
 }
 
 impl Cmd {
@@ -232,8 +234,8 @@ impl App {
 
     /// Ask for a dimension's value (also used when its label is double-clicked).
     pub(in crate::gui) fn edit_dimension(&mut self, id: u64) {
-        let (kind, expr) = match self.doc.lock().unwrap().constraint(id) {
-            Some(c) => (c.kind, c.expr.clone()),
+        let (kind, name, expr) = match self.doc.lock().unwrap().constraint(id) {
+            Some(c) => (c.kind, c.name.clone(), c.expr.clone()),
             None => return,
         };
         if self.cmdline.active.is_none() {
@@ -242,18 +244,22 @@ impl App {
         self.cmdline.active = Some((Cmd::Constrain(kind), Step::Expr));
         self.tool = Tool::Select;
         self.cmdline.constrain.editing = Some(id);
+        self.cmdline.constrain.name = name;
         self.cmdline.input = expr;
     }
 
     /// The value typed for a dimension: `40`, `d1/2`, `width=40` (renames it too) or empty (keep).
+    /// A name changed on the card renames it too.
     pub(super) fn enter_value(&mut self, text: &str) {
         let Some(id) = self.cmdline.constrain.editing else { return self.end() };
         let text = text.trim().to_string();
+        let typed = self.cmdline.constrain.name.trim().to_string();
         let result = self.change(|d| {
             let name = d.constraint(id).map(|c| c.name.clone()).ok_or("the dimension is gone")?;
             let (new_name, value) = match text.split_once('=') {
                 Some((n, v)) => (n.trim().to_string(), v.trim().to_string()),
-                None => (name.clone(), text.clone()),
+                None if typed.is_empty() => (name.clone(), text.clone()),
+                None => (typed, text.clone()),
             };
             if !value.is_empty() {
                 d.set_parameter(&name, &value)?;
@@ -332,11 +338,16 @@ impl App {
         match step {
             Step::Expr => {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(self.editing_label().split('=').next().unwrap_or_default().to_string()).strong());
+                    let name = ui.add(egui::TextEdit::singleline(&mut self.cmdline.constrain.name).desired_width(60.0)).on_hover_text("Its name, for use in other expressions");
                     ui.label("=");
-                    ui.text_edit_singleline(&mut self.cmdline.input).request_focus();
+                    let value = ui.text_edit_singleline(&mut self.cmdline.input);
+                    if name.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        self.submit(None);
+                    } else if !name.has_focus() {
+                        value.request_focus();
+                    }
                 });
-                ui.label(RichText::new("A number (mm or degrees), or an expression of other dimensions such as d1 / 2. Type name=value to rename.").small().weak());
+                ui.label(RichText::new("A number (mm or degrees), or an expression of other dimensions such as d1 / 2. Change the name to rename it; expressions that use it follow.").small().weak());
             }
             Step::Location => _ = ui.label(RichText::new("Click where the dimension should go.").small().weak()),
             _ if takes_point(cmd, self.cmdline.constrain.refs.len()) => _ = ui.label(RichText::new("Click near a corner or end for a point, or on a line.").small().weak()),

@@ -23,6 +23,8 @@ pub struct SmartDim {
     flip: bool,
     /// A number or expression typed (dynamic input or the card); empty = the size as it is.
     pub value: String,
+    /// A name typed on the card; empty = the next free d1, rad1, ….
+    pub name: String,
     /// Where the pointer last was on the drawing, for placing from the keyboard or the card.
     at: Option<Point>,
 }
@@ -138,6 +140,7 @@ impl App {
         let s = self.doc.lock().unwrap().s.clone();
         let lay = self.dim_layout(&s, at).ok_or("That cannot be measured.")?;
         let value = std::mem::take(&mut self.cmdline.smart_dim.value).trim().to_string();
+        let name = self.cmdline.smart_dim.name.trim().to_string();
         self.dyn_reset();
         let msg = if already_locked(&s, &lay) {
             self.dim_next();
@@ -145,12 +148,13 @@ impl App {
         } else {
             self.cmdline.checkpointed = false;
             let result = self.change(|d| {
-                let id = d.add_dimension(lay.kind, lay.refs.clone(), None, (!value.is_empty()).then_some(value.as_str()), lay.offset)?;
+                let id = d.add_dimension(lay.kind, lay.refs.clone(), (!name.is_empty()).then_some(name.as_str()), (!value.is_empty()).then_some(value.as_str()), lay.offset)?;
                 Ok(d.constraint(id).map(|c| format!("{} = {} now locks this {}; double-click its label to change it.", c.name, c.expr, what(c.kind))).unwrap_or_default())
             });
             self.cmdline.checkpointed = false;
             match result {
                 Ok(msg) => {
+                    self.cmdline.smart_dim.name.clear();
                     self.dim_next();
                     msg
                 }
@@ -190,10 +194,11 @@ impl App {
             return;
         }
         let Some(lay) = self.dim_layout(s, at) else { return };
-        let name = (1..).map(|n| format!("{}{n}", lay.kind.prefix())).find(|n| !s.constraints.iter().any(|c| &c.name == n)).unwrap_or_default();
+        let typed_name = self.cmdline.smart_dim.name.trim();
+        let name = if typed_name.is_empty() { (1..).map(|n| format!("{}{n}", lay.kind.prefix())).find(|n| !s.constraints.iter().any(|c| &c.name == n)).unwrap_or_default() } else { typed_name.to_string() };
         let typed = self.cmdline.smart_dim.value.trim();
         let expr = if typed.is_empty() { fmt_num(lay.value) } else { typed.to_string() };
-        let c = Constraint { id: 0, kind: lay.kind, refs: lay.refs, name, expr, offset: lay.offset };
+        let c = Constraint { id: 0, kind: lay.kind, refs: lay.refs, name, expr, offset: lay.offset, shift: 0.0 };
         self.paint_lock_dimension(painter, s, &c, typed.is_empty().then_some(lay.value), PREVIEW);
     }
 
@@ -216,6 +221,17 @@ impl App {
             .response
             .on_hover_text("A circle gets its diameter and an arc its radius; hold Shift to swap while placing.");
         }
+        ui.horizontal(|ui| {
+            ui.label("Name");
+            let field = ui.add(egui::TextEdit::singleline(&mut self.cmdline.smart_dim.name).hint_text("d1").desired_width(80.0)).on_hover_text("Optional: a name to use in other expressions (width, depth, …)");
+            if field.lost_focus()
+                && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                && let Err(e) = self.dim_enter()
+            {
+                self.cmdline.log(e.clone());
+                self.message = e;
+            }
+        });
         ui.horizontal(|ui| {
             ui.label("Value");
             let field = ui.add(egui::TextEdit::singleline(&mut self.cmdline.smart_dim.value).hint_text("as it is, or 40, or d1 / 2").desired_width(150.0));

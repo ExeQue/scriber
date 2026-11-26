@@ -19,9 +19,9 @@ fn item_name(s: &State, id: u64) -> String {
     }
 }
 
-/// What the constraint does, in plain words, from the point of view of `items`.
-pub fn describe(s: &State, c: &Constraint, items: &[u64]) -> String {
-    let (what, to) = match c.kind {
+/// What a kind of constraint does, and the word before what it binds to ("Parallel", "to").
+fn words(kind: Kind) -> (&'static str, &'static str) {
+    match kind {
         Kind::Coincident => ("Joined", "to"),
         Kind::Collinear => ("In line", "with"),
         Kind::Concentric => ("Same centre", "as"),
@@ -41,9 +41,14 @@ pub fn describe(s: &State, c: &Constraint, items: &[u64]) -> String {
         Kind::DimAngular => ("Locked angle", ""),
         Kind::DimRadial => ("Locked radius", ""),
         Kind::DimDiameter => ("Locked diameter", ""),
-    };
+    }
+}
+
+/// What the constraint does, in plain words, from the point of view of `items`.
+pub fn describe(s: &State, c: &Constraint, items: &[u64]) -> String {
+    let (what, to) = words(c.kind);
     if c.kind.is_dimension() {
-        return format!("{what} {} =", c.name);
+        return format!("{what} {}", c.name);
     }
     let mut others: Vec<u64> = c.refs.iter().map(|r| r.item()).filter(|i| !items.contains(i)).collect();
     others.dedup();
@@ -54,7 +59,7 @@ pub fn describe(s: &State, c: &Constraint, items: &[u64]) -> String {
 }
 
 /// The properties panel's list of the constraints on `items`: each with a remove button, the
-/// dimensional ones with their value to edit. Hovering a row sets `hot` (highlighted on the canvas).
+/// dimensional ones with their name and value to edit. Hovering a row sets `hot` (highlighted on the canvas).
 pub fn constraint_rows(ui: &mut egui::Ui, edit: &mut ParamEdit, s: &State, items: &[u64], hot: &mut Option<u64>) -> Option<ParamChange> {
     let on: Vec<&Constraint> = s.constraints.iter().filter(|c| c.refs.iter().any(|r| items.contains(&r.item()))).collect();
     if on.is_empty() {
@@ -68,8 +73,14 @@ pub fn constraint_rows(ui: &mut egui::Ui, edit: &mut ParamEdit, s: &State, items
             if ui.small_button("✕").on_hover_text("Remove this constraint (the shape stays as it is)").clicked() {
                 change = Some(ParamChange::Delete(c.id));
             }
-            ui.label(describe(s, c, items));
-            if c.kind.is_dimension() {
+            if !c.kind.is_dimension() {
+                ui.label(describe(s, c, items));
+            } else {
+                ui.label(words(c.kind).0);
+                if let Some(n) = field(ui, edit, c.id, true, &c.name, 52.0) {
+                    change = Some(ParamChange::Rename(c.id, n));
+                }
+                ui.label("=");
                 if let Some(e) = field(ui, edit, c.id, false, &c.expr, 70.0) {
                     change = Some(ParamChange::Set(c.id, e));
                 }
@@ -123,6 +134,6 @@ mod tests {
         let id = d.add_constraint(Kind::Parallel, vec![Ref::Segment { item: a, contour: 0, segment: 0 }, Ref::Segment { item: b, contour: 0, segment: 0 }]).unwrap();
         assert_eq!(describe(&d.s, d.constraint(id).unwrap(), &[a]), format!("Parallel to Line {b}"));
         let id = d.add_dimension(Kind::DimAligned, vec![Ref::Segment { item: a, contour: 0, segment: 0 }], None, None, 5.0).unwrap();
-        assert_eq!(describe(&d.s, d.constraint(id).unwrap(), &[a]), "Locked length d1 =");
+        assert_eq!(describe(&d.s, d.constraint(id).unwrap(), &[a]), "Locked length d1");
     }
 }

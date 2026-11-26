@@ -28,6 +28,8 @@ pub(super) enum Drag {
     /// A grip dragged from `at`; `base` is every item as it was when the drag started, `frame` the
     /// selection box then (box and angle, see `turn::turned_box`). A `hot` grip follows the cursor without a button held, until a click.
     Grip { grip: Grip, at: Point, base: Vec<Item>, frame: (BBox, f64), hot: bool },
+    /// A dimension's label, grabbed `grab` mm from its anchor.
+    Label { id: u64, grab: Point },
 }
 
 /// The selection box, turned with the items when they share an angle.
@@ -89,21 +91,26 @@ impl App {
             let origin = self.s2w(o);
             let mut d = doc.lock().unwrap();
             let grip = self.grip_at(&self.grips(&d.s.items, &d.selection), o);
-            self.drag = Some(match (grip, self.hit(&d, origin)) {
-                (Some((grip, at)), _) => {
+            let label = self.dim_labels.iter().find(|(_, r)| r.contains(o)).and_then(|(id, _)| self.grab_label(&d, *id, origin));
+            self.drag = Some(match (grip, label, self.hit(&d, origin)) {
+                (None, Some(drag), _) => {
+                    d.checkpoint();
+                    drag
+                }
+                (Some((grip, at)), ..) => {
                     d.checkpoint();
                     let frame = selection_box(&d.s.items, &d.selection).unwrap_or_default();
                     Drag::Grip { grip, at, base: d.s.items.clone(), frame, hot: false }
                 }
                 // A grouped shape moves with its group.
-                (None, Some(id)) => {
+                (None, None, Some(id)) => {
                     if !d.selection.contains(&id) {
                         d.selection = d.expand_groups(&[id]);
                     }
                     d.checkpoint();
                     Drag::Move { origin, applied: [0.0, 0.0] }
                 }
-                (None, None) => Drag::Box { start: origin },
+                (None, None, None) => Drag::Box { start: origin },
             });
             drop(d);
             self.grip_menu = None;
@@ -122,6 +129,9 @@ impl App {
             let p = self.dyn_point(p).unwrap_or(p);
             cursor = Some(p);
             self.move_grip(p, shift, alt);
+        }
+        if let (Some(Drag::Label { id, grab }), Some(p)) = (&self.drag, raw) {
+            self.drag_label(*id, [p[0] - grab[0], p[1] - grab[1]]);
         }
         if let (Some(Drag::Move { origin, applied }), Some(p)) = (&mut self.drag, raw) {
             let mut want = [p[0] - origin[0], p[1] - origin[1]];
