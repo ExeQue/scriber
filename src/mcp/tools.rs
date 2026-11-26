@@ -338,9 +338,9 @@ pub struct ExportSvg {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ExportPng {
-    /// Where to write the PNG. Without a path the image is returned so you can look at it (max 1600 px wide).
+    /// Where to write the PNG. Without a path the image is returned so you can look at it.
     pub path: Option<String>,
-    /// Resolution; default 254 (10 px per mm).
+    /// Resolution; default: 2048 px on the material's longest side. Images returned inline stay under 8000 px.
     pub dpi: Option<f64>,
     /// Default true.
     pub include_annotations: Option<bool>,
@@ -828,10 +828,7 @@ impl Server {
     #[tool(description = "Render the document to PNG (preview: true shows what the laser makes). With a path it is written to that file; without, the image is returned so you can see the drawing.")]
     fn export_png(&self, Parameters(p): Parameters<ExportPng>) -> ToolResult {
         let state = self.doc.lock().unwrap().s.clone();
-        let mut dpi = p.dpi.unwrap_or(254.0);
-        if p.path.is_none() {
-            dpi = dpi.min(1600.0 / (state.width / 25.4));
-        }
+        let dpi = export::png_dpi(&state, p.dpi, p.path.is_none());
         let png = if p.preview { export::preview_png(&state, dpi) } else { export::png(&state, dpi, p.include_annotations.unwrap_or(true)) };
         let png = match png {
             Ok(png) => png,

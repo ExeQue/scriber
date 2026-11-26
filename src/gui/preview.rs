@@ -24,6 +24,23 @@ fn rgb([r, g, b]: [u8; 3]) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
+impl Preview {
+    /// Rebuild the meshes when the document changed or the zoom needs curves of another fineness
+    /// (`tol` in mm, rounded down to a power of two so small zoom steps reuse them).
+    fn update(&mut self, state: &crate::model::State, rev: u64, tol: f64) {
+        let bucket = tol.log2().floor() as i32;
+        if self.key == Some((rev, bucket)) {
+            return;
+        }
+        let tol = 2f64.powi(bucket);
+        let sc = scene(state);
+        self.pieces = sc.pieces.iter().map(|(c, hole)| (tessellate(&[c.flatten(tol)]), *hole)).collect();
+        self.lines = sc.lines.iter().map(|(c, op)| (c.flatten(tol), *op)).collect();
+        self.engraved = state.items.iter().enumerate().filter(|(_, i)| sc.engraved.iter().any(|e| e.id == i.id)).map(|(k, _)| k).collect();
+        self.key = Some((rev, bucket));
+    }
+}
+
 impl App {
     pub(super) fn toggle_preview(&mut self) {
         if self.preview.take().is_none() {
@@ -45,16 +62,9 @@ impl App {
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, Color32::from_gray(33));
         let p = palette(&state);
-        let tol = (0.5 / self.view.zoom as f64).clamp(0.002, 1.0);
+        let tol = super::canvas::curve_tol(self.view.zoom, ui.ctx().pixels_per_point());
         let mut preview = self.preview.take().unwrap_or_default();
-        let key = (rev, tol.log2().floor() as i32);
-        if preview.key != Some(key) {
-            let sc = scene(&state);
-            preview.pieces = sc.pieces.iter().map(|(c, hole)| (tessellate(&[c.flatten(tol)]), *hole)).collect();
-            preview.lines = sc.lines.iter().map(|(c, op)| (c.flatten(tol), *op)).collect();
-            preview.engraved = state.items.iter().enumerate().filter(|(_, i)| sc.engraved.iter().any(|e| e.id == i.id)).map(|(k, _)| k).collect();
-            preview.key = Some(key);
-        }
+        preview.update(&state, rev, tol);
         self.paint_preview(ui.ctx(), &painter, &state, &preview, &p, tol);
         self.preview = Some(preview);
         banner(&painter, rect);
@@ -64,13 +74,15 @@ impl App {
         let sheet = Rect::from_min_max(self.w2s([0.0, 0.0]), self.w2s([s.width, s.height]));
         painter.rect_filled(sheet.translate(vec2(3.0, 3.0)), 2.0, Color32::from_black_alpha(60));
         painter.rect_filled(sheet, 0.0, rgb(p.sheet));
+        let (origin, zoom) = (self.canvas_rect.min + self.view.offset, self.view.zoom);
+        let to_screen = move |q: &crate::model::Point| origin + vec2(q[0] as f32, q[1] as f32) * zoom;
         for (mesh, hole) in &preview.pieces {
             let Some(mesh) = mesh else { continue };
             if *hole {
-                self.fill(painter, mesh, rgb(p.bed), 0.0);
+                fill(painter, mesh, rgb(p.bed), origin, zoom);
             } else {
-                self.fill(painter, mesh, Color32::from_black_alpha(90), 2.0);
-                self.fill(painter, mesh, rgb(p.piece), 0.0);
+                fill(painter, mesh, Color32::from_black_alpha(90), origin + vec2(2.0, 2.0), zoom);
+                fill(painter, mesh, rgb(p.piece), origin, zoom);
             }
         }
         for item in preview.engraved.iter().filter_map(|k| s.items.get(*k)) {
@@ -83,22 +95,29 @@ impl App {
                 mesh.add_rect_with_uv(r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), rgb(p.sheet));
                 mesh.rotate(egui::emath::Rot2::from_angle(rotation.to_radians() as f32), r.center());
                 painter.add(mesh);
-            } else if let Some(fill) = self.geometry.get(item, true, tol).fill.clone() {
-                self.fill(painter, &fill, rgb(p.burn), 0.0);
+            } else {
+                let g = self.geometry.get(item, true, tol);
+                if let Some(mesh) = &g.fill {
+                    fill(painter, mesh, rgb(p.burn), origin, zoom);
+                }
+                // Meshes have hard, stair-stepped edges; a hairline along the outline antialiases them.
+                let edge = Stroke::new(1.0 / ctx.pixels_per_point(), rgb(p.burn));
+                for line in &g.outline {
+                    painter.add(egui::Shape::line(line.iter().map(to_screen).collect(), edge));
+                }
             }
         }
         for (line, op) in &preview.lines {
             let color = if *op == Op::Cut { p.cut } else { p.score };
-            painter.add(egui::Shape::line(line.iter().map(|q| self.w2s(*q)).collect(), Stroke::new(1.0, rgb(color))));
+            painter.add(egui::Shape::line(line.iter().map(to_screen).collect(), Stroke::new(1.0, rgb(color))));
         }
     }
+}
 
-    /// A triangle mesh in mm, filled with `color` and moved `shift` pixels right and down.
-    fn fill(&self, painter: &egui::Painter, (verts, indices): &Mesh, color: Color32, shift: f32) {
-        let (offset, zoom) = (self.canvas_rect.min + self.view.offset + vec2(shift, shift), self.view.zoom);
-        let vertices = verts.iter().map(|v| egui::epaint::Vertex { pos: offset + vec2(v[0], v[1]) * zoom, uv: egui::epaint::WHITE_UV, color }).collect();
-        painter.add(egui::Mesh { indices: indices.clone(), vertices, texture_id: egui::TextureId::default() });
-    }
+/// A triangle mesh in mm, filled with `color`, with mm 0,0 at `origin` on screen.
+fn fill(painter: &egui::Painter, (verts, indices): &Mesh, color: Color32, origin: Pos2, zoom: f32) {
+    let vertices = verts.iter().map(|v| egui::epaint::Vertex { pos: origin + vec2(v[0], v[1]) * zoom, uv: egui::epaint::WHITE_UV, color }).collect();
+    painter.add(egui::Mesh { indices: indices.clone(), vertices, texture_id: egui::TextureId::default() });
 }
 
 fn banner(painter: &egui::Painter, rect: Rect) {
@@ -107,4 +126,25 @@ fn banner(painter: &egui::Painter, rect: Rect) {
     let r = Align2::CENTER_TOP.anchor_size(pos, galley.size());
     painter.rect_filled(r.expand2(vec2(10.0, 5.0)), 6.0, Color32::from_rgba_unmultiplied(0, 90, 140, 230));
     painter.galley(r.min, galley, Color32::WHITE);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gui::canvas::curve_tol;
+    use crate::model::{Contour, Document};
+
+    #[test]
+    fn zooming_in_gives_finer_curves() {
+        let mut d = Document::new(100.0, 100.0);
+        d.add("disc", Op::Cut, Shape::path(Contour::circle(50.0, 50.0, 40.0)));
+        let verts = |zoom: f32, ppp: f32| {
+            let mut p = Preview::default();
+            p.update(&d.s, 1, curve_tol(zoom, ppp));
+            (p.pieces[0].0.as_ref().unwrap().0.len(), p.lines[0].0.len())
+        };
+        let (far, near) = (verts(2.0, 1.0), verts(50.0, 1.0));
+        assert!(near.0 > far.0 && near.1 > far.1, "{far:?} vs {near:?}");
+        assert!(verts(50.0, 2.0).1 > near.1, "a HiDPI screen gets finer curves too");
+    }
 }

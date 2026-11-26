@@ -71,7 +71,7 @@ impl App {
             return;
         }
         let Some(item) = s.items.iter().find(|i| i.id == id) else { return };
-        let tol = (0.5 / self.view.zoom as f64).clamp(0.002, 1.0);
+        let tol = super::canvas::curve_tol(self.view.zoom, painter.ctx().pixels_per_point());
         for line in item.shape.outline(tol) {
             let pts: Vec<Pos2> = line.iter().map(|q| self.w2s(*q)).collect();
             painter.add(egui::Shape::line(pts, Stroke::new(5.0, GLOW.gamma_multiply(0.35))));

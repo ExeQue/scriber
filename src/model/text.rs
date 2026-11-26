@@ -10,7 +10,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 pub const DEFAULT_FONT: &str = "sans-serif";
 
 /// Curves are flattened to lines within this distance (mm).
-const TOLERANCE: f64 = 0.01;
+/// Fine enough that text stays smooth even at the canvas's deepest zoom.
+const TOLERANCE: f64 = 0.0025;
 
 /// What a text looks like; everything that changes its outlines except position and rotation.
 #[derive(Clone, PartialEq, Eq, Hash)]

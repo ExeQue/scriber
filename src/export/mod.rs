@@ -6,5 +6,5 @@ mod preview;
 pub(crate) mod svg;
 pub mod svg_import;
 
-pub use png::{png, preview_png};
+pub use png::{dpi as png_dpi, png, preview_png};
 pub use svg::svg;

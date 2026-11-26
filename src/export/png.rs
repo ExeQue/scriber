@@ -5,6 +5,19 @@ use crate::model::State;
 pub(super) use crate::model::text::usvg_options as options;
 use resvg::{tiny_skia, usvg};
 
+/// Longest side of a PNG when no DPI is asked for: sharp, yet small enough for an agent to look at.
+pub const DEFAULT_PX: f64 = 2048.0;
+/// Longest side of an image returned inline (the Claude API refuses images over 8000 px).
+const MAX_INLINE_PX: f64 = 8000.0;
+
+/// The DPI to render at: `asked`, else the one that fits the material's longest side in
+/// DEFAULT_PX pixels; an `inline` image (returned to the agent) is kept under MAX_INLINE_PX.
+pub fn dpi(s: &State, asked: Option<f64>, inline: bool) -> f64 {
+    let inches = s.width.max(s.height) / 25.4;
+    let dpi = asked.unwrap_or(DEFAULT_PX / inches);
+    if inline { dpi.min(MAX_INLINE_PX / inches) } else { dpi }
+}
+
 /// Render the document at `dpi` on a white background.
 pub fn png(s: &State, dpi: f64, annotations: bool) -> anyhow::Result<Vec<u8>> {
     // Laser hairlines would be sub-pixel; draw lines at least 1.5 px wide.
@@ -47,6 +60,17 @@ mod tests {
         assert_eq!(img.get_pixel(100, 5).0, [255, 255, 255]);
         let red = img.get_pixel(20, 40).0;
         assert!(red[0] > 150 && red[1] < 120, "{red:?}");
+    }
+
+    #[test]
+    fn default_size_fills_the_cap() {
+        let d = Document::new(100.0, 50.0);
+        let dpi = super::dpi(&d.s, None, true);
+        let img = image::load_from_memory(&super::preview_png(&d.s, dpi).unwrap()).unwrap();
+        assert_eq!((img.width(), img.height()), (2048, 1024), "{dpi} dpi");
+        assert_eq!(super::dpi(&d.s, Some(100.0), true), 100.0, "an asked DPI is kept");
+        assert!(super::dpi(&d.s, Some(10_000.0), true) * 100.0 / 25.4 <= 8000.0, "inline images stay under the API limit");
+        assert_eq!(super::dpi(&d.s, Some(10_000.0), false), 10_000.0);
     }
 
     #[test]

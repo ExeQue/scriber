@@ -311,7 +311,9 @@ impl App {
             .or_insert_with(|| {
                 let grey = image::load_from_memory(&img.png).map(|i| i.to_luma8()).unwrap_or_default();
                 let size = [grey.width() as usize, grey.height() as usize];
-                ctx.load_texture(format!("img{id}"), egui::ColorImage::from_gray(size, grey.as_raw()), egui::TextureOptions::LINEAR)
+                // Mipmaps keep a big photo crisp instead of shimmering when zoomed out.
+                let options = egui::TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear));
+                ctx.load_texture(format!("img{id}"), egui::ColorImage::from_gray(size, grey.as_raw()), options)
             })
             .id()
     }
@@ -328,7 +330,7 @@ impl App {
             (d.s.clone(), d.selection.clone())
         };
         self.paint_material(&painter, state.width, state.height);
-        let tol = (0.5 / self.view.zoom as f64).clamp(0.002, 1.0);
+        let tol = curve_tol(self.view.zoom, ui.ctx().pixels_per_point());
         let ids: Vec<u64> = state.items.iter().map(|i| i.id).collect();
         self.geometry.retain(&ids);
         // Filled things (engraved areas, text, images) first, so cut and score lines stay on top.
@@ -546,6 +548,12 @@ pub(super) fn tooltip(painter: &egui::Painter, at: Pos2, text: &str) {
 /// images). Plain outlines are picked on their line.
 fn picks_inside(s: &State, item: &Item) -> bool {
     matches!(item.shape, Shape::Text { .. } | Shape::Image { .. }) || s.engraves_area(item)
+}
+
+/// How far a flattened curve may stray from the true one, in mm: half a physical pixel at `zoom`
+/// (points per mm), so curves stay smooth on HiDPI screens too.
+pub(super) fn curve_tol(zoom: f32, pixels_per_point: f32) -> f64 {
+    (0.5 / (zoom * pixels_per_point) as f64).clamp(0.0005, 1.0)
 }
 
 /// The items object snaps and tracking can use: those on shown layers.

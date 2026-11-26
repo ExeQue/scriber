@@ -175,7 +175,7 @@ impl Contour {
                 let (c, r, start, sweep) = arc_params([a.x, a.y], [b.x, b.y], a.bulge);
                 // Segment count so the chord error stays under tol.
                 let step = 2.0 * (1.0 - tol.min(r * 0.5) / r).acos();
-                let steps = ((sweep.abs() / step.max(1e-3)).ceil() as usize).clamp(2, 720);
+                let steps = ((sweep.abs() / step.max(1e-3)).ceil() as usize).clamp(2, 4096);
                 for k in 1..steps {
                     let t = start + sweep * k as f64 / steps as f64;
                     out.push([c[0] + r * t.cos(), c[1] + r * t.sin()]);
