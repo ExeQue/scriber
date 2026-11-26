@@ -334,6 +334,7 @@ impl App {
         self.tool = cmd.tool();
         self.draft.clear();
         self.draft_links.clear();
+        self.draft_along.clear();
     }
 
     fn set_step(&mut self, step: Step) {
@@ -349,6 +350,7 @@ impl App {
         self.tool = Tool::Select;
         self.draft.clear();
         self.draft_links.clear();
+        self.draft_along.clear();
         self.tracker.clear();
         self.once = None;
     }

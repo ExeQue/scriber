@@ -139,10 +139,10 @@ impl Snap {
     /// The constraint drawing from this snap infers (INFER): with `target` it binds to.
     pub fn infer(&self) -> Option<(Constraint, Ref)> {
         let kind = match self.kind {
-            Kind::Endpoint | Kind::Center | Kind::Nearest => Constraint::Coincident,
+            Kind::Endpoint | Kind::Center | Kind::Nearest | Kind::Quadrant => Constraint::Coincident,
             Kind::Perpendicular => Constraint::Perpendicular,
             Kind::Tangent => Constraint::Tangent,
-            Kind::Intersection | Kind::Quadrant | Kind::Midpoint | Kind::Extension | Kind::Parallel => return None,
+            Kind::Intersection | Kind::Midpoint | Kind::Extension | Kind::Parallel => return None,
         };
         Some((kind, self.target?))
     }
@@ -342,10 +342,11 @@ fn segments(item: &Item) -> Vec<(Seg, Option<On>)> {
     out
 }
 
-/// The pieces of outline (and guide lines) within `tol` mm of `p`, closest first.
-pub fn pieces_near(items: &[Item], guides: &[[Point; 2]], p: Point, tol: f64) -> Vec<Seg> {
-    let mut out: Vec<Seg> = near(items, guides, p, tol).into_iter().map(|(s, _)| s).filter(|s| distance(p, s.nearest(p)) <= tol).collect();
-    out.sort_by(|a, b| distance(p, a.nearest(p)).total_cmp(&distance(p, b.nearest(p))));
+/// The pieces of outline (and guide lines) within `tol` mm of `p`, closest first, with the segment
+/// they are in a path item.
+pub fn pieces_near(items: &[Item], guides: &[[Point; 2]], p: Point, tol: f64) -> Vec<(Seg, Option<Ref>)> {
+    let mut out: Vec<_> = near(items, guides, p, tol).into_iter().filter(|(s, _)| distance(p, s.nearest(p)) <= tol).map(|(s, on)| (s, on.map(On::segment))).collect();
+    out.sort_by(|(a, _), (b, _)| distance(p, a.nearest(p)).total_cmp(&distance(p, b.nearest(p))));
     out
 }
 

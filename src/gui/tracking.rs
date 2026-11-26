@@ -9,7 +9,7 @@ use super::App;
 use super::select::Drag;
 use super::snap::{self, Kind, Seg, Snap, circle_circle};
 use crate::model::geom::distance;
-use crate::model::{Item, Point};
+use crate::model::{Item, Point, Ref};
 use eframe::egui::{self, Color32, Stroke, vec2};
 use std::time::{Duration, Instant};
 
@@ -36,12 +36,16 @@ pub enum Source {
     Track,
     Extension,
     Parallel,
+    /// Square to a line (or along an arc's radius) from an acquired end or midpoint.
+    Perpendicular,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Track {
     pub path: Path,
     pub source: Source,
+    /// The segment the path was derived from (Extension, Parallel, Perpendicular), for INFER.
+    pub from: Option<Ref>,
 }
 
 /// Where the pointer locked: the point and the one or two paths through it.
@@ -160,9 +164,10 @@ fn line_angles(angles: &[f64]) -> Vec<f64> {
 #[derive(Default)]
 pub struct Tracker {
     pub points: Vec<Point>,
-    pub extensions: Vec<Path>,
-    /// Directions (degrees) of lines pointed at for Parallel.
-    pub parallels: Vec<f64>,
+    /// Extension and Perpendicular paths from the acquired points.
+    pub extensions: Vec<Track>,
+    /// Directions (degrees) of lines pointed at for Parallel, with the line.
+    pub parallels: Vec<(f64, Option<Ref>)>,
     /// What the pointer rests on (a snap point, or a line's ends), since when, and whether it was used.
     rest: Option<([f64; 4], Instant, bool)>,
 }
@@ -200,7 +205,7 @@ impl Tracker {
     }
 
     /// Acquire point `p` with its extension paths; an acquired point is dropped again instead.
-    pub fn toggle_point(&mut self, p: Point, extensions: Vec<Path>) {
+    pub fn toggle_point(&mut self, p: Point, extensions: Vec<Track>) {
         if let Some(i) = self.points.iter().position(|q| distance(*q, p) < 1e-9) {
             self.points.remove(i);
             self.extensions.retain(|e| !extensions.contains(e));
@@ -215,10 +220,10 @@ impl Tracker {
         self.extensions.drain(..extra);
     }
 
-    pub fn add_parallel(&mut self, ang: f64) {
+    pub fn add_parallel(&mut self, ang: f64, from: Option<Ref>) {
         let a = ang.rem_euclid(180.0);
-        if !self.parallels.iter().any(|b| (a - b).abs() < 1e-9) {
-            self.parallels.push(a);
+        if !self.parallels.iter().any(|(b, _)| (a - b).abs() < 1e-9) {
+            self.parallels.push((a, from));
             let extra = self.parallels.len().saturating_sub(MAX_LINES);
             self.parallels.drain(..extra);
         }
@@ -232,15 +237,12 @@ impl Tracker {
     /// when it is on (OTRACK also uses them, else it tracks horizontally and vertically).
     pub fn tracks(&self, from: Option<Point>, polar: Option<&[f64]>, ortho: bool, otrack: bool, osnap: bool) -> Vec<Track> {
         let mut out = Vec::new();
-        let mut add = |o: Point, angles: &[f64], source: Source| out.extend(line_angles(angles).into_iter().map(|ang| Track { path: Path::Line { o, ang }, source }));
+        let mut add = |o: Point, angles: &[f64], source: Source| out.extend(line_angles(angles).into_iter().map(|ang| Track { path: Path::Line { o, ang }, source, from: None }));
         if let Some(f) = from {
             if ortho {
                 add(f, &[0.0, 90.0], Source::Ortho);
             } else if let Some(angles) = polar {
                 add(f, angles, Source::Polar);
-            }
-            if osnap {
-                add(f, &self.parallels, Source::Parallel);
             }
         }
         if otrack {
@@ -249,7 +251,10 @@ impl Tracker {
             }
         }
         if osnap {
-            out.extend(self.extensions.iter().map(|&path| Track { path, source: Source::Extension }));
+            if let Some(o) = from {
+                out.extend(self.parallels.iter().map(|&(ang, from)| Track { path: Path::Line { o, ang }, source: Source::Parallel, from }));
+            }
+            out.extend(&self.extensions);
         }
         out
     }
@@ -261,26 +266,34 @@ impl App {
         let asking = self.active_cmd().is_some() || matches!(self.drag, Some(Drag::Grip { .. }));
         let hit = hit.filter(|_| asking && (self.aids.otrack || self.aids.osnap));
         let on = |p: Point| snap::pieces_near(items, guides, p, 1e-6);
+        let line = |p: Point| on(p).into_iter().find_map(|(s, r)| if let Seg::Line(a, b) = s { Some((a, b, r)) } else { None });
         let key = match hit {
-            Some(Snap { kind: Kind::Nearest, p, .. }) => on(p).into_iter().find_map(|s| if let Seg::Line(a, b) = s { Some([a[0], a[1], b[0], b[1]]) } else { None }),
+            Some(Snap { kind: Kind::Nearest, p, .. }) => line(p).map(|(a, b, _)| [a[0], a[1], b[0], b[1]]),
             Some(Snap { p, .. }) => Some([p[0], p[1], f64::INFINITY, f64::INFINITY]),
             None => None,
         };
         if !self.tracker.rested(key, now) {
             return;
         }
-        let (Some(s), Some(k)) = (hit, key) else { return };
+        let Some(s) = hit.filter(|_| key.is_some()) else { return };
         if s.kind == Kind::Nearest {
-            if self.aids.osnap {
-                self.tracker.add_parallel(angle([k[0], k[1]], [k[2], k[3]]));
+            if self.aids.osnap
+                && let Some((a, b, r)) = line(s.p)
+            {
+                self.tracker.add_parallel(angle(a, b), r);
             }
             return;
         }
-        let ends_here = |seg: &Seg| seg.ends().iter().any(|e| distance(*e, s.p) < 1e-6);
-        let mut ext: Vec<Path> = if self.aids.osnap && s.kind == Kind::Endpoint { on(s.p).into_iter().filter(ends_here).map(extension).collect() } else { Vec::new() };
-        // Square to the shape at an end or middle: perpendicular to a line, along the radius of an arc.
+        let mut ext = Vec::new();
+        // Along the shape past an end, and square to it at an end or middle (perpendicular to a
+        // line, along the radius of an arc).
         if self.aids.osnap && matches!(s.kind, Kind::Endpoint | Kind::Midpoint) {
-            ext.extend(on(s.p).into_iter().map(|seg| perpendicular(seg, s.p)));
+            for (seg, from) in on(s.p) {
+                if s.kind == Kind::Endpoint && seg.ends().iter().any(|e| distance(*e, s.p) < 1e-6) {
+                    ext.push(Track { path: extension(seg), source: Source::Extension, from });
+                }
+                ext.push(Track { path: perpendicular(seg, s.p), source: Source::Perpendicular, from });
+            }
         }
         self.tracker.toggle_point(s.p, ext);
     }
@@ -327,6 +340,7 @@ impl App {
             [_, _] => Kind::Intersection,
             [Track { source: Source::Extension, .. }] => Kind::Extension,
             [Track { source: Source::Parallel, .. }] => Kind::Parallel,
+            [Track { source: Source::Perpendicular, .. }] => Kind::Perpendicular,
             _ => return super::canvas::tooltip(painter, at, &describe(&l.tracks[0], l.p)),
         };
         snap::paint_marker(painter, at, kind);
@@ -363,6 +377,7 @@ fn describe(t: &Track, p: Point) -> String {
         Source::Track => "Track",
         Source::Extension => "Extension",
         Source::Parallel => "Parallel",
+        Source::Perpendicular => "Perpendicular",
     };
     match t.path {
         Path::Line { o, .. } => format!("{name}: {:.2} < {:.0}°", distance(o, p), angle(o, p)),
@@ -379,7 +394,7 @@ mod tests {
     }
 
     fn track(o: Point, ang: f64) -> Track {
-        Track { path: Path::Line { o, ang }, source: Source::Track }
+        Track { path: Path::Line { o, ang }, source: Source::Track, from: None }
     }
 
     #[test]
@@ -407,8 +422,8 @@ mod tests {
     #[test]
     fn tracks_from_acquired_points_and_the_last_point() {
         let mut t = Tracker::default();
-        t.toggle_point([10.0, 10.0], vec![Path::Line { o: [10.0, 10.0], ang: 0.0 }]);
-        t.add_parallel(210.0);
+        t.toggle_point([10.0, 10.0], vec![Track { path: Path::Line { o: [10.0, 10.0], ang: 0.0 }, source: Source::Extension, from: None }]);
+        t.add_parallel(210.0, None);
         // OTRACK alone: horizontal and vertical; the extension; nothing from `from` without POLAR.
         let tr = t.tracks(Some([0.0, 0.0]), None, false, true, true);
         assert_eq!(tr.iter().filter(|x| x.source == Source::Track).count(), 2);
@@ -420,7 +435,7 @@ mod tests {
         assert_eq!(tr.iter().filter(|x| x.source == Source::Polar).count(), 4);
         assert_eq!(tr.iter().filter(|x| x.source == Source::Track).count(), 4);
         // Acquiring the same point again drops it with its extension.
-        t.toggle_point([10.0, 10.0], vec![Path::Line { o: [10.0, 10.0], ang: 0.0 }]);
+        t.toggle_point([10.0, 10.0], vec![Track { path: Path::Line { o: [10.0, 10.0], ang: 0.0 }, source: Source::Extension, from: None }]);
         assert!(t.points.is_empty() && t.extensions.is_empty());
     }
 
@@ -525,7 +540,27 @@ mod tests {
     #[test]
     fn extension_of_a_line_runs_past_its_end() {
         let p = extension(Seg::Line([0.0, 0.0], [10.0, 0.0]));
-        let l = lock(&[Track { path: p, source: Source::Extension }], [25.0, 0.4], 1.0).unwrap();
+        let l = lock(&[Track { path: p, source: Source::Extension, from: None }], [25.0, 0.4], 1.0).unwrap();
         assert!(close(l.p, [25.0, 0.0]));
+    }
+
+    #[test]
+    fn an_acquired_end_gives_labelled_paths_that_remember_their_segment() {
+        use crate::model::{Contour, Document, Op, Shape};
+        use std::sync::{Arc, Mutex};
+        let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
+        let a = doc.lock().unwrap().add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 0.0])));
+        let items = doc.lock().unwrap().s.items.clone();
+        let mut app = App::new(doc.clone(), Err(String::new()));
+        app.aids.osnap = true;
+        app.start(crate::gui::command::Cmd::Line);
+        let t0 = Instant::now();
+        app.aim_at_time(&items, [40.2, 0.1], None, t0);
+        app.aim_at_time(&items, [40.2, 0.1], None, t0 + ACQUIRE);
+        let from = Some(Ref::Segment { item: a, contour: 0, segment: 0 });
+        let sources: Vec<_> = app.tracker.extensions.iter().map(|t| (t.source, t.from)).collect();
+        assert_eq!(sources, vec![(Source::Extension, from), (Source::Perpendicular, from)]);
+        let perp = app.tracker.extensions[1];
+        assert_eq!(describe(&perp, [40.0, 20.0]), "Perpendicular: 20.00 < -90°");
     }
 }

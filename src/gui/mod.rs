@@ -80,6 +80,8 @@ struct App {
     draft: Vec<Point>,
     /// The snaps the draft's points were placed with (INFER), by point.
     draft_links: Vec<crate::model::constraints::attach::Link>,
+    /// The tracking paths the draft's points were locked to (INFER), by point.
+    draft_along: Vec<crate::model::constraints::attach::Along>,
     drag: Option<Drag>,
     cmdline: command::CommandLine,
     /// The AutoCAD-style command line; hidden unless the user turns it on (View menu).
@@ -209,6 +211,7 @@ impl App {
             aids: snap::Aids::default(),
             draft: Vec::new(),
             draft_links: Vec::new(),
+            draft_along: Vec::new(),
             drag: None,
             cmdline: command::CommandLine::new(),
             show_cmdline: false,

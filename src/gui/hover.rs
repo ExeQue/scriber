@@ -114,7 +114,7 @@ impl App {
             }
             return;
         }
-        let Some(seg) = snap::pieces_near(items, &guides, p, tol).into_iter().next() else { return };
+        let Some((seg, _)) = snap::pieces_near(items, &guides, p, tol).into_iter().next() else { return };
         let lines = match seg {
             Seg::Line(a, b) => {
                 painter.line_segment([self.w2s(a), self.w2s(b)], Stroke::new(3.0, colour));

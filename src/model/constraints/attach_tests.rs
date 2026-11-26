@@ -81,3 +81,63 @@ fn selection_picks_the_closest_ends_to_join() {
     assert!(selection_refs(&d.s, Kind::Parallel, &[a, c]).is_err(), "a rectangle is not one line");
     assert_eq!(selection_refs(&d.s, Kind::Horizontal, &[a, b]).unwrap().len(), 2);
 }
+
+fn circle(d: &Document, id: u64) -> (Point, f64) {
+    d.item(id).unwrap().shape.contours()[0].as_circle().unwrap()
+}
+
+fn seg(item: u64) -> Ref {
+    Ref::Segment { item, contour: 0, segment: 0 }
+}
+
+#[test]
+fn a_circle_drawn_against_another_stays_touching() {
+    let mut d = Document::new(200.0, 200.0);
+    let a = add(&mut d, Contour::circle(50.0, 50.0, 20.0));
+    // Centre (80, 50), radius point (70, 50) on the first circle (its quadrant).
+    let b = add(&mut d, Contour::circle(80.0, 50.0, 10.0));
+    let found = link_constraints(&d.s, b, &[Link { p: [70.0, 50.0], kind: Kind::Coincident, target: seg(a) }]);
+    assert_eq!(found, vec![(Kind::Tangent, vec![seg(a), seg(b)])]);
+    assert_eq!(d.infer_new(found), 1);
+    d.transform(&[a], &Transform { dx: 5.0, scale_x: 1.2, scale_y: 1.2, ..Transform::default() });
+    d.settle(true).unwrap();
+    let ((c1, r1), (c2, r2)) = (circle(&d, a), circle(&d, b));
+    assert!((r1 - 24.0).abs() < 1e-6, "{r1}");
+    assert!((distance(c1, c2) - (r1 + r2)).abs() < 1e-6, "{c1:?} {r1} {c2:?} {r2}");
+}
+
+#[test]
+fn a_circle_inside_another_touches_it_from_inside() {
+    let mut d = Document::new(200.0, 200.0);
+    let a = add(&mut d, Contour::circle(50.0, 50.0, 20.0));
+    let b = add(&mut d, Contour::circle(60.0, 50.0, 10.0));
+    let found = link_constraints(&d.s, b, &[Link { p: [70.0, 50.0], kind: Kind::Coincident, target: seg(a) }]);
+    assert_eq!(d.infer_new(found), 1);
+    d.transform(&[a], &Transform::translate(0.0, 4.0));
+    d.settle(true).unwrap();
+    let ((c1, r1), (c2, r2)) = (circle(&d, a), circle(&d, b));
+    assert!((distance(c1, c2) - (r1 - r2)).abs() < 1e-6, "{c1:?} {r1} {c2:?} {r2}");
+}
+
+#[test]
+fn a_circle_centred_on_another_keeps_its_centre_on_it() {
+    let mut d = Document::new(200.0, 200.0);
+    let a = add(&mut d, Contour::circle(50.0, 50.0, 20.0));
+    let b = add(&mut d, Contour::circle(70.0, 50.0, 5.0));
+    let found = link_constraints(&d.s, b, &[Link { p: [70.0, 50.0], kind: Kind::Coincident, target: seg(a) }]);
+    assert_eq!(found, vec![(Kind::Coincident, vec![seg(a), Ref::Centre { item: b, contour: 0, segment: 0 }])]);
+}
+
+#[test]
+fn a_circle_touching_a_line_stays_tangent() {
+    let mut d = Document::new(200.0, 200.0);
+    let line = add(&mut d, Contour::line([0.0, 0.0], [100.0, 0.0]));
+    let c = add(&mut d, Contour::circle(50.0, 10.0, 10.0));
+    let found = link_constraints(&d.s, c, &[Link { p: [50.0, 0.0], kind: Kind::Perpendicular, target: seg(line) }]);
+    assert_eq!(found, vec![(Kind::Tangent, vec![seg(line), seg(c)])]);
+    assert_eq!(d.infer_new(found), 1);
+    d.transform(&[line], &Transform::translate(0.0, 6.0));
+    d.settle(true).unwrap();
+    let (centre, r) = circle(&d, c);
+    assert!(((centre[1] - 6.0).abs() - r).abs() < 1e-6, "{centre:?} {r}");
+}
