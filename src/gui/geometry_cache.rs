@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn fill_keeps_holes_and_cache_is_reused() {
         let shape = Shape::Path { contours: vec![Contour::rect(0.0, 0.0, 10.0, 10.0, 0.0), Contour::rect(3.0, 3.0, 4.0, 4.0, 0.0)] };
-        let item = Item { id: 1, name: String::new(), layer: 1, shape, note: String::new() };
+        let item = Item { id: 1, name: String::new(), layer: 1, shape, note: String::new(), rotation: 0.0 };
         let mut cache = GeometryCache::default();
         let (verts, idx) = cache.get(&item, true, 0.1).fill.clone().unwrap();
         // Area of the triangles = outer square minus the hole.

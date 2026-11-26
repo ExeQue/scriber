@@ -214,8 +214,8 @@ impl App {
         if checkpoint {
             d.checkpoint();
         }
-        let bbox = d.bbox(&d.selection).unwrap_or_default();
-        self.drag = Some(Drag::Grip { grip, at, base: d.s.items.clone(), bbox, hot: true });
+        // Item grips only: the selection box frame is not used.
+        self.drag = Some(Drag::Grip { grip, at, base: d.s.items.clone(), frame: Default::default(), hot: true });
         drop(d);
         self.dyn_reset();
         self.message = "Move the cursor and click to place, or type a distance (Tab for the angle) and press Enter. Esc puts it back.".into();

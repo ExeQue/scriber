@@ -2,6 +2,7 @@
 //! radius, a dimension end); the selection box grips resize, stretch and rotate everything selected.
 
 use crate::model::geom::{arc_params, distance};
+use crate::model::turn::{to_frame, to_world};
 use crate::model::{BBox, Contour, Item, Point, Shape, Transform};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -102,15 +103,16 @@ pub fn padded(b: BBox, pad: f64) -> BBox {
     [b[0] - pad, b[1] - pad, b[2] + 2.0 * pad, b[3] + 2.0 * pad]
 }
 
-/// The free-transform grips around the selection box `b`, drawn `pad` mm outside it so they do not
-/// cover item grips; the rotate grip sits `lift` mm above the top edge.
-pub fn box_grips(b: BBox, pad: f64, lift: f64) -> Vec<(Grip, Point)> {
+/// The free-transform grips around the selection box `b` (in the frame turned by `angle`, see
+/// `turn::turned_box`), drawn `pad` mm outside it so they do not cover item grips; the rotate grip
+/// sits `lift` mm above the top edge. Positions are in world coordinates.
+pub fn box_grips(b: BBox, angle: f64, pad: f64, lift: f64) -> Vec<(Grip, Point)> {
     let p = padded(b, pad);
     let mut out: Vec<(Grip, Point)> = [(0.0, 0.0), (0.5, 0.0), (1.0, 0.0), (1.0, 0.5), (1.0, 1.0), (0.5, 1.0), (0.0, 1.0), (0.0, 0.5)]
         .into_iter()
-        .map(|(fx, fy)| (Grip::Scale { fx, fy }, [p[0] + fx * p[2], p[1] + fy * p[3]]))
+        .map(|(fx, fy)| (Grip::Scale { fx, fy }, to_world([p[0] + fx * p[2], p[1] + fy * p[3]], angle)))
         .collect();
-    out.push((Grip::Rotate, [p[0] + p[2] / 2.0, p[1] - lift]));
+    out.push((Grip::Rotate, to_world([p[0] + p[2] / 2.0, p[1] - lift], angle)));
     out
 }
 
@@ -172,10 +174,13 @@ pub fn drag_item(shape: &Shape, grip: Grip, at: Point, p: Point) -> Shape {
     s
 }
 
-/// The transform a selection box grip makes when dragged from `at` to `p`. `b` is the selection's
-/// bounding box at the start of the drag. Shift keeps proportions on corners and snaps rotation to 15°;
-/// Alt resizes around the box's centre instead of the opposite side.
-pub fn box_transform(b: BBox, grip: Grip, at: Point, p: Point, shift: bool, alt: bool) -> Option<Transform> {
+/// The transform a selection box grip makes when dragged from `at` to `p` (world points). `b` is the
+/// selection box at the start of the drag, in the frame turned by `angle`; the transform is made in that
+/// frame too (apply it with `Document::transform_turned`), so resizing runs along the turned axes.
+/// Shift keeps proportions on corners and snaps the resulting angle to 15°; Alt resizes around the
+/// box's centre instead of the opposite side.
+pub fn box_transform(b: BBox, angle: f64, grip: Grip, at: Point, p: Point, shift: bool, alt: bool) -> Option<Transform> {
+    let (at, p) = (to_frame(at, angle), to_frame(p, angle));
     match grip {
         Grip::Scale { fx, fy } => {
             let handle = [b[0] + fx * b[2], b[1] + fy * b[3]];
@@ -199,7 +204,7 @@ pub fn box_transform(b: BBox, grip: Grip, at: Point, p: Point, shift: bool, alt:
             let ang = |q: Point| (q[1] - c[1]).atan2(q[0] - c[0]).to_degrees();
             let mut rotate = ang(p) - ang(at);
             if shift {
-                rotate = (rotate / 15.0).round() * 15.0;
+                rotate = ((angle + rotate) / 15.0).round() * 15.0 - angle;
             }
             Some(Transform { rotate, pivot: Some(c), ..Default::default() })
         }
@@ -212,7 +217,7 @@ mod tests {
     use super::*;
 
     fn item(shape: Shape) -> Item {
-        Item { id: 7, name: String::new(), layer: 1, shape, note: String::new() }
+        Item { id: 7, name: String::new(), layer: 1, shape, note: String::new(), rotation: 0.0 }
     }
 
     #[test]
@@ -268,19 +273,19 @@ mod tests {
     fn box_resize_and_rotate() {
         let b = [0.0, 0.0, 10.0, 20.0];
         // Bottom-right corner dragged by (+10, +10): 2× wide, 1.5× tall around the top-left.
-        let t = box_transform(b, Grip::Scale { fx: 1.0, fy: 1.0 }, [10.0, 20.0], [20.0, 30.0], false, false).unwrap();
+        let t = box_transform(b, 0.0, Grip::Scale { fx: 1.0, fy: 1.0 }, [10.0, 20.0], [20.0, 30.0], false, false).unwrap();
         assert_eq!((t.scale_x, t.scale_y, t.pivot), (2.0, 1.5, Some([0.0, 0.0])));
-        let t = box_transform(b, Grip::Scale { fx: 1.0, fy: 1.0 }, [10.0, 20.0], [20.0, 30.0], true, false).unwrap();
+        let t = box_transform(b, 0.0, Grip::Scale { fx: 1.0, fy: 1.0 }, [10.0, 20.0], [20.0, 30.0], true, false).unwrap();
         assert_eq!((t.scale_x, t.scale_y), (2.0, 2.0));
         // Right edge only stretches x.
-        let t = box_transform(b, Grip::Scale { fx: 1.0, fy: 0.5 }, [10.0, 10.0], [15.0, 99.0], false, false).unwrap();
+        let t = box_transform(b, 0.0, Grip::Scale { fx: 1.0, fy: 0.5 }, [10.0, 10.0], [15.0, 99.0], false, false).unwrap();
         assert_eq!((t.scale_x, t.scale_y), (1.5, 1.0));
         // Rotating from straight above the centre to its right is +90° (clockwise on screen).
-        let t = box_transform(b, Grip::Rotate, [5.0, -10.0], [30.0, 11.0], true, false).unwrap();
+        let t = box_transform(b, 0.0, Grip::Rotate, [5.0, -10.0], [30.0, 11.0], true, false).unwrap();
         assert_eq!((t.rotate, t.pivot), (90.0, Some([5.0, 10.0])));
         // Alt: around the centre, so the same drag doubles the half-width.
-        let t = box_transform(b, Grip::Scale { fx: 1.0, fy: 0.5 }, [10.0, 10.0], [15.0, 99.0], false, true).unwrap();
+        let t = box_transform(b, 0.0, Grip::Scale { fx: 1.0, fy: 0.5 }, [10.0, 10.0], [15.0, 99.0], false, true).unwrap();
         assert_eq!((t.scale_x, t.pivot), (2.0, Some([5.0, 10.0])));
-        assert!(box_transform(b, Grip::Move { id: 1 }, [0.0, 0.0], [1.0, 1.0], false, false).is_none());
+        assert!(box_transform(b, 0.0, Grip::Move { id: 1 }, [0.0, 0.0], [1.0, 1.0], false, false).is_none());
     }
 }

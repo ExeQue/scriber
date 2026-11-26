@@ -13,6 +13,7 @@ pub mod ops;
 pub mod preflight;
 pub mod preview;
 pub mod text;
+pub mod turn;
 
 pub use geom::{BBox, Contour, Point, Transform};
 pub use guides::Guide;
@@ -188,7 +189,8 @@ impl Document {
     /// Add an item on `layer`.
     pub fn add_to(&mut self, layer: u64, name: &str, shape: Shape) -> u64 {
         let id = self.new_id();
-        self.s.items.push(Item { id, name: name.into(), layer, shape, note: String::new() });
+        let rotation = turn::own_rotation(&shape);
+        self.s.items.push(Item { id, name: name.into(), layer, shape, note: String::new(), rotation });
         self.touch();
         id
     }
@@ -236,6 +238,7 @@ impl Document {
         });
         for item in self.s.items.iter_mut().filter(|i| ids.contains(&i.id)) {
             item.shape = item.shape.transformed(t, pivot);
+            item.rotation = turn::after(item.rotation, t);
         }
         self.touch();
     }

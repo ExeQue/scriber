@@ -122,6 +122,14 @@ pub struct Item {
     pub shape: Shape,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
+    /// The item's own angle in degrees (positive = clockwise; missing = 0). Rotating the item turns it,
+    /// and its selection box turns with it; see `model/turn.rs` for when a transform resets it.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub rotation: f64,
+}
+
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
 }
 
 #[derive(Clone, Debug, Serialize, JsonSchema)]

@@ -2,7 +2,7 @@
 
 use crate::export;
 use crate::model::constraints::attach;
-use crate::model::{BoolOp, Contour, Document, Guide, Kind, Op, Ref, Shape, Shared, Transform, text};
+use crate::model::{BoolOp, Contour, Document, Guide, Kind, Op, Ref, Shape, Shared, Transform, text, turn};
 use base64::Engine;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
@@ -167,6 +167,9 @@ pub struct UpdateItem {
     pub shape: Option<ShapeInput>,
     /// Text only: change the font family (see list_fonts), keeping everything else.
     pub font: Option<String>,
+    /// Turn the item to this angle in degrees (clockwise positive) about the centre of its own box.
+    /// get_document reports each item's rotation; a new shape starts at 0 (text and images: their rotation).
+    pub rotation: Option<f64>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -424,6 +427,7 @@ fn summary(d: &Document) -> Value {
             let mut v = serde_json::to_value(i).unwrap();
             v["op"] = json!(d.s.op(i));
             v["bbox"] = json!(i.shape.metrics().bbox);
+            v["rotation"] = json!(i.rotation);
             v
         })
         .collect();
@@ -548,7 +552,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Change an item's name, layer (or op: moves it to the first layer with that op), note, geometry or (text only) font. The old fill: true is still accepted and means op engrave.")]
+    #[tool(description = "Change an item's name, layer (or op: moves it to the first layer with that op), note, geometry, rotation (degrees, about its own centre) or (text only) font. The old fill: true is still accepted and means op engrave.")]
     fn update_item(&self, Parameters(p): Parameters<UpdateItem>) -> ToolResult {
         if let Some(e) = p.shape.as_ref().and_then(ShapeInput::font_error).or_else(|| p.font.as_deref().and_then(text::font_error)) {
             return fail(e);
@@ -577,11 +581,17 @@ impl Server {
             }
             if let Some(s) = p.shape {
                 item.shape = s.build().1;
+                item.rotation = turn::own_rotation(&item.shape);
             }
             if let (Some(f), Shape::Text { font, .. }) = (p.font, &mut item.shape) {
                 *font = f;
             }
-            ok(serde_json::to_value(&*item).unwrap())
+            if let Some(a) = p.rotation
+                && let Err(e) = d.set_rotation(&[p.id], a)
+            {
+                return fail(e);
+            }
+            ok(serde_json::to_value(d.item(p.id).unwrap()).unwrap())
         })
     }
 
@@ -593,7 +603,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Move, rotate, scale and/or mirror items (empty ids = the selection). Order: mirror, scale, rotate around the pivot, then move by dx/dy. The pivot defaults to the centre of the items' bounding box.")]
+    #[tool(description = "Move, rotate, scale and/or mirror items (empty ids = the selection). Order: mirror, scale, rotate around the pivot, then move by dx/dy. The pivot defaults to the centre of the items' bounding box. Each item's rotation (see get_document) adds the rotate angle; a mirror negates it; a non-uniform scale resets it to 0 unless the item's angle is a multiple of 90°.")]
     fn transform_items(&self, Parameters(p): Parameters<TransformItems>) -> ToolResult {
         self.edit_ids(&p.ids, |d, ids| {
             d.transform(&ids, &p.transform);

@@ -473,7 +473,7 @@ mod tests {
     use crate::model::Contour;
 
     fn item(id: u64, c: Contour) -> Item {
-        Item { id, name: String::new(), layer: 1, shape: Shape::path(c), note: String::new() }
+        Item { id, name: String::new(), layer: 1, shape: Shape::path(c), note: String::new(), rotation: 0.0 }
     }
 
     fn snap_at(items: &[Item], p: Point) -> Snap {

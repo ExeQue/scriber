@@ -4,6 +4,7 @@ use super::App;
 use super::snap::Aid;
 use super::labels::{OPEN_SCORED, op_help, op_label};
 use super::layers::layer_combo;
+use crate::model::turn;
 use crate::model::{BBox, Op, Shape, State, Transform};
 use eframe::egui::{self, Color32, RichText};
 
@@ -154,6 +155,17 @@ impl App {
             }
             if !sel.is_empty() {
                 ui.separator();
+                // The angle the selection shares; typing turns it about its box centre.
+                if let Some(a) = turn::shared_rotation(d.s.items.iter().filter(|i| sel.contains(&i.id))) {
+                    ui.horizontal(|ui| {
+                        ui.label("Angle");
+                        let mut x = a;
+                        let r = ui.add(egui::DragValue::new(&mut x).speed(0.5).max_decimals(2).suffix("°"));
+                        if r.on_hover_text("Turns the selection about the centre of its box (clockwise is positive).").changed() {
+                            changed |= d.set_rotation(&sel, x).is_ok();
+                        }
+                    });
+                }
                 ui.horizontal_wrapped(|ui| {
                     let buttons: [(&str, Action); 7] = [
                         ("⟳ Rotate 90°", Action::Transform(Transform { rotate: 90.0, ..Default::default() })),
@@ -320,7 +332,7 @@ fn shape_editor(ui: &mut egui::Ui, shape: &mut Shape) -> bool {
         }
     }
     egui::Grid::new("shape").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-        for (key, val) in obj.iter_mut().filter(|(k, _)| !matches!(k.as_str(), "kind" | "image" | "contours")) {
+        for (key, val) in obj.iter_mut().filter(|(k, _)| !matches!(k.as_str(), "kind" | "image" | "contours" | "rotation")) {
             ui.label(field_label(key));
             if key == "font" {
                 let mut font = val.as_str().unwrap_or_default().to_string();
