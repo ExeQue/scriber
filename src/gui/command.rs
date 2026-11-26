@@ -9,11 +9,14 @@ mod dynamic;
 mod context_menu;
 mod draw;
 mod edit;
+mod guide;
 mod infer;
 mod modify;
 mod parse;
 mod rects;
 mod preview;
+mod reshape;
+mod ux;
 
 use super::App;
 use super::tools::Tool;
@@ -55,10 +58,30 @@ pub enum Cmd {
     DelConstraint,
     ConstraintBar,
     Parameters,
+    // The AutoCAD UX pack (see command/ux.rs).
+    Xline,
+    Ray,
+    Centerline,
+    Centermark,
+    Zoom,
+    Stretch,
+    Join,
+    Explode,
+    Align,
+    MatchProp,
+    Break,
+    Extend,
+    Lengthen,
+    Group,
+    Ungroup,
+    Isolate,
+    Unisolate,
+    SelectSimilar,
+    QuickSelect,
 }
 
 /// Name, alias and the canvas tool used while the command asks for points.
-const COMMANDS: [(Cmd, &str, &str, Tool); 48] = [
+const COMMANDS: [(Cmd, &str, &str, Tool); 67] = [
     (Cmd::Line, "LINE", "L", Tool::Line),
     (Cmd::Circle, "CIRCLE", "C", Tool::Circle),
     (Cmd::Arc, "ARC", "A", Tool::Arc),
@@ -107,6 +130,25 @@ const COMMANDS: [(Cmd, &str, &str, Tool); 48] = [
     (Cmd::DelConstraint, "DELCONSTRAINT", "DELCON", Tool::Select),
     (Cmd::ConstraintBar, "CONSTRAINTBAR", "CBAR", Tool::Select),
     (Cmd::Parameters, "PARAMETERS", "PAR", Tool::Select),
+    (Cmd::Xline, "XLINE", "XL", Tool::Pick),
+    (Cmd::Ray, "RAY", "RAY", Tool::Pick),
+    (Cmd::Centerline, "CENTERLINE", "CENTERLINE", Tool::Pick),
+    (Cmd::Centermark, "CENTERMARK", "CENTERMARK", Tool::Pick),
+    (Cmd::Zoom, "ZOOM", "Z", Tool::Rect),
+    (Cmd::Stretch, "STRETCH", "S", Tool::Rect),
+    (Cmd::Join, "JOIN", "J", Tool::Select),
+    (Cmd::Explode, "EXPLODE", "X", Tool::Select),
+    (Cmd::Align, "ALIGN", "AL", Tool::Pick),
+    (Cmd::MatchProp, "MATCHPROP", "MA", Tool::Pick),
+    (Cmd::Break, "BREAK", "BR", Tool::Pick),
+    (Cmd::Extend, "EXTEND", "EX", Tool::Pick),
+    (Cmd::Lengthen, "LENGTHEN", "LEN", Tool::Pick),
+    (Cmd::Group, "GROUP", "G", Tool::Select),
+    (Cmd::Ungroup, "UNGROUP", "UNG", Tool::Select),
+    (Cmd::Isolate, "ISOLATEOBJECTS", "ISOLATE", Tool::Select),
+    (Cmd::Unisolate, "UNISOLATEOBJECTS", "UNISOLATE", Tool::Select),
+    (Cmd::SelectSimilar, "SELECTSIMILAR", "SELECTSIMILAR", Tool::Select),
+    (Cmd::QuickSelect, "QSELECT", "QSELECT", Tool::Select),
 ];
 
 impl Cmd {
@@ -180,6 +222,9 @@ enum Step {
     Constrain,
     Location,
     Expr,
+    /// UX-pack commands: choosing the objects, then their own points and picks (see command/ux.rs).
+    UxSelect,
+    Ux,
 }
 
 pub struct CommandLine {
@@ -204,6 +249,7 @@ pub struct CommandLine {
     dynamic: dynamic::DynInput,
     circle_mode: curves::CircleMode,
     constrain: constrain::ConstrainState,
+    ux: ux::UxState,
     /// ROTATE angle and SCALE factor as set on the command card.
     card_angle: f64,
     card_factor: f64,
@@ -227,6 +273,7 @@ impl CommandLine {
             dynamic: dynamic::DynInput::default(),
             circle_mode: curves::CircleMode::default(),
             constrain: constrain::ConstrainState::default(),
+            ux: ux::UxState::default(),
             card_angle: 90.0,
             card_factor: 2.0,
         }
@@ -273,6 +320,7 @@ impl App {
             c if c.edits() => self.start_edit(c),
             c if c.modifies() => self.start_modify(c),
             c if c.constrains() => self.start_constrain(c),
+            c if c.ux() => self.start_ux(c),
             Cmd::Polygon => self.begin(cmd, Step::Sides),
             _ => self.begin(cmd, Step::Draw),
         }
@@ -387,6 +435,7 @@ impl App {
             Step::Select | Step::Base | Step::Second | Step::EraseSource => self.edit_step(cmd, step, entry, pointer),
             Step::Value | Step::Pick | Step::Side | Step::Choose => self.modify_step(cmd, step, entry, pointer),
             Step::Constrain | Step::Location | Step::Expr => self.constrain_step(cmd, step, entry),
+            Step::Ux | Step::UxSelect => self.ux_step(cmd, step, entry, pointer),
             _ => self.draw_step(cmd, step, entry, pointer),
         };
         if let Err(e) = result {
@@ -401,6 +450,9 @@ impl App {
         }
         if cmd.constrains() {
             return self.constrain_prompt(cmd, step);
+        }
+        if cmd.ux() {
+            return self.ux_prompt(cmd, step);
         }
         let n = self.draft.len();
         let text = match (step, cmd) {
@@ -419,7 +471,7 @@ impl App {
             (Step::Second, _) => "Specify second point:",
             (Step::EraseSource, _) => "Erase source objects? [Yes/No] <No>:",
             (Step::Draw, _) => self.curve_prompt(cmd, n).unwrap_or_else(|| draw::prompt(cmd, n)),
-            (Step::Value | Step::Pick | Step::Side | Step::Choose | Step::Constrain | Step::Location | Step::Expr, _) => "",
+            (Step::Value | Step::Pick | Step::Side | Step::Choose | Step::Constrain | Step::Location | Step::Expr | Step::Ux | Step::UxSelect, _) => "",
         };
         text.into()
     }

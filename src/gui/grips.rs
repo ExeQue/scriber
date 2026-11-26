@@ -58,6 +58,7 @@ pub fn item_grips(item: &Item) -> Vec<(Grip, Point)> {
         }
         Shape::Text { x, y, .. } => vec![(Grip::Move { id }, [*x, *y])],
         Shape::Image { x, y, w, h, .. } => vec![(Grip::Move { id }, [x + w / 2.0, y + h / 2.0])],
+        Shape::Guide(g) => vec![(Grip::Move { id }, g.anchor())],
         Shape::Dimension { .. } => {
             let g = item.shape.dimension().unwrap();
             vec![(Grip::DimEnd { id, second: false }, g.a), (Grip::DimEnd { id, second: true }, g.b), (Grip::DimLine { id }, g.mid)]

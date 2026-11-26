@@ -156,13 +156,14 @@ impl App {
             }
             (Cmd::Array, Step::Value) => self.array_fields(ui),
             (c, _) if c.constrains() => self.constrain_fields(ui, c, step),
+            (c, _) if c.ux() => self.ux_fields(ui, c, step),
             _ => {}
         }
     }
 
     /// For exact work without the command line: type a length, angle or point (`40`, `10,20`, `@15,0`, `@40<30`).
     fn exact_value(&mut self, ui: &mut egui::Ui, step: Step) {
-        if !matches!(step, Step::Draw | Step::Base | Step::Second | Step::Diameter | Step::Side) || self.show_cmdline || self.has_dyn_fields() {
+        if !matches!(step, Step::Draw | Step::Base | Step::Second | Step::Diameter | Step::Side | Step::Ux) || self.show_cmdline || self.has_dyn_fields() {
             return;
         }
         ui.horizontal(|ui| {
@@ -268,6 +269,7 @@ pub(super) fn title(cmd: Cmd) -> &'static str {
         Cmd::Union => "Merge shapes",
         Cmd::Subtract => "Cut out",
         Cmd::Intersect => "Keep the overlap",
+        c if c.ux() => super::ux::title(c),
         c => super::constrain::constrain_title(c),
     }
 }
@@ -275,7 +277,7 @@ pub(super) fn title(cmd: Cmd) -> &'static str {
 /// The text of the button that does what Enter does at this point.
 pub(super) fn next_label(cmd: Cmd, step: Step) -> &'static str {
     match step {
-        Step::Select | Step::Choose => "Done selecting",
+        Step::Select | Step::Choose | Step::UxSelect => "Done selecting",
         Step::Value | Step::Sides | Step::Fillet | Step::Height => "Next",
         Step::Content => "Place text",
         Step::Expr => "Apply",

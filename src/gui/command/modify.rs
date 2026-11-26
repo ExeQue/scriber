@@ -273,7 +273,7 @@ impl App {
     }
 
     /// The item under a clicked point.
-    fn item_at(&self, p: Point) -> Result<u64, String> {
+    pub(super) fn item_at(&self, p: Point) -> Result<u64, String> {
         let d = self.doc.lock().unwrap();
         self.hit(&d, p).ok_or_else(|| "Nothing there; click on a shape.".into())
     }
@@ -312,7 +312,7 @@ impl App {
     }
 
     /// Run an op on the selection; it becomes the command's undo step only if it succeeds.
-    fn apply<T>(&mut self, f: impl FnOnce(&mut Document, &[u64]) -> Result<T, String>) -> Result<T, String> {
+    pub(super) fn apply<T>(&mut self, f: impl FnOnce(&mut Document, &[u64]) -> Result<T, String>) -> Result<T, String> {
         let ids = self.doc.lock().unwrap().selection.clone();
         self.apply_ids(&ids, f)
     }
@@ -322,7 +322,7 @@ impl App {
         self.apply_ids(ids, f)
     }
 
-    fn apply_ids<T>(&mut self, ids: &[u64], f: impl FnOnce(&mut Document, &[u64]) -> Result<T, String>) -> Result<T, String> {
+    pub(super) fn apply_ids<T>(&mut self, ids: &[u64], f: impl FnOnce(&mut Document, &[u64]) -> Result<T, String>) -> Result<T, String> {
         let mut d = self.doc.lock().unwrap();
         let before = d.s.clone();
         let out = f(&mut d, ids)?;

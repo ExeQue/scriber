@@ -11,6 +11,7 @@ mod fonts;
 mod geometry_cache;
 mod glyphs;
 mod grips;
+mod guides;
 mod labels;
 mod library_window;
 mod panels;
@@ -19,7 +20,9 @@ mod select;
 mod snap;
 mod svg_import;
 mod toolbar;
+mod toolbar_ux;
 mod tools;
+mod zoom;
 
 use crate::model::{Document, Op, Point, Shape, Shared, Transform};
 use crate::{agents, export, mcp};
@@ -39,11 +42,16 @@ struct View {
     auto_fit: bool,
     /// Canvas size the last fit was made for.
     fit_size: Vec2,
+    /// Earlier views (offset, zoom) for ZOOM Previous, newest last.
+    history: Vec<(Vec2, f32)>,
+    /// The wheel zoomed last frame (one wheel gesture is one history step).
+    wheeling: bool,
 }
 
 impl View {
     /// Show the whole material again, and keep it in view when the window changes size.
     fn zoom_extents(&mut self) {
+        self.remember();
         self.auto_fit = true;
         self.fit_size = Vec2::ZERO;
     }
@@ -102,6 +110,12 @@ struct App {
     svg_dialog: Option<svg_import::SvgDialog>,
     /// The open "Machines & materials" window.
     library: Option<library_window::Editor>,
+    /// View > Show guide lines.
+    show_guides: bool,
+    /// ISOLATE: only these items are shown (view only, not saved).
+    isolated: Option<Vec<u64>>,
+    /// Space was held for a pan drag, so its release is not Enter.
+    space_panned: bool,
 }
 
 pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
@@ -162,7 +176,7 @@ impl App {
             measured: None,
             pointer_mm: None,
             dyn_tabs: 0,
-            view: View { offset: Vec2::ZERO, zoom: 3.0, auto_fit: true, fit_size: Vec2::ZERO },
+            view: View { offset: Vec2::ZERO, zoom: 3.0, auto_fit: true, fit_size: Vec2::ZERO, history: Vec::new(), wheeling: false },
             canvas_rect: Rect::NOTHING,
             textures: HashMap::new(),
             geometry: geometry_cache::GeometryCache::default(),
@@ -182,6 +196,9 @@ impl App {
             allow_close: false,
             svg_dialog: None,
             library: None,
+            show_guides: true,
+            isolated: None,
+            space_panned: false,
         }
     }
 
@@ -374,12 +391,13 @@ impl App {
     }
 
     /// Space acts as Enter, except where the prompt asks for text. Takes the space out of the input.
-    fn space_as_enter(&self, ctx: &egui::Context) -> bool {
-        if self.takes_text() || !ctx.input(|i| i.key_pressed(Key::Space)) {
+    /// It acts on release, so Space held for a pan drag (see `zoom.rs`) is not Enter.
+    fn space_as_enter(&mut self, ctx: &egui::Context) -> bool {
+        if self.takes_text() {
             return false;
         }
-        ctx.input_mut(|i| i.events.retain(|e| !matches!(e, Event::Key { key: Key::Space, .. }) && !matches!(e, Event::Text(t) if t == " ")));
-        true
+        ctx.input_mut(|i| i.events.retain(|e| !matches!(e, Event::Key { key: Key::Space, pressed: true, .. }) && !matches!(e, Event::Text(t) if t == " ")));
+        ctx.input(|i| i.key_released(Key::Space)) && !std::mem::take(&mut self.space_panned)
     }
 
     fn close_dialog(&mut self, ctx: &egui::Context) {

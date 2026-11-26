@@ -1,6 +1,6 @@
 //! The panels around the canvas: menu bar, toolbar (left), properties (right) and status bar.
 
-use super::App;
+use super::{App, command};
 use super::snap::Aid;
 use super::labels::{OPEN_SCORED, op_color, op_help, op_label};
 use crate::model::{BBox, Op, Shape, State, Transform};
@@ -68,6 +68,19 @@ impl App {
                 if ui.button("Show whole material").clicked() {
                     self.view.zoom_extents();
                 }
+                if ui.button("Zoom window  (Z)").clicked() {
+                    self.start(command::Cmd::Zoom);
+                }
+                if ui.button("Previous view").clicked() {
+                    self.zoom_previous();
+                }
+                if ui.button("Zoom to selection").clicked() {
+                    self.zoom_selection();
+                }
+                if self.isolated.is_some() && ui.button("Show everything (end isolation)").clicked() {
+                    self.isolated = None;
+                }
+                ui.checkbox(&mut self.show_guides, "Show guide lines");
                 ui.checkbox(&mut self.snap, "Snap to grid");
                 ui.checkbox(&mut self.show_cmdline, "Command line (for CAD users)");
             });

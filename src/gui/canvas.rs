@@ -32,6 +32,7 @@ impl App {
         response.context_menu(|ui| self.canvas_menu(ui));
         self.fit_if_needed(rect);
         self.pan_and_zoom(ui, &response);
+        let space_pan = self.space_pan(ui, &response);
         if response.hovered() {
             ctx.set_cursor_icon(egui::CursorIcon::None);
         }
@@ -39,7 +40,9 @@ impl App {
         self.aids.hit = None;
         self.aids.tracking = None;
         let raw = response.hover_pos().map(|p| self.s2w(p));
-        let pointer = if self.tool == Tool::Select {
+        let pointer = if space_pan {
+            raw
+        } else if self.tool == Tool::Select {
             self.select_input(ui, &response, raw)
         } else {
             let from = self.draft.last().copied();
@@ -159,6 +162,9 @@ impl App {
     /// Middle drag pans, and so does a right drag (egui only reports a drag once the pointer moved,
     /// so a plain right click stays free); the wheel (or pinch) zooms around the pointer.
     fn pan_and_zoom(&mut self, ui: &egui::Ui, response: &egui::Response) {
+        if response.drag_started_by(PointerButton::Middle) || response.drag_started_by(PointerButton::Secondary) {
+            self.view.remember();
+        }
         if response.dragged_by(PointerButton::Middle) || response.dragged_by(PointerButton::Secondary) {
             self.view.offset += response.drag_delta();
             self.view.auto_fit = false;
@@ -166,7 +172,12 @@ impl App {
         let Some(hover) = response.hover_pos() else { return };
         let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
         let factor = pinch * (scroll.y * 0.0025).exp();
-        if (factor - 1.0).abs() > 1e-4 {
+        let wheeling = (factor - 1.0).abs() > 1e-4;
+        if wheeling && !std::mem::replace(&mut self.view.wheeling, true) {
+            self.view.remember();
+        }
+        self.view.wheeling = wheeling;
+        if wheeling {
             let before = self.s2w(hover);
             self.view.zoom = (self.view.zoom * factor).clamp(0.05, 400.0);
             self.view.offset += hover - self.w2s(before);
@@ -221,7 +232,7 @@ impl App {
     pub(super) fn hit(&self, d: &Document, p: Point) -> Option<u64> {
         let tol = (PICKBOX / self.view.zoom) as f64;
         let mut inside: Option<(f64, u64)> = None;
-        for item in d.s.items.iter().rev() {
+        for item in d.s.items.iter().rev().filter(|i| self.visible(i)) {
             let near_line = item.shape.outline(0.05).iter().any(|line| line.windows(2).any(|s| segment_distance(p, s[0], s[1]) <= tol));
             if near_line {
                 return Some(item.id);
@@ -263,7 +274,14 @@ impl App {
         let ids: Vec<u64> = state.items.iter().map(|i| i.id).collect();
         self.geometry.retain(&ids);
         for item in &state.items {
+            if !self.visible(item) {
+                continue;
+            }
             let selected = selection.contains(&item.id);
+            if let Shape::Guide(g) = &item.shape {
+                self.paint_guide(&painter, g, selected);
+                continue;
+            }
             self.paint_item(ui.ctx(), &painter, &state.images, item, selected, tol);
         }
         self.paint_dimensions(&painter, &state);
@@ -359,6 +377,7 @@ impl App {
                 painter.add(mesh);
             }
             Shape::Dimension { .. } => self.paint_dimension(painter, &item.shape, color),
+            Shape::Guide(_) => {}
         }
     }
 

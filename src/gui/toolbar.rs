@@ -12,7 +12,7 @@ const BUTTON: f32 = 34.0;
 const ACCENT: Color32 = Color32::from_rgb(0, 110, 160);
 
 /// The toolbar groups; `None` is the Select button.
-const GROUPS: [(&str, &[Option<Cmd>]); 5] = [
+const GROUPS: [(&str, &[Option<Cmd>]); 9] = [
     ("Draw", &[None, Some(Cmd::Line), Some(Cmd::Pline), Some(Cmd::Rectang), Some(Cmd::Circle), Some(Cmd::Arc), Some(Cmd::Polygon), Some(Cmd::Text), Some(Cmd::DimLinear), Some(Cmd::Dist)]),
     ("Modify", &[Some(Cmd::Move), Some(Cmd::Copy), Some(Cmd::Rotate), Some(Cmd::Scale), Some(Cmd::Mirror), Some(Cmd::Erase), Some(Cmd::Fillet), Some(Cmd::Chamfer), Some(Cmd::Offset), Some(Cmd::Trim), Some(Cmd::Array)]),
     ("Combine", &[Some(Cmd::Union), Some(Cmd::Subtract), Some(Cmd::Intersect)]),
@@ -49,6 +49,10 @@ const GROUPS: [(&str, &[Option<Cmd>]); 5] = [
             Some(Cmd::Parameters),
         ],
     ),
+    ("Guides", &[Some(Cmd::Xline), Some(Cmd::Ray), Some(Cmd::Centerline), Some(Cmd::Centermark)]),
+    ("Reshape", &[Some(Cmd::Stretch), Some(Cmd::Join), Some(Cmd::Explode), Some(Cmd::Align), Some(Cmd::MatchProp), Some(Cmd::Break), Some(Cmd::Extend), Some(Cmd::Lengthen)]),
+    ("Organise", &[Some(Cmd::Group), Some(Cmd::Ungroup), Some(Cmd::SelectSimilar), Some(Cmd::QuickSelect), Some(Cmd::Isolate), Some(Cmd::Unisolate)]),
+    ("View", &[Some(Cmd::Zoom)]),
 ];
 
 fn help(cmd: Option<Cmd>) -> &'static str {
@@ -84,6 +88,7 @@ fn help(cmd: Option<Cmd>) -> &'static str {
         Cmd::DelConstraint => "Remove every constraint from the selected shapes. They stay where they are.",
         Cmd::ConstraintBar => "Show or hide the constraint icons (for the selection, or all).",
         Cmd::Parameters => "List the locked sizes (d1, d2, …) to change their values or link them with formulas.",
+        c => super::toolbar_ux::help(c),
     }
 }
 
@@ -404,6 +409,7 @@ fn paint_icon(p: &egui::Painter, r: Rect, c: Color32, cmd: Option<Cmd>) {
             }
             line(&[(0.4, 0.1), (0.4, 0.9)]);
         }
+        cmd => super::toolbar_ux::paint(p, r, c, cmd),
     }
 }
 

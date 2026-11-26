@@ -92,6 +92,7 @@ impl App {
                 self.doc.lock().unwrap().selection.clear();
             }
         }
+        self.ux_menu(ui, selected);
         ui.separator();
         self.constraint_menu(ui);
         ui.separator();
