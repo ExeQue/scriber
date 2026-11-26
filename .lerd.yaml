@@ -2,5 +2,5 @@ domains:
   - scriber-docs
 secured: true
 proxy:
-  command: npm --prefix docs run docs:dev -- --host 0.0.0.0 --port 5191 --strictPort
+  command: npm --prefix docs run docs:dev -- --host 0.0.0.0 --port ${PORT:-5191} --strictPort
   port: 5191
