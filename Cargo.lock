@@ -3605,10 +3605,12 @@ dependencies = [
  "rmcp",
  "serde",
  "serde_json",
+ "sha2",
  "skrifa 0.49.0",
  "tokio",
  "toml_edit",
  "tower-service",
+ "uuid",
  "windows-sys 0.61.2",
  "zip",
 ]

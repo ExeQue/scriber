@@ -339,6 +339,12 @@ pub struct ExportSvg {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ExportXs {
+    /// Where to write the .xs project.
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ExportPng {
     /// Where to write the PNG. Without a path the image is returned so you can look at it.
     pub path: Option<String>,
@@ -807,6 +813,20 @@ impl Server {
         let svg = export::svg(&self.doc.lock().unwrap().s, p.include_annotations);
         match std::fs::write(&p.path, svg) {
             Ok(()) => ok(json!({"path": p.path})),
+            Err(e) => fail(format!("cannot write {}: {e}", p.path)),
+        }
+    }
+
+    #[tool(description = "Export the document as an xTool Studio project (.xs) for the document's xTool machine and laser module: one colour layer per shown cut/score/engrave layer, each with its processing type (cut, score = vector engraving, engrave = fill) and the layer's power, speed and passes (and lines per cm). Text goes out as outlines; no-output and hidden layers, guides and dimensions are left out; images are skipped (listed in `skipped`).")]
+    fn export_xs(&self, Parameters(p): Parameters<ExportXs>) -> ToolResult {
+        let state = self.doc.lock().unwrap().s.clone();
+        let name = PathBuf::from(&p.path).file_stem().map_or("Scriber".into(), |s| s.to_string_lossy().into_owned());
+        let x = match export::xs(&state, &crate::library::get(), &name) {
+            Ok(x) => x,
+            Err(e) => return fail(e.to_string()),
+        };
+        match std::fs::write(&p.path, &x.bytes) {
+            Ok(()) => ok(json!({"path": p.path, "elements": x.elements, "layers": x.layers, "skipped": x.skipped, "notes": x.notes})),
             Err(e) => fail(format!("cannot write {}: {e}", p.path)),
         }
     }

@@ -46,6 +46,11 @@ pub fn machine_for(device: &str) -> Option<&'static str> {
     DEVICES.iter().find(|(d, _)| *d == device).map(|(_, m)| *m)
 }
 
+/// Scriber machine id → xTool device code ("xtool-m2" → "JS002").
+pub fn device_for(machine: &str) -> Option<&'static str> {
+    DEVICES.iter().find(|(_, m)| *m == machine).map(|(d, _)| *d)
+}
+
 /// Names of the device codes seen in xTool's cache; the others are shown by code.
 const DEVICE_NAMES: [(&str, &str); 2] = [("JS002", "xTool M2"), ("ZH009", "xTool M1 Ultra")];
 
@@ -117,6 +122,16 @@ fn kind_of(source: &str) -> Option<LaserKind> {
         "co2" => Some(LaserKind::Co2),
         "fiber" => Some(LaserKind::Fiber),
         _ => None,
+    }
+}
+
+/// xTool's laser source for a module kind (the reverse of `kind_of`).
+pub fn source_for(kind: LaserKind) -> &'static str {
+    match kind {
+        LaserKind::Diode => "blue",
+        LaserKind::Infrared => "red",
+        LaserKind::Co2 => "co2",
+        LaserKind::Fiber => "fiber",
     }
 }
 

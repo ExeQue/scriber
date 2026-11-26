@@ -60,6 +60,7 @@ enum Want {
     ImportSvg,
     ExportSvg(u64),
     ExportPng(u64),
+    ExportXs(u64),
 }
 
 /// What to do once a save is done.
@@ -359,6 +360,7 @@ impl App {
             Want::ImportSvg => self.svg_file_chosen(path),
             Want::ExportSvg(id) => self.export_svg_to(id, &path),
             Want::ExportPng(id) => self.export_png_to(id, &path),
+            Want::ExportXs(id) => self.export_xs_to(id, &path),
         }
     }
 
@@ -466,6 +468,22 @@ impl App {
         let state = doc.lock().unwrap().s.clone();
         self.message = match export::png(&state, 254.0, false).and_then(|png| Ok(std::fs::write(path, png)?)) {
             Ok(()) => format!("{} {} (254 DPI)", "Exported", path.display()),
+            Err(e) => format!("{}: {e}", "Export failed"),
+        };
+    }
+
+    fn export_xs(&mut self, ctx: &egui::Context) {
+        self.dialog.save(ctx, Want::ExportXs(self.doc_id), rfd::FileDialog::new().add_filter("xTool Studio", &["xs"]).set_file_name("design.xs"));
+    }
+
+    fn export_xs_to(&mut self, id: u64, path: &Path) {
+        let Some(doc) = self.ws.get(id) else { return };
+        let state = doc.lock().unwrap().s.clone();
+        let path = path.with_extension("xs");
+        let name = path.file_stem().map_or("Scriber".into(), |s| s.to_string_lossy().into_owned());
+        self.message = match export::xs(&state, &crate::library::get(), &name).and_then(|x| Ok((std::fs::write(&path, &x.bytes)?, x))) {
+            Ok(((), x)) if x.skipped.is_empty() => format!("Exported {} ({} elements)", path.display(), x.elements),
+            Ok(((), x)) => format!("Exported {} ({} elements); left out: {}", path.display(), x.elements, x.skipped.join("; ")),
             Err(e) => format!("{}: {e}", "Export failed"),
         };
     }

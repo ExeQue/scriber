@@ -22,6 +22,9 @@ impl App {
                 if self.small(ui, false, Icon::Glyph("🖼"), "PNG picture", "Save a picture of the drawing") {
                     self.export_png(ui.ctx());
                 }
+                if self.small(ui, false, Icon::Glyph("💾"), "xTool Studio (.xs)", "Save an xTool Studio project with each layer's processing type, power, speed and passes") {
+                    self.export_xs(ui.ctx());
+                }
             });
         });
         panel(ui, "Library", |ui| {

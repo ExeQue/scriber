@@ -52,6 +52,9 @@ impl App {
                 if ui.button("Export PNG…").clicked() {
                     self.export_png(ui.ctx());
                 }
+                if ui.button("Export xTool Studio (.xs)…").clicked() {
+                    self.export_xs(ui.ctx());
+                }
                 ui.separator();
                 if ui.button("Quit").clicked() {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
