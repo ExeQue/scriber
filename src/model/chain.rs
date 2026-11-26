@@ -123,6 +123,45 @@ impl Document {
         }
         out
     }
+
+    /// JOIN: merge the given open paths that touch end to end into as few paths as possible (each
+    /// keeps the first item's name and op). Unlike `join_chains` only these items take part.
+    /// Returns the ids that remain.
+    pub fn join(&mut self, ids: &[u64]) -> Result<Vec<u64>, String> {
+        let mut pool: Vec<u64> = ids.iter().copied().filter(|id| self.item(*id).and_then(open_contour).is_some()).collect();
+        let mut joined_any = false;
+        'again: loop {
+            for i in 0..pool.len() {
+                for j in 0..pool.len() {
+                    let (a, b) = (pool[i], pool[j]);
+                    if i == j {
+                        continue;
+                    }
+                    let touch = |x: u64, y: u64| {
+                        let (cx, cy) = (open_contour(self.item(x).unwrap()).unwrap(), open_contour(self.item(y).unwrap()).unwrap());
+                        ends(cx).iter().any(|p| ends(cy).iter().any(|q| distance(*p, *q) < TOUCH))
+                    };
+                    if !touch(a, b) {
+                        continue;
+                    }
+                    let Some(c) = self.chain_contour(&[a, b]) else { continue };
+                    let closed = c.closed;
+                    self.item_mut(a).unwrap().shape = Shape::path(c);
+                    self.delete(&[b]);
+                    pool.retain(|id| *id != b && (!closed || *id != a));
+                    joined_any = true;
+                    continue 'again;
+                }
+            }
+            break;
+        }
+        if !joined_any {
+            return Err("none of these paths touch end to end, so there is nothing to join".into());
+        }
+        let left: Vec<u64> = ids.iter().copied().filter(|id| self.item(*id).is_some()).collect();
+        self.selection = left.clone();
+        Ok(left)
+    }
 }
 
 #[cfg(test)]

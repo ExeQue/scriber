@@ -6,8 +6,11 @@ mod carrier;
 mod chamfer;
 mod corner;
 mod fillet;
+mod lengthen;
 mod objects;
 mod offset;
+mod split;
+mod stretch;
 mod trim;
 
 pub use array::{grid_offsets, polar_angles};
@@ -16,7 +19,10 @@ pub use chamfer::{chamfer, chamfer_objects};
 pub use corner::join_ends;
 pub use fillet::{fillet, fillet_objects};
 pub use objects::{Edit, Pick};
+pub use lengthen::{extend, lengthen};
 pub use offset::offset;
+pub use split::{break_at, segments};
+pub use stretch::{inside, stretch};
 pub use trim::trim;
 
 use super::geom::{Contour, Vertex};

@@ -3,13 +3,16 @@
 
 mod chain;
 pub mod constraints;
+pub mod editing;
 mod file;
 pub mod geom;
+pub mod guides;
 pub mod item;
 pub mod ops;
 pub mod text;
 
 pub use geom::{BBox, Contour, Point, Transform};
+pub use guides::Guide;
 pub use item::{Item, Op, Shape};
 pub use constraints::{Constraint, Kind, Ref};
 pub use ops::BoolOp;
@@ -53,11 +56,14 @@ pub struct State {
     pub laser: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub material: Option<String>,
+    /// Groups (GROUP): item ids that are picked together; an item is in at most one group.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<Vec<u64>>,
 }
 
 impl Default for State {
     fn default() -> Self {
-        Self { width: 300.0, height: 200.0, notes: String::new(), items: Vec::new(), images: BTreeMap::new(), next_id: 1, constraints: Vec::new(), machine: None, laser: None, material: None }
+        Self { width: 300.0, height: 200.0, notes: String::new(), items: Vec::new(), images: BTreeMap::new(), next_id: 1, constraints: Vec::new(), machine: None, laser: None, material: None, groups: Vec::new() }
     }
 }
 
@@ -101,6 +107,7 @@ impl Document {
 
     /// Mark a change without a new undo step (e.g. while dragging).
     pub fn touch(&mut self) {
+        self.follow_guides();
         self.dirty = true;
         self.rev += 1;
     }
@@ -170,6 +177,7 @@ impl Document {
         self.s.constraints.retain(|c| c.refs.iter().all(|r| !ids.contains(&r.item())));
         constraints::freeze_orphans(&mut self.s, &values);
         self.selection.retain(|id| !ids.contains(id));
+        self.leave_groups(ids);
         // Drop images nothing points at any more (undo snapshots keep their own reference).
         let used: Vec<u64> = self.s.items.iter().filter_map(|i| if let Shape::Image { image, .. } = i.shape { Some(image) } else { None }).collect();
         self.s.images.retain(|id, _| used.contains(id));
@@ -178,16 +186,19 @@ impl Document {
 
     pub fn duplicate(&mut self, ids: &[u64], dx: f64, dy: f64) -> Vec<u64> {
         let copies: Vec<Item> = self.s.items.iter().filter(|i| ids.contains(&i.id)).cloned().collect();
-        copies
+        let pairs: Vec<(u64, u64)> = copies
             .into_iter()
             .map(|mut item| {
+                let old = item.id;
                 item.id = self.new_id();
                 item.shape = item.shape.transformed(&Transform::translate(dx, dy), [0.0, 0.0]);
                 let id = item.id;
                 self.s.items.push(item);
-                id
+                (old, id)
             })
-            .collect()
+            .collect();
+        self.copy_groups(&pairs);
+        pairs.into_iter().map(|(_, id)| id).collect()
     }
 
     pub fn transform(&mut self, ids: &[u64], t: &Transform) {

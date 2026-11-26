@@ -80,6 +80,8 @@ fn element(s: &State, item: &Item, layer: Layer, stroke: f64) -> Option<String> 
             }
             Some(format!("<path id=\"i{id}\" d=\"{d}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{stroke}\"/>\n", op.hex()))
         }
+        // Guide lines are construction geometry for people: never in a laser file.
+        Shape::Guide(_) => None,
         Shape::Dimension { .. } => {
             if layer != op_layer {
                 return None;
@@ -163,5 +165,16 @@ mod tests {
         assert!(s.find("id=\"i5\"").unwrap() < at("score") && s.find("id=\"i6\"").unwrap() > at("cut"));
         let i7 = s.find("id=\"i7\"").unwrap();
         assert!(at("score") < i7 && i7 < at("cut"));
+    }
+
+    #[test]
+    fn guide_lines_are_never_exported() {
+        let mut d = Document::new(100.0, 50.0);
+        d.add("xl", Op::Cut, false, Shape::Guide(crate::model::Guide::Xline { x: 10.0, y: 10.0, angle: 0.0 }));
+        let mark = crate::model::Guide::Centermark { cx: 50.0, cy: 25.0, r: 5.0, of: None };
+        d.add("cm", Op::Cut, false, Shape::Guide(mark));
+        for annotations in [false, true] {
+            assert!(!svg(&d.s, annotations).contains("<path"), "{}", svg(&d.s, annotations));
+        }
     }
 }

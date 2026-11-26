@@ -54,14 +54,14 @@ pub fn trim(contours: &[Contour], edges: &[Contour], at: Point) -> Result<Vec<Co
 }
 
 /// Distance along `p` to `point`, which lies on the segment starting at vertex `seg`.
-fn along(p: &Polyline<f64>, seg: usize, point: Vector2<f64>) -> f64 {
+pub(super) fn along(p: &Polyline<f64>, seg: usize, point: Vector2<f64>) -> f64 {
     let before: f64 = p.iter_segments().take(seg).map(|(a, b)| seg_length(a, b)).sum();
     let split = seg_split_at_point(p.at(seg), p.at(p.next_wrapping_index(seg)), point, EPS);
     before + seg_length(split.updated_start, split.split_vertex)
 }
 
 /// The piece of `p` from distance `s0` to `s1` (wrapping round for closed contours).
-fn slice(p: &Polyline<f64>, s0: f64, s1: f64) -> Option<Contour> {
+pub(super) fn slice(p: &Polyline<f64>, s0: f64, s1: f64) -> Option<Contour> {
     let point_at = |s: f64| {
         p.find_point_at_path_length(s).unwrap_or_else(|_| {
             let last = p.segment_count() - 1;

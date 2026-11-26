@@ -1,6 +1,7 @@
 //! What a drawing is made of: items with a shape and a laser operation.
 
 use super::geom::{BBox, Contour, Point, Transform, bbox_of, rotate_point};
+use super::guides::Guide;
 use super::text;
 use cavalier_contours::polyline::PlineSource;
 use std::borrow::Cow;
@@ -85,6 +86,8 @@ pub enum Shape {
         #[serde(default)]
         rotation: f64,
     },
+    /// A guide line (XLINE, RAY, CENTERLINE, CENTERMARK): drawn on the canvas, never lasered or exported.
+    Guide(Guide),
 }
 
 fn default_font() -> String {
@@ -152,7 +155,7 @@ impl Shape {
         match self {
             Shape::Path { contours } => contours.iter().any(|c| c.closed),
             Shape::Text { .. } | Shape::Image { .. } => true,
-            Shape::Dimension { .. } => false,
+            Shape::Dimension { .. } | Shape::Guide(_) => false,
         }
     }
 
@@ -240,6 +243,7 @@ impl Shape {
                     area: Some(area.abs()),
                 }
             }
+            Shape::Guide(g) => Metrics { bbox: g.bbox(), length: 0.0, area: None },
             Shape::Text { .. } | Shape::Image { .. } => {
                 let c = self.box_corners().unwrap();
                 let w = (c[1][0] - c[0][0]).hypot(c[1][1] - c[0][1]);
@@ -272,6 +276,7 @@ impl Shape {
                 let (nw, nh) = (w * sx.abs(), h * sy.abs());
                 Shape::Image { image: *image, x: cx - nw / 2.0, y: cy - nh / 2.0, w: nw, h: nh, rotation: rotation + t.rotate }
             }
+            Shape::Guide(g) => Shape::Guide(g.transformed(t, pivot)),
         }
     }
 
@@ -285,6 +290,7 @@ impl Shape {
             }
             Shape::Text { .. } if self.text_glyphs().unwrap().bbox.is_some() => self.laser_contours().iter().map(|c| c.flatten(tol)).collect(),
             Shape::Text { .. } | Shape::Image { .. } => vec![self.box_outline()],
+            Shape::Guide(g) => g.outline(),
         }
     }
 
@@ -299,7 +305,7 @@ impl Shape {
             Shape::Path { contours } => contours.iter().filter(|c| c.contains(p)).count() % 2 == 1,
             // Text is picked by its box, so clicking between letters works.
             Shape::Text { .. } | Shape::Image { .. } => super::geom::point_in_poly(p, &self.box_outline()),
-            Shape::Dimension { .. } => false,
+            Shape::Dimension { .. } | Shape::Guide(_) => false,
         }
     }
 
