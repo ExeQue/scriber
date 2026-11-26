@@ -171,6 +171,8 @@ impl App {
                 ui.add_space(8.0);
                 ui.label(RichText::new(OPEN_SCORED).weak().small());
             }
+            ui.add_space(16.0);
+            self.preview_and_check_buttons(ui, &d);
         });
         super::library_window::pickers(ui, &mut d);
         let Some(set_op) = set_op else { return };
@@ -207,7 +209,7 @@ fn icon_button(ui: &mut egui::Ui, on: bool, paint: impl FnOnce(&egui::Painter, R
 }
 
 /// A rounded toggle with an optional colour dot.
-fn pill(ui: &mut egui::Ui, on: bool, dot: Option<Color32>, text: &str) -> egui::Response {
+pub(super) fn pill(ui: &mut egui::Ui, on: bool, dot: Option<Color32>, text: &str) -> egui::Response {
     let visuals = ui.visuals().clone();
     let galley = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::proportional(13.5), visuals.text_color());
     let pad = vec2(10.0, 5.0);

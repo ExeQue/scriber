@@ -24,7 +24,7 @@ CAD operations: fillet, chamfer, offset (also kerf compensation), boolean (union
 Contours are polylines whose segments can be arcs: each vertex has a bulge = tan(sweep/4) for the segment to the next vertex (0 = straight). Prefer add_items with kind rect/circle/arc/polygon/line/polyline over building arcs by hand.
 Constraints (as in AutoCAD) bind geometry: add_constraint (coincident, parallel, tangent, …; the first object stays, the second moves), add_dimensional_constraint (a named parameter like d1 = 40 or d2 = d1 / 2 that drives the size), set_parameter, list_constraints, delete_constraints, auto_constrain. A reference names geometry in a path: {kind: point, item, vertex}, {kind: segment, item, segment} (segment k runs from vertex k to k+1; a circle is segment 0), {kind: centre, item, segment}, {kind: item, item}; contour defaults to 0. After every change the solver keeps all constraints satisfied, moving as little as possible; a change that cannot be satisfied is refused and undone, naming the conflicting constraints.
 Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. Call export_png without a path to look at the result.
-Laser settings: list_machines and list_materials show the user's machines and material library; set_laser_setup picks the document's machine, laser module and material, and get_laser_setup returns the power/speed/passes to use per operation.";
+Laser settings: list_machines and list_materials show the user's machines and material library; set_laser_setup picks the document's machine, laser module and material, and get_laser_setup returns the power/speed/passes to use per operation. Before the user lasers, run preflight_check and look at export_png with preview: true.";
 
 // ---------- parameters ----------
 
@@ -262,6 +262,10 @@ pub struct ExportPng {
     pub dpi: Option<f64>,
     /// Default true.
     pub include_annotations: Option<bool>,
+    /// Render what the laser makes instead of the drawing: material colour, burned areas, thin cut and
+    /// score lines, cut-out pieces shadowed with their holes open; no-output items and guides hidden.
+    #[serde(default)]
+    pub preview: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -699,14 +703,15 @@ impl Server {
         }
     }
 
-    #[tool(description = "Render the document to PNG. With a path it is written to that file; without, the image is returned so you can see the drawing.")]
+    #[tool(description = "Render the document to PNG (preview: true shows what the laser makes). With a path it is written to that file; without, the image is returned so you can see the drawing.")]
     fn export_png(&self, Parameters(p): Parameters<ExportPng>) -> ToolResult {
         let state = self.doc.lock().unwrap().s.clone();
         let mut dpi = p.dpi.unwrap_or(254.0);
         if p.path.is_none() {
             dpi = dpi.min(1600.0 / (state.width / 25.4));
         }
-        let png = match export::png(&state, dpi, p.include_annotations.unwrap_or(true)) {
+        let png = if p.preview { export::preview_png(&state, dpi) } else { export::png(&state, dpi, p.include_annotations.unwrap_or(true)) };
+        let png = match png {
             Ok(png) => png,
             Err(e) => return fail(e),
         };

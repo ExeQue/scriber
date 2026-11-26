@@ -80,6 +80,9 @@ impl App {
                 if self.isolated.is_some() && ui.button("Show everything (end isolation)").clicked() {
                     self.isolated = None;
                 }
+                if ui.selectable_label(self.preview.is_some(), "Preview what the laser makes  (P)").clicked() {
+                    self.toggle_preview();
+                }
                 ui.checkbox(&mut self.show_guides, "Show guide lines");
                 ui.checkbox(&mut self.snap, "Snap to grid");
                 ui.checkbox(&mut self.show_cmdline, "Command line (for CAD users)");

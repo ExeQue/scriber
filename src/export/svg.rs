@@ -103,7 +103,7 @@ fn element(s: &State, item: &Item, layer: Layer, stroke: f64) -> Option<String> 
 }
 
 /// SVG path data for one contour; arcs stay real arcs.
-fn path_data(c: &Contour) -> String {
+pub(super) fn path_data(c: &Contour) -> String {
     let v = &c.vertices;
     let n = v.len();
     let Some(first) = v.first() else { return String::new() };

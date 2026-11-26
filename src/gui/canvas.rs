@@ -24,6 +24,12 @@ impl App {
         self.canvas_rect = rect;
         let ctx = ui.ctx().clone();
         self.zoom_extents_on_wheel_double_click(&response);
+        if self.preview.is_some() {
+            self.fit_if_needed(rect);
+            self.pan_and_zoom(ui, &response);
+            self.settle();
+            return self.preview_canvas(ui, rect, &response);
+        }
         if response.secondary_clicked()
             && let Some(at) = response.interact_pointer_pos()
         {
@@ -247,7 +253,7 @@ impl App {
         inside.map(|(_, id)| id)
     }
 
-    fn texture(&mut self, ctx: &egui::Context, id: u64, img: &Img) -> egui::TextureId {
+    pub(super) fn texture(&mut self, ctx: &egui::Context, id: u64, img: &Img) -> egui::TextureId {
         self.textures
             .entry(id)
             .or_insert_with(|| {

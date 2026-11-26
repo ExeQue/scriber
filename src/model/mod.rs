@@ -9,6 +9,8 @@ pub mod geom;
 pub mod guides;
 pub mod item;
 pub mod ops;
+pub mod preflight;
+pub mod preview;
 pub mod text;
 
 pub use geom::{BBox, Contour, Point, Transform};

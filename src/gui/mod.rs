@@ -3,6 +3,7 @@
 
 mod agents_window;
 mod canvas;
+mod check_panel;
 mod command;
 mod constraint_bars;
 mod constraint_list;
@@ -16,6 +17,7 @@ mod labels;
 mod library_window;
 mod panels;
 mod parameters;
+mod preview;
 mod select;
 mod snap;
 mod svg_import;
@@ -116,6 +118,10 @@ struct App {
     isolated: Option<Vec<u64>>,
     /// Space was held for a pan drag, so its release is not Enter.
     space_panned: bool,
+    /// Preview mode is on (see preview.rs).
+    preview: Option<preview::Preview>,
+    /// The pre-flight check and its window.
+    check: check_panel::Check,
 }
 
 pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
@@ -199,6 +205,8 @@ impl App {
             show_guides: true,
             isolated: None,
             space_panned: false,
+            preview: None,
+            check: check_panel::Check::default(),
         }
     }
 
@@ -447,13 +455,18 @@ impl eframe::App for App {
         egui::Panel::top("laser").show(ui, |ui| self.laser_bar(ui));
         self.aid_keys(&ctx);
         self.dyn_keys(&ctx);
-        self.keys(&ctx, pointer);
+        self.preview_key(&ctx);
+        // No editing in preview mode.
+        let editing = self.preview.is_none();
+        if editing {
+            self.keys(&ctx, pointer);
+        }
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui, pointer));
         if self.show_cmdline {
             egui::Panel::bottom("command").show(ui, |ui| self.command_line(ui));
         }
-        egui::Panel::left("tools").exact_size(126.0).show(ui, |ui| self.toolbar(ui));
-        egui::Panel::right("props").default_size(290.0).show(ui, |ui| self.properties(ui));
+        egui::Panel::left("tools").exact_size(126.0).show(ui, |ui| ui.add_enabled_ui(editing, |ui| self.toolbar(ui)));
+        egui::Panel::right("props").default_size(290.0).show(ui, |ui| ui.add_enabled_ui(editing, |ui| self.properties(ui)));
         egui::CentralPanel::no_frame().show(ui, |ui| self.canvas(ui));
         self.command_card(&ctx);
         self.dyn_cursor(&ctx);
@@ -464,6 +477,7 @@ impl eframe::App for App {
         if self.show_agents {
             self.agents_window(&ctx);
         }
+        self.check_window(&ctx);
         self.svg_import_window(&ctx);
         self.library_window(&ctx);
         if self.confirm_close {

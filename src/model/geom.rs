@@ -133,7 +133,6 @@ impl Contour {
     }
 
     /// Unsigned enclosed area; 0 for open contours.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn area(&self) -> f64 {
         if self.closed { self.pline().area().abs() } else { 0.0 }
     }

@@ -54,7 +54,7 @@ impl GeometryCache {
 }
 
 /// Even-odd fill of closed polylines as triangles.
-fn tessellate(polys: &[Vec<Point>]) -> Option<(Vec<[f32; 2]>, Vec<u32>)> {
+pub(super) fn tessellate(polys: &[Vec<Point>]) -> Option<(Vec<[f32; 2]>, Vec<u32>)> {
     let mut builder = Path::builder();
     for poly in polys.iter().filter(|p| p.len() >= 3) {
         builder.begin(point(poly[0][0] as f32, poly[0][1] as f32));

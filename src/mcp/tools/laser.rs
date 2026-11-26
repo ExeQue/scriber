@@ -98,6 +98,12 @@ impl Server {
         ok(json!(list))
     }
 
+    #[tool(description = "Pre-flight check before lasering: open shapes set to cut, lines on top of each other, shapes outside the material or the machine's work area, details smaller than the beam, text too small to read, and operations without settings for the chosen machine and material. Each warning has a severity (error/warning), a plain text and the item ids involved.")]
+    fn preflight_check(&self) -> ToolResult {
+        let warnings = crate::model::preflight::check(&self.doc.lock().unwrap().s, &library::get());
+        ok(json!({"count": warnings.len(), "warnings": warnings}))
+    }
+
     #[tool(description = "The document's machine, laser module and material, and the laser settings that apply to each operation (null where the library has none).")]
     fn get_laser_setup(&self) -> ToolResult {
         ok(setup(&self.doc.lock().unwrap().s))
