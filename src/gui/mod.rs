@@ -418,6 +418,7 @@ impl eframe::App for App {
         egui::Panel::right("props").default_size(290.0).show(ui, |ui| self.properties(ui));
         egui::CentralPanel::no_frame().show(ui, |ui| self.canvas(ui));
         self.command_card(&ctx);
+        self.dyn_cursor(&ctx);
 
         if self.show_parameters {
             self.parameters_window(&ctx);

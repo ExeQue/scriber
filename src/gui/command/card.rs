@@ -43,7 +43,8 @@ impl App {
                     ui.add(mm_value(&mut self.cmdline.fillet));
                 });
             }
-            (Cmd::Polygon, _) => {
+            // Once the centre is down, sides and radius are in the measurement fields below.
+            (Cmd::Polygon, _) if self.draft.is_empty() => {
                 ui.horizontal(|ui| {
                     ui.label("Sides");
                     ui.add(DragValue::new(&mut self.sides).range(3..=64));
