@@ -8,8 +8,6 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   srcExclude: ['README.md'],
-  // library-repositories.md is written separately and may land after this config.
-  ignoreDeadLinks: [/library-repositories/],
   vite: {
     // Dev server defaults. Vite lets this config win over CLI flags, so a flag given on the command
     // line (`npm run docs:dev -- --host 0.0.0.0 --port 5191`, as lerd does) leaves its default out.
