@@ -1,15 +1,16 @@
 //! The Machines page: the list of machines and the form for the selected one.
 
 use super::Editor;
-use super::widgets::{Confirm, ListAction, column_title, field_label, form_column, list_row, natural_cmp, notes_section, remove_button, section, sidebar};
+use super::widgets::{Confirm, ListAction, column_title, field_label, form_column, list_row, natural_cmp, notes_section, read_only_if_source, remove_button, section, sidebar};
 use crate::gui::lucide;
 use crate::library::{Laser, LaserKind, Machine, Operation};
 use eframe::egui::{self, Checkbox, ComboBox, DragValue};
 
 pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
     ui.horizontal_top(|ui| {
+        let deletable = ed.lib.machines.get(ed.machine).is_some_and(|m| !ed.lib.machine_origin(&m.id).is_source());
         let (machines, selected) = (&ed.lib.machines, &mut ed.machine);
-        let action = sidebar(ui, "machine", !machines.is_empty(), |_| {}, |ui| {
+        let action = sidebar(ui, "machine", !machines.is_empty(), deletable, |_| {}, |ui| {
             let mut order: Vec<(usize, &Machine)> = machines.iter().enumerate().collect();
             order.sort_by(|a, b| natural_cmp(&a.1.name, &b.1.name));
             for (i, m) in order {
@@ -41,8 +42,9 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
         }
         ed.machine = ed.machine.min(lib.machines.len().saturating_sub(1));
         let (index, confirm) = (ed.machine, &mut ed.confirm);
+        let origin = lib.machines.get(index).map(|m| lib.machine_origin(&m.id)).unwrap_or_default();
         form_column(ui, "machine", |ui| match lib.machines.get_mut(index) {
-            Some(m) => form(ui, m, index, confirm),
+            Some(m) => read_only_if_source(ui, &origin, |ui| form(ui, m, index, confirm)),
             None => _ = ui.label(egui::RichText::new("No machines yet. Press Add to make one.").weak()),
         });
     });

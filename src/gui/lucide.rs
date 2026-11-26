@@ -22,6 +22,9 @@ pub const MAXIMIZE: &str = "\u{e116}";
 pub const CIRCLE_CHECK: &str = "\u{e226}";
 pub const CIRCLE_ALERT: &str = "\u{e07b}";
 pub const MESSAGE_SQUARE: &str = "\u{e11b}";
+pub const REFRESH_CW: &str = "\u{e149}";
+pub const GIT_BRANCH: &str = "\u{e0e5}";
+pub const FOLDER_OUTPUT: &str = "\u{e33b}";
 
 /// Add the icon font after the default fonts, so its private-use codepoints work in any text.
 pub fn install(ctx: &egui::Context) {

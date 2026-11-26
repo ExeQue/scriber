@@ -3,7 +3,9 @@
 //! Everything lands in the window's working copy; the user still presses Save.
 
 use super::{Editor, Tab, material_list};
+use crate::gui::lucide;
 use crate::library::exchange::{self, Bundle, OnConflict};
+use crate::library::sources;
 use crate::library::xtool::{self, XtoolGroup, XtoolMaterial};
 use crate::library::{LaserKind, Library, Operation};
 use crate::gui::file_dialog::Pending;
@@ -32,6 +34,8 @@ struct State {
     status: String,
     /// The open file dialog (it runs on its own thread) and what it is for.
     dialog: Pending<Want>,
+    /// A new repository's folder, name and description, waiting for "Create".
+    new_repo: Option<(std::path::PathBuf, String, String)>,
 }
 
 /// What the library's file dialog was opened for.
@@ -39,6 +43,10 @@ enum Want {
     XtoolProject,
     Library,
     Export(Bundle),
+    /// A library repository folder for the user's own machines and materials.
+    Repository,
+    /// A library zip with the user's own machines and materials.
+    Zip,
 }
 
 // One window at a time, so one state; it lives here so the window's own struct stays untouched.
@@ -70,6 +78,60 @@ fn answer(st: &mut State, ed: &mut Editor) {
             Ok(()) => st.status = format!("Exported {} machine(s) and {} material(s)", b.machines.len(), b.materials.len()),
             Err(e) => ed.error = e,
         },
+        Want::Repository if path.join(sources::MANIFEST).is_file() => export_repository(st, ed, &path, None, None),
+        Want::Repository => {
+            let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            st.new_repo = Some((path, name, String::new()));
+        }
+        Want::Zip => match sources::export_zip(&ed.lib, &path, None, None) {
+            Ok((m, mat)) => st.status = format!("Exported {m} machine(s) and {mat} material(s) of your own"),
+            Err(e) => ed.error = e,
+        },
+    }
+}
+
+fn export_repository(st: &mut State, ed: &mut Editor, dir: &std::path::Path, name: Option<&str>, description: Option<&str>) {
+    match sources::export_repository(&ed.lib, dir, None, None, name, description) {
+        Ok(e) => st.status = format!("{} {}; commit and push it to publish", e.summary(), dir.display()),
+        Err(e) => ed.error = e,
+    }
+}
+
+/// Name and description of a new library repository.
+fn new_repo_question(ctx: &egui::Context, st: &mut State, ed: &mut Editor) {
+    let Some((dir, name, description)) = &mut st.new_repo else { return };
+    let mut answer = None;
+    let modal = egui::Modal::new(egui::Id::unique("library-new-repo")).show(ctx, |ui| {
+        ui.set_width(420.0);
+        ui.heading("New library repository");
+        ui.label(RichText::new(format!("{} has no .scriber.json yet. People see this name and description when they subscribe.", dir.display())).weak());
+        ui.add_space(6.0);
+        egui::Grid::new("new-repo").num_columns(2).spacing([8.0, 8.0]).show(ui, |ui| {
+            ui.label("Name");
+            ui.add(egui::TextEdit::singleline(name).desired_width(280.0));
+            ui.end_row();
+            ui.label("Description");
+            ui.add(egui::TextEdit::multiline(description).desired_width(280.0).desired_rows(2).hint_text("e.g. tested settings for the xTool M2"));
+            ui.end_row();
+        });
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            if ui.add_enabled(!name.trim().is_empty(), egui::Button::new("Create")).clicked() {
+                answer = Some(true);
+            }
+            if ui.button("Cancel").clicked() {
+                answer = Some(false);
+            }
+        });
+    });
+    if modal.should_close() {
+        answer = Some(false);
+    }
+    if let Some(yes) = answer
+        && let Some((dir, name, description)) = st.new_repo.take()
+        && yes
+    {
+        export_repository(st, ed, &dir, Some(&name), Some(&description));
     }
 }
 
@@ -96,6 +158,9 @@ pub(super) fn menus(ui: &mut egui::Ui, ed: &mut Editor) {
         if ui.button("Scriber library file…").on_hover_text("Machines and materials another Scriber user exported").clicked() {
             st.dialog.pick(&ctx, Want::Library, filter("Scriber library", &[exchange::EXTENSION]));
         }
+        if ui.button("Library zip…").on_hover_text("A zip in the library repository layout (.scriber.json and .scriber/machines|materials/)").clicked() {
+            st.dialog.pick(&ctx, Want::Library, filter("Library zip", &["zip"]));
+        }
     });
     ui.menu_button("Export ▾", |ui| {
         let material = (ed.tab == Tab::Materials).then(|| ed.lib.materials.get(ed.material)).flatten().map(|m| (m.id.clone(), m.name.clone()));
@@ -114,6 +179,15 @@ pub(super) fn menus(ui: &mut egui::Ui, ed: &mut Editor) {
         if ui.button("Whole library…").clicked() {
             choice = Some((None, None, "library".into()));
         }
+        ui.separator();
+        let own = "Only the machines and materials you made yourself: not built-ins, not ones from sources";
+        let tip = format!("Write .scriber.json and .scriber/machines|materials/ into a folder to publish on GitHub, so others can subscribe to it. An existing repository is updated: other files stay. {own}");
+        if ui.button(format!("{} Library repository…", lucide::FOLDER_OUTPUT)).on_hover_text(tip).clicked() {
+            st.dialog.pick_folder(&ctx, Want::Repository, rfd::FileDialog::new().set_title("Folder of the library repository"));
+        }
+        if ui.button("Library zip…").on_hover_text(format!("The same layout as a library repository, in one zip. {own}")).clicked() {
+            st.dialog.save(&ctx, Want::Zip, filter("Library zip", &["zip"]).set_file_name("my-library.zip"));
+        }
         if let Some((machines, materials, name)) = choice {
             let file = format!("{}.{}", ed.lib.new_id(&name), exchange::EXTENSION);
             match exchange::bundle(&ed.lib, machines.as_deref(), materials.as_deref()) {
@@ -127,6 +201,7 @@ pub(super) fn menus(ui: &mut egui::Ui, ed: &mut Editor) {
     }
     picker(ui.ctx(), st, ed);
     conflict_question(ui.ctx(), st, ed);
+    new_repo_question(ui.ctx(), st, ed);
     // Show what was just imported.
     if ed.lib.materials.len() > before {
         ed.tab = Tab::Materials;

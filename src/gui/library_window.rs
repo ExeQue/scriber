@@ -13,12 +13,16 @@ mod import_export;
 mod machines;
 mod material_list;
 mod materials;
+mod sources_tab;
 mod widgets;
+
+pub(super) use sources_tab::auto_sync;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
     Machines,
     Materials,
+    Sources,
 }
 
 /// The window's working copy; nothing is saved until the user presses Save.
@@ -36,6 +40,7 @@ pub(super) struct Editor {
     confirm: Option<Confirm>,
     /// The machine and laser whose settings the material page shows.
     settings_view: materials::SettingsView,
+    sources: sources_tab::State,
 }
 
 impl Editor {
@@ -45,7 +50,7 @@ impl Editor {
         let index = |list: Vec<&String>, id: &Option<String>| list.iter().position(|i| Some(*i) == id.as_ref()).unwrap_or(0);
         let machine = index(lib.machines.iter().map(|m| &m.id).collect(), &s.machine);
         let material = index(lib.materials.iter().map(|m| &m.id).collect(), &s.material);
-        Self { lib, tab: Tab::Machines, machine, material, error: String::new(), doc_machine: s.machine.clone(), doc_laser: s.laser.clone(), filter: Filter::default(), confirm: None, settings_view: materials::SettingsView { key: s.machine.clone().zip(s.laser.clone()), search: String::new() } }
+        Self { lib, tab: Tab::Machines, machine, material, error: String::new(), doc_machine: s.machine.clone(), doc_laser: s.laser.clone(), filter: Filter::default(), confirm: None, settings_view: materials::SettingsView { key: s.machine.clone().zip(s.laser.clone()), search: String::new() }, sources: Default::default() }
     }
 
     /// Opens on the Materials page instead.
@@ -56,6 +61,23 @@ impl Editor {
 }
 
 impl App {
+    /// The automatic sync at start finished: say what changed, and give an open editor the new sources.
+    pub(super) fn library_synced(&mut self) {
+        let Some(rx) = &self.library_sync else { return };
+        match rx.try_recv() {
+            Ok(msg) => {
+                self.cmdline.log(msg.clone());
+                self.message = msg;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {}
+        }
+        self.library_sync = None;
+        if let Some(ed) = &mut self.library {
+            ed.sources_changed();
+        }
+    }
+
     pub(super) fn library_window(&mut self, ctx: &egui::Context) {
         let Some(ed) = &mut self.library else { return };
         if show(ctx, ed) {
@@ -78,6 +100,7 @@ fn show(ctx: &egui::Context, ed: &mut Editor) -> bool {
             ui.add_space(24.0);
             ui.selectable_value(&mut ed.tab, Tab::Machines, RichText::new("Machines").size(15.0));
             ui.selectable_value(&mut ed.tab, Tab::Materials, RichText::new("Materials").size(15.0));
+            ui.selectable_value(&mut ed.tab, Tab::Sources, RichText::new("Sources").size(15.0)).on_hover_text("Libraries other people publish on GitHub");
             ui.add_space(24.0);
             import_export::menus(ui, ed);
         });
@@ -90,6 +113,7 @@ fn show(ctx: &egui::Context, ed: &mut Editor) -> bool {
             match ed.tab {
                 Tab::Machines => machines::page(ui, ed),
                 Tab::Materials => materials::page(ui, ed),
+                Tab::Sources => sources_tab::page(ui, ed),
             }
         });
         ui.add_space(4.0);
@@ -115,7 +139,7 @@ fn show(ctx: &egui::Context, ed: &mut Editor) -> bool {
         });
     });
     // Shown after the window, so it sits on top of it.
-    let answer = ed.confirm.as_ref().and_then(|c| widgets::confirm_modal(ctx, &c.question));
+    let answer = ed.confirm.as_ref().and_then(|c| widgets::confirm_modal(ctx, &c.question, "Nothing is saved until you press Save."));
     match (answer, ed.confirm.take()) {
         (Some(true), Some(c)) => (c.apply)(&mut ed.lib),
         (None, c) => ed.confirm = c,
@@ -292,5 +316,29 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The Sources page shows the subscribe field; a source's machine opens read-only with its origin.
+    #[test]
+    fn sources_page_and_read_only_source_items() {
+        let ctx = egui::Context::default();
+        crate::gui::lucide::install(&ctx);
+        let size = egui::vec2(1200.0, 800.0);
+        let mut ed = Editor::new(&State::default());
+        ed.tab = Tab::Sources;
+        let t = texts(&ctx, &mut ed, size);
+        for x in [find(&t, "Subscribe"), find(&t, "Sync all"), find(&t, "Save")] {
+            assert!(x.2, "\"{}\" is hidden", x.0);
+        }
+
+        let mut k40 = library::builtin_machines()[0].clone();
+        (k40.id, k40.name) = ("k40".into(), "K40".into());
+        let origin = library::Origin::Source { id: "acme".into(), name: "Acme presets".into() };
+        let base = library::Base { machines: vec![(origin, k40)], ..Default::default() };
+        let mut ed = Editor::new(&State::default());
+        ed.lib = library::store::merged_with(library::store::LibraryFile::default(), base);
+        (ed.tab, ed.machine) = (Tab::Machines, 0);
+        let t = texts(&ctx, &mut ed, size);
+        find(&t, "from Acme presets — read-only");
     }
 }

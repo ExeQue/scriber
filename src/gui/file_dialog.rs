@@ -25,6 +25,11 @@ impl<K> Pending<K> {
         self.start(ctx, kind, move || d.pick_file());
     }
 
+    /// Show a folder dialog for `kind`.
+    pub fn pick_folder(&mut self, ctx: &egui::Context, kind: K, d: rfd::FileDialog) {
+        self.start(ctx, kind, move || d.pick_folder());
+    }
+
     /// Show a save dialog for `kind`.
     pub fn save(&mut self, ctx: &egui::Context, kind: K, d: rfd::FileDialog) {
         self.start(ctx, kind, move || d.save_file());

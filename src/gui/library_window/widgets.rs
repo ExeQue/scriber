@@ -1,6 +1,6 @@
 //! Small building blocks shared by the machine and material pages.
 
-use crate::library::Library;
+use crate::library::{Library, Origin};
 use crate::gui::lucide;
 use eframe::egui::{self, Align, Button, Color32, Layout, RichText};
 use std::cmp::Ordering;
@@ -30,7 +30,7 @@ impl Confirm {
 
 /// The list on the left, exactly `SIDEBAR_WIDTH` wide and as high as the space it gets: a header
 /// (e.g. a search box), the rows in a scroll area, and Add / Duplicate / Delete in a row under it.
-pub(super) fn sidebar(ui: &mut egui::Ui, noun: &str, has_selection: bool, header: impl FnOnce(&mut egui::Ui), rows: impl FnOnce(&mut egui::Ui)) -> Option<ListAction> {
+pub(super) fn sidebar(ui: &mut egui::Ui, noun: &str, has_selection: bool, can_delete: bool, header: impl FnOnce(&mut egui::Ui), rows: impl FnOnce(&mut egui::Ui)) -> Option<ListAction> {
     let mut action = None;
     let height = ui.available_height();
     // Its own top-down column: a frame would otherwise take the caller's horizontal layout and
@@ -53,7 +53,8 @@ pub(super) fn sidebar(ui: &mut egui::Ui, noun: &str, has_selection: bool, header
                     action = Some(ListAction::Duplicate);
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if lucide::delete(ui, has_selection, &format!("Delete this {noun}")).clicked() {
+                    let tip = if has_selection && !can_delete { format!("This {noun} comes from a source: turn the source off in Sources to hide it") } else { format!("Delete this {noun}") };
+                    if lucide::delete(ui, has_selection && can_delete, &tip).clicked() {
                         action = Some(ListAction::Delete);
                     }
                 });
@@ -139,13 +140,13 @@ fn number(s: &str) -> (f64, &str) {
     (s[..end].parse().unwrap_or(0.0), &s[end..])
 }
 
-/// The "Delete …?" question on top of the window. Returns Some(yes) once the user answers.
-pub(super) fn confirm_modal(ctx: &egui::Context, question: &str) -> Option<bool> {
+/// The "Delete …?" question on top of the window, with a note under it. Returns Some(yes) once the user answers.
+pub(super) fn confirm_modal(ctx: &egui::Context, question: &str, note: &str) -> Option<bool> {
     let mut answer = None;
     let modal = egui::Modal::new(egui::Id::unique("library-confirm")).show(ctx, |ui| {
         ui.set_width(340.0);
         ui.label(RichText::new(question).strong());
-        ui.label(RichText::new("Nothing is saved until you press Save.").weak());
+        ui.label(RichText::new(note).weak());
         ui.add_space(10.0);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let delete = Button::new(RichText::new("Delete").strong().color(Color32::WHITE)).fill(Color32::from_rgb(200, 70, 60)).min_size(egui::vec2(80.0, 26.0));
@@ -158,6 +159,20 @@ pub(super) fn confirm_modal(ctx: &egui::Context, question: &str) -> Option<bool>
         });
     });
     answer.or(modal.should_close().then_some(false))
+}
+
+/// The form of a machine or material: read-only, under a note, when it comes from a source.
+pub(super) fn read_only_if_source(ui: &mut egui::Ui, origin: &Origin, form: impl FnOnce(&mut egui::Ui)) {
+    if !origin.is_source() {
+        return form(ui);
+    }
+    egui::Frame::new().fill(ui.visuals().faint_bg_color).corner_radius(6).inner_margin(8).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.label(RichText::new(format!("{} {} — read-only", lucide::GIT_BRANCH, origin.label())).strong());
+        ui.label(RichText::new("It comes from a library source and is updated when the source syncs. Duplicate it to make your own copy that you can change.").weak());
+    });
+    ui.add_space(8.0);
+    ui.add_enabled_ui(false, form);
 }
 
 /// Notes and where the numbers come from, as full-width text boxes.

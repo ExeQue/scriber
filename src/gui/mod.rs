@@ -174,6 +174,8 @@ struct App {
     svg_dialog: Option<svg_import::SvgDialog>,
     /// The open "Machines & materials" window.
     library: Option<library_window::Editor>,
+    /// The automatic library sources sync started with the editor: one line when something changed.
+    library_sync: Option<std::sync::mpsc::Receiver<String>>,
     /// The ribbon's tab, fold and layout.
     ribbon: ribbon::Ribbon,
     /// Help > Keyboard shortcuts is open.
@@ -240,6 +242,7 @@ pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
             lucide::install(&ctx);
             let mcp = mcp::listen(ws.clone(), Arc::new(move || ctx.request_repaint())).map_err(|e| e.to_string());
             let mut app = App::new(ws, mcp);
+            app.library_sync = Some(library_window::auto_sync(&cc.egui_ctx));
             if file.is_none() {
                 app.restore_session(&saved.open_files);
             }
@@ -320,6 +323,7 @@ impl App {
             allow_close: false,
             svg_dialog: None,
             library: None,
+            library_sync: None,
             ribbon: ribbon::Ribbon::default(),
             show_shortcuts: false,
             show_guides: true,
@@ -635,6 +639,7 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         self.dialog_answer();
         self.follow_active();
+        self.library_synced();
         let title = {
             let d = self.doc.lock().unwrap();
             let name = d.path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());

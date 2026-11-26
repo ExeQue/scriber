@@ -337,7 +337,7 @@ fn has_tag(http: &dyn Http, owner: &str, repo: &str, tag: &str) -> Result<bool, 
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Choices {
     Branches,
@@ -888,10 +888,13 @@ mod tests {
         dir
     }
 
+    type Canned = (u16, Vec<u8>, String);
+
     /// Answers by URL; counts the calls.
     #[derive(Default)]
     struct Fake {
-        replies: Mutex<HashMap<String, (u16, Vec<u8>, String)>>,
+        /// URL → status, body, ETag.
+        replies: Mutex<HashMap<String, Canned>>,
         calls: Mutex<Vec<String>>,
     }
 
@@ -1104,7 +1107,11 @@ mod tests {
         for (id, ms) in [("first", vec![machine("k40"), machine("xtool-m2")]), ("second", vec![machine("k40"), machine("k50")])] {
             let s = Source { id: id.into(), url: format!("https://github.com/acme/{id}"), track: Track::default(), pinned_commit: C1.into(), name: format!("{id} name"), release: String::new(), fetched_at: 0, last_checked: 0, etag: String::new(), last_error: String::new(), last_sync: String::new(), enabled: true };
             extract(&repo_zip(&ms, &[]), &s.folder(&dir)).unwrap();
-            edit(&dir, |l| Ok(l.push(s))).unwrap();
+            edit(&dir, |l| {
+                l.push(s);
+                Ok(())
+            })
+            .unwrap();
         }
         let base = base_from(&dir);
         assert_eq!(base.problems.len(), 1, "k40 clashes: {:?}", base.problems);

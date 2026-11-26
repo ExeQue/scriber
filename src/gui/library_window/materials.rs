@@ -3,7 +3,7 @@
 
 use super::Editor;
 use super::material_list::{category_combo, rows, search_box};
-use super::widgets::{Confirm, ListAction, column_title, field_label, form_column, natural_cmp, notes_section, remove_button, section, sidebar};
+use super::widgets::{Confirm, ListAction, column_title, field_label, form_column, natural_cmp, notes_section, read_only_if_source, remove_button, section, sidebar};
 use crate::gui::lucide;
 use crate::library::{Category, Library, Machine, Material, Operation, Setting};
 use eframe::egui::{self, Align, Checkbox, ComboBox, DragValue, Layout, RichText};
@@ -12,6 +12,7 @@ const LINES_HELP: &str = "How many engraved lines fit in 1 cm. More lines look d
 
 pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
     ui.horizontal_top(|ui| {
+        let deletable = ed.lib.materials.get(ed.material).is_some_and(|m| !ed.lib.material_origin(&m.id).is_source());
         let (materials, filter, selected) = (&ed.lib.materials, &mut ed.filter, &mut ed.material);
         let (machine, laser) = (ed.doc_machine.as_deref(), ed.doc_laser.as_deref());
         let selected_id = materials.get(*selected).map(|m| m.id.clone());
@@ -20,6 +21,7 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
             ui,
             "material",
             !materials.is_empty(),
+            deletable,
             |ui| {
                 search_box(ui, &mut header_filter);
                 category_combo(ui, &mut header_filter);
@@ -54,10 +56,11 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
             None => {}
         }
         ed.material = ed.material.min(lib.materials.len().saturating_sub(1));
+        let origin = lib.materials.get(ed.material).map(|m| lib.material_origin(&m.id)).unwrap_or_default();
         let Library { machines, materials, .. } = lib;
         let (index, confirm, view) = (ed.material, &mut ed.confirm, &mut ed.settings_view);
         form_column(ui, "material", |ui| match materials.get_mut(index) {
-            Some(m) => form(ui, m, machines, index, confirm, view),
+            Some(m) => read_only_if_source(ui, &origin, |ui| form(ui, m, machines, index, confirm, view)),
             None => _ = ui.label(RichText::new(super::material_list::NO_MATERIALS).weak()),
         });
     });
