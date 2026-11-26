@@ -26,6 +26,9 @@ impl App {
                 if ui.button("Import image…").clicked() {
                     self.import_image_dialog();
                 }
+                if ui.button("Import SVG…").clicked() {
+                    self.import_svg_dialog();
+                }
                 if ui.button("Export SVG for the laser…").clicked() {
                     self.export_svg();
                 }

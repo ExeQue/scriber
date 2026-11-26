@@ -161,6 +161,24 @@ pub struct ImportImage {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ImportSvg {
+    /// SVG file to import.
+    pub path: Option<String>,
+    /// Or the SVG itself: its text, or base64.
+    pub data: Option<String>,
+    /// Left edge of the drawing in mm; default: where the file puts it.
+    pub x: Option<f64>,
+    /// Top edge of the drawing in mm; default: where the file puts it.
+    pub y: Option<f64>,
+    /// Scale the drawing to this width in mm (overrides scale).
+    pub width: Option<f64>,
+    /// Extra factor on the file's own size; 1.333 (96/72) for 72 DPI files. Default 1.
+    pub scale: Option<f64>,
+    /// Largest distance in mm between a curve and the arcs that replace it. Default 0.01.
+    pub tolerance: Option<f64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ExportSvg {
     pub path: String,
     /// Include annotate items. Default false, because laser software would burn them.
@@ -721,6 +739,39 @@ impl Server {
                 Err(e) => fail(e),
             },
             _ => fail("give one id or select exactly one item"),
+        })
+    }
+
+    #[tool(description = "Import an SVG file (path) or SVG text/base64 (data). Each path becomes an item (subpaths stay one compound path), curves become arcs, text becomes outlines and raster images greyscale images. Stroke colour sets the op: red = cut, blue = score, black/dark = engrave, other colours = cut; a fill engraves the area (no stroke = op none). Units in the file (mm, cm, in) are honoured; plain numbers are px at 96 per inch. The new items become the selection; returns their ids.")]
+    fn import_svg(&self, Parameters(p): Parameters<ImportSvg>) -> ToolResult {
+        let bytes = match (&p.path, &p.data) {
+            (Some(path), _) => std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}")),
+            (None, Some(d)) if d.trim_start().starts_with('<') => Ok(d.clone().into_bytes()),
+            (None, Some(d)) => base64::engine::general_purpose::STANDARD.decode(d.trim()).map_err(|e| format!("data is neither SVG text nor base64: {e}")),
+            _ => Err("give path or data".into()),
+        };
+        let bytes = match bytes {
+            Ok(b) => b,
+            Err(e) => return fail(e),
+        };
+        let defaults = export::svg_import::ImportOptions::default();
+        let opts = export::svg_import::ImportOptions {
+            x: p.x,
+            y: p.y,
+            width: p.width,
+            scale: p.scale.unwrap_or(defaults.scale),
+            tolerance: p.tolerance.unwrap_or(defaults.tolerance),
+            dir: p.path.as_deref().and_then(|f| PathBuf::from(f).parent().map(PathBuf::from)),
+        };
+        self.with(|d| {
+            let before = d.s.clone();
+            match d.import_svg(&bytes, &opts) {
+                Ok(ids) => {
+                    d.push_undo(before);
+                    ok(json!({"ids": ids, "bbox": d.bbox(&ids)}))
+                }
+                Err(e) => fail(e),
+            }
         })
     }
 }

@@ -186,12 +186,14 @@ impl App {
         }
     }
 
-    /// Images are imported where they are dropped; .scriber files are opened.
+    /// Images and SVG drawings are imported where they are dropped; .scriber files are opened.
     fn dropped_files(&mut self, ctx: &egui::Context, pointer: Option<Point>) {
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
         for path in dropped {
             if path.extension().is_some_and(|e| e == "scriber") {
                 self.open_path(&path);
+            } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg") || e.eq_ignore_ascii_case("svgz")) {
+                self.import_svg_at(&path, pointer.unwrap_or([10.0, 10.0]));
             } else {
                 self.import_image(&path, pointer.unwrap_or([10.0, 10.0]));
             }

@@ -3,6 +3,7 @@
 pub mod image;
 mod png;
 pub(crate) mod svg;
+pub mod svg_import;
 
 pub use png::png;
 pub use svg::svg;

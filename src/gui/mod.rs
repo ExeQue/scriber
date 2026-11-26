@@ -9,6 +9,7 @@ mod labels;
 mod panels;
 mod select;
 mod snap;
+mod svg_import;
 mod toolbar;
 mod tools;
 
@@ -70,6 +71,7 @@ struct App {
     agents: Arc<Mutex<Option<Vec<agents::Target>>>>,
     confirm_close: bool,
     allow_close: bool,
+    svg_dialog: Option<svg_import::SvgDialog>,
 }
 
 pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
@@ -138,6 +140,7 @@ impl App {
             agents: Arc::new(Mutex::new(None)),
             confirm_close: false,
             allow_close: false,
+            svg_dialog: None,
         }
     }
 
@@ -392,6 +395,7 @@ impl eframe::App for App {
         if self.show_agents {
             self.agents_window(&ctx);
         }
+        self.svg_import_window(&ctx);
         if self.confirm_close {
             self.close_dialog(&ctx);
         }

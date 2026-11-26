@@ -5,7 +5,7 @@ use resvg::{tiny_skia, usvg};
 use std::sync::OnceLock;
 
 /// SVG options with the system fonts loaded once (loading them is slow).
-fn options() -> &'static usvg::Options<'static> {
+pub(super) fn options() -> &'static usvg::Options<'static> {
     static OPT: OnceLock<usvg::Options<'static>> = OnceLock::new();
     OPT.get_or_init(|| {
         let mut opt = usvg::Options::default();
