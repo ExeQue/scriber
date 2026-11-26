@@ -2,7 +2,7 @@
 
 use crate::export;
 use crate::model::constraints::attach;
-use crate::model::{BoolOp, Contour, Document, Guide, Op, Shape, Shared, Transform, text};
+use crate::model::{BoolOp, Contour, Document, Guide, Kind, Op, Ref, Shape, Shared, Transform, text};
 use base64::Engine;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
@@ -511,7 +511,7 @@ impl Server {
         }
         self.with(|d| {
             d.checkpoint();
-            let mut ids = Vec::new();
+            let (mut ids, mut own) = (Vec::new(), Vec::new());
             for it in p.items {
                 let (kind, shape) = it.shape.build();
                 let default_op = match shape {
@@ -522,16 +522,16 @@ impl Server {
                 let op = if it.fill == Some(true) { Op::Engrave } else { it.op.unwrap_or(default_op) };
                 let id = d.add(it.name.as_deref().unwrap_or(kind), op, shape);
                 d.item_mut(id).unwrap().note = it.note.unwrap_or_default();
+                if kind == "polygon" {
+                    own.push((Kind::Regular, vec![Ref::Item { item: id }]));
+                }
                 ids.push(id);
             }
             if p.select.unwrap_or(true) {
                 d.selection = ids.clone();
             }
-            let mut inferred = 0;
-            if p.infer.unwrap_or(false) {
-                let found: Vec<_> = ids.iter().flat_map(|id| attach::link_constraints(&d.s, *id, &attach::touching(&d.s, *id))).collect();
-                inferred = d.infer_new(found);
-            }
+            let found: Vec<_> = if p.infer.unwrap_or(false) { ids.iter().flat_map(|id| attach::link_constraints(&d.s, *id, &attach::touching(&d.s, *id))).collect() } else { Vec::new() };
+            let inferred = d.constrain_new(own, found);
             ok(json!({"ids": ids, "inferred_constraints": inferred}))
         })
     }

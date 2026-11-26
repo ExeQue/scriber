@@ -62,6 +62,7 @@ fn constraint_help(k: Kind) -> &'static str {
         Kind::Smooth => "Join two curves end to end without a kink.",
         Kind::Symmetric => "Mirror two points or shapes over a line.",
         Kind::Equal => "Give two lines the same length, or two circles the same size.",
+        Kind::Regular => "Keep a polygon regular: equal sides and equal corners.",
         Kind::DimHorizontal => "Lock the horizontal distance between two points.",
         Kind::DimVertical => "Lock the vertical distance between two points.",
         Kind::DimAligned => "Lock a length or the distance between two points.",

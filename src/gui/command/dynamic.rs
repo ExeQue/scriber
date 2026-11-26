@@ -17,7 +17,7 @@ use crate::model::geom::distance;
 use eframe::egui::{self, DragValue, Event, Key, RichText};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-enum Kind {
+pub(super) enum Kind {
     /// From the last point: radius (circle, polygon) or radius from the end point (arc by start, end, radius).
     Radius { diameter: bool },
     /// Length and angle from the last point (lines, polylines, move/copy distance).
@@ -68,8 +68,10 @@ impl Kind {
 /// Typed and locked values; unlocked ones follow the mouse.
 #[derive(Default)]
 pub struct DynInput {
-    values: [f64; 2],
-    locked: [bool; 2],
+    pub(super) values: [f64; 2],
+    pub(super) locked: [bool; 2],
+    /// The diameter field (not the radius) was typed last.
+    pub(super) diameter: bool,
     /// What is being typed in each field (empty = show the live value).
     texts: [String; 2],
     /// The field the keyboard is typing into.
@@ -102,7 +104,7 @@ impl App {
         self.dyn_kind().is_some()
     }
 
-    fn dyn_kind(&self) -> Option<Kind> {
+    pub(super) fn dyn_kind(&self) -> Option<Kind> {
         // A dragged or hot grip: how far and which way it moved, or a circle's radius.
         if let Some(Drag::Grip { grip, .. }) = &self.drag {
             return match grip {
@@ -233,7 +235,9 @@ impl App {
             self.sides = (v.round() as u32).clamp(3, 64);
             return;
         }
-        let (slot, v) = if matches!(kind, Kind::Radius { diameter: true }) && i == 1 { (0, v / 2.0) } else { (i, v) };
+        let diameter = matches!(kind, Kind::Radius { diameter: true }) && i == 1;
+        self.cmdline.dynamic.diameter = diameter;
+        let (slot, v) = if diameter { (0, v / 2.0) } else { (i, v) };
         self.cmdline.dynamic.values[slot] = v;
         self.cmdline.dynamic.locked[slot] = true;
         // DIM keeps the typed value itself: dynamic input resets when the click places it.

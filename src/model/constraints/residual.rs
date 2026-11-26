@@ -137,6 +137,10 @@ pub fn residuals(c: &Compiled, x: &[f64], out: &mut Vec<f64>) -> bool {
             (.., Some(a), Some(b)) => out.push(a.1 - b.1),
             _ => return false,
         },
+        Kind::Regular => {
+            let [G::Item(v)] = g else { return false };
+            regular(&v.iter().map(|i| [x[*i], x[i + 1]]).collect::<Vec<_>>(), out);
+        }
         _ => {
             let Some(m) = measure(c.kind, g, x) else { return false };
             let scale = if c.kind == Kind::DimAngular { std::f64::consts::PI / 180.0 } else { 1.0 };
@@ -144,6 +148,24 @@ pub fn residuals(c: &Compiled, x: &[f64], out: &mut Vec<f64>) -> bool {
         }
     }
     true
+}
+
+/// A closed polygon `v` regular: sides 1..n-2 as long as side 0, and the turns between sides
+/// 0..n-2 all 360°/n (with the polygon's winding). That is 2n − 4 equations for the 2n − 4 ways a
+/// polygon can change shape (rather than move, turn or scale); the last side follows from closing.
+fn regular(v: &[Point], out: &mut Vec<f64>) {
+    let n = v.len();
+    let side = |k: usize| sub(v[(k + 1) % n], v[k]);
+    let area: f64 = (0..n).map(|k| cross(v[k], v[(k + 1) % n])).sum();
+    let turn = area.signum() * std::f64::consts::TAU / n as f64;
+    let len0 = side(0)[0].hypot(side(0)[1]);
+    for k in 1..n - 1 {
+        out.push(side(k)[0].hypot(side(k)[1]) - len0);
+    }
+    for k in 0..n - 2 {
+        let (a, b) = (side(k), side(k + 1));
+        out.push(cross(a, b).atan2(dot(a, b)) - turn);
+    }
 }
 
 /// What a dimensional constraint measures now: mm, or degrees for angular.

@@ -15,6 +15,8 @@ mod modify;
 mod parse;
 mod polygons;
 mod rects;
+mod typed;
+pub(super) use typed::Typed;
 mod preview;
 mod reshape;
 mod smart_dim;
@@ -333,6 +335,7 @@ impl App {
         self.draft.clear();
         self.draft_links.clear();
         self.draft_along.clear();
+        self.draft_typed.clear();
     }
 
     fn set_step(&mut self, step: Step) {
@@ -349,6 +352,7 @@ impl App {
         self.draft.clear();
         self.draft_links.clear();
         self.draft_along.clear();
+        self.draft_typed.clear();
         self.tracker.clear();
         self.once = None;
     }
@@ -423,6 +427,7 @@ impl App {
             return;
         }
 
+        self.note_typed();
         self.dyn_reset();
         self.cmdline.log(format!("{} {:.2},{:.2}", self.prompt(), p[0], p[1]));
         self.answer(Entry::Point(p), Some(p));

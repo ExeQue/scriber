@@ -34,6 +34,7 @@ pub fn describe(s: &State, c: &Constraint, items: &[u64]) -> String {
         Kind::Smooth => ("Joined smoothly", "to"),
         Kind::Symmetric => ("Symmetric", "with"),
         Kind::Equal => ("Equal", "to"),
+        Kind::Regular => ("Regular (equal sides and corners)", ""),
         Kind::DimHorizontal => ("Locked horizontal distance", ""),
         Kind::DimVertical => ("Locked vertical distance", ""),
         Kind::DimAligned => ("Locked length", ""),

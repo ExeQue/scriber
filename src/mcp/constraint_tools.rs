@@ -130,7 +130,7 @@ fn info(d: &Document, id: u64) -> Value {
 
 #[tool_router(router = constraint_router, vis = "pub(super)")]
 impl Server {
-    #[tool(description = "Add a geometric constraint (AutoCAD GEOMCONSTRAINT): coincident, collinear, concentric, fix, parallel, perpendicular, horizontal, vertical, tangent, smooth, symmetric or equal. The geometry moves to satisfy it at once and stays bound from then on. Refused (with the conflicting constraints named) if it cannot be satisfied.")]
+    #[tool(description = "Add a geometric constraint (AutoCAD GEOMCONSTRAINT): coincident, collinear, concentric, fix, parallel, perpendicular, horizontal, vertical, tangent, smooth, symmetric or equal; or regular (one {kind: item} ref: a closed straight-sided shape keeps equal sides and corners, as polygons from add_items do). The geometry moves to satisfy it at once and stays bound from then on. Refused (with the conflicting constraints named) if it cannot be satisfied.")]
     fn add_constraint(&self, Parameters(p): Parameters<AddConstraint>) -> ToolResult {
         self.with(|d| {
             change(d, |d| {

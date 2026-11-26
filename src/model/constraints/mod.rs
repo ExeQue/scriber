@@ -106,6 +106,8 @@ pub enum Kind {
     Symmetric,
     /// Two lines the same length, or two arcs/circles the same radius.
     Equal,
+    /// A closed straight-sided item (one contour) stays a regular polygon: equal sides, equal corners.
+    Regular,
     /// Horizontal distance between two points (or a line's ends).
     DimHorizontal,
     /// Vertical distance between two points (or a line's ends).
@@ -146,7 +148,7 @@ impl Kind {
     /// How many references it takes.
     pub fn arity(self) -> std::ops::RangeInclusive<usize> {
         match self {
-            Kind::Fix | Kind::DimRadial | Kind::DimDiameter => 1..=1,
+            Kind::Fix | Kind::Regular | Kind::DimRadial | Kind::DimDiameter => 1..=1,
             Kind::Horizontal | Kind::Vertical | Kind::DimHorizontal | Kind::DimVertical | Kind::DimAligned => 1..=2,
             Kind::Symmetric => 3..=3,
             _ => 2..=2,

@@ -55,10 +55,13 @@ impl App {
     pub(super) fn infer_drawn(&mut self, id: u64, pts: &[Point]) {
         let links: Vec<Link> = std::mem::take(&mut self.draft_links).into_iter().filter(|l| pts.contains(&l.p)).collect();
         let along: Vec<Along> = std::mem::take(&mut self.draft_along).into_iter().filter(|l| pts.contains(&l.p)).collect();
+        let typed = std::mem::take(&mut self.draft_typed);
+        let mut d = self.doc.lock().unwrap();
+        let own = self.own_constraints(&d.s, id, &typed);
         if !self.aids.infer {
+            d.constrain_new(own, Vec::new());
             return;
         }
-        let mut d = self.doc.lock().unwrap();
         let mut found = link_constraints(&d.s, id, &links);
         if self.tool == Tool::Rect || (self.aids.ortho && matches!(self.tool, Tool::Line | Tool::Polyline)) {
             found.extend(axis_constraints(&d.s, id));
@@ -68,7 +71,7 @@ impl App {
                 found.push(c);
             }
         }
-        d.infer_new(found);
+        d.constrain_new(own, found);
     }
 
     /// LINE goes on from the end of segment `id`: the next segment starts joined to it.

@@ -195,3 +195,50 @@ fn autoconstrain_finds_relations_between_items() {
     d.settle(true).unwrap();
     assert!(d.list_constraints().iter().all(|c| c.satisfied));
 }
+
+fn is_regular(p: &[Point]) -> bool {
+    let n = p.len();
+    let side = distance(p[0], p[1]);
+    let diag = distance(p[0], p[2]);
+    (0..n).all(|k| (distance(p[k], p[(k + 1) % n]) - side).abs() < 1e-6 && (distance(p[k], p[(k + 2) % n]) - diag).abs() < 1e-6)
+}
+
+#[test]
+fn a_regular_polygon_stays_regular_when_a_corner_is_dragged() {
+    for sides in [3, 5, 6] {
+        let mut d = Document::new(200.0, 200.0);
+        let p = add(&mut d, Contour::polygon(50.0, 50.0, 20.0, sides, 10.0));
+        let before = vertices(&d, p);
+        assert_eq!(d.constrain_new(vec![(Kind::Regular, vec![Ref::Item { item: p }])], Vec::new()), 1);
+        assert_eq!(vertices(&d, p), before, "settling right after creation moves nothing");
+        move_vertex(&mut d, p, 1, [before[1][0] + 7.0, before[1][1] + 3.0]);
+        d.settle(true).unwrap();
+        let after = vertices(&d, p);
+        assert!(close(after[1], [before[1][0] + 7.0, before[1][1] + 3.0]), "{sides}: {after:?}");
+        assert!(is_regular(&after), "{sides}: {after:?}");
+    }
+}
+
+#[test]
+fn regular_only_fits_one_closed_straight_contour() {
+    let mut d = Document::new(200.0, 200.0);
+    let c = add(&mut d, Contour::circle(50.0, 50.0, 10.0));
+    let l = add(&mut d, Contour::polyline(&[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]], false));
+    for item in [c, l] {
+        assert!(d.add_constraint(Kind::Regular, vec![Ref::Item { item }]).is_err());
+    }
+}
+
+#[test]
+fn own_constraints_survive_when_inferred_ones_conflict() {
+    // The line was drawn 30 long and typed so; an inferred vertical on it cannot hold with a level end.
+    let mut d = Document::new(200.0, 200.0);
+    let l = add(&mut d, Contour::line([0.0, 0.0], [30.0, 0.0]));
+    d.add_constraint(Kind::Fix, vec![Ref::Item { item: l }]).unwrap();
+    d.settle(true).unwrap();
+    let n = d.constrain_new(vec![(Kind::DimAligned, vec![seg(l, 0)])], vec![(Kind::Vertical, vec![seg(l, 0)])]);
+    assert_eq!(n, 1);
+    let kinds: Vec<Kind> = d.s.constraints.iter().map(|c| c.kind).collect();
+    assert_eq!(kinds, vec![Kind::Fix, Kind::DimAligned]);
+    assert_eq!(d.parameter("d1").unwrap().expr, "30");
+}

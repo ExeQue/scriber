@@ -85,6 +85,8 @@ struct App {
     draft_links: Vec<crate::model::constraints::attach::Link>,
     /// The tracking paths the draft's points were locked to (INFER), by point.
     draft_along: Vec<crate::model::constraints::attach::Along>,
+    /// Values typed into dynamic input for the draft's points: they become dimensions.
+    draft_typed: Vec<command::Typed>,
     drag: Option<Drag>,
     cmdline: command::CommandLine,
     /// The AutoCAD-style command line; hidden unless the user turns it on (ribbon View tab).
@@ -220,6 +222,7 @@ impl App {
             draft: Vec::new(),
             draft_links: Vec::new(),
             draft_along: Vec::new(),
+            draft_typed: Vec::new(),
             drag: None,
             cmdline: command::CommandLine::new(),
             show_cmdline: false,

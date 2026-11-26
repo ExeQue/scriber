@@ -123,6 +123,9 @@ impl System {
         if !c.kind.arity().contains(&c.refs.len()) {
             return Err(format!("{} takes {:?} references, not {}", c.kind.name(), c.kind.arity(), c.refs.len()));
         }
+        if c.kind == Kind::Regular {
+            regular_shape(s, &c.refs[0])?;
+        }
         let g = c.refs.iter().map(|r| self.resolve(s, r)).collect::<Result<Vec<_>, _>>()?;
         let mut vars: Vec<usize> = g.iter().flat_map(G::vars).collect();
         if c.kind != Kind::Fix {
@@ -136,6 +139,15 @@ impl System {
         }
         self.cons.push(compiled);
         Ok(())
+    }
+}
+
+/// Regular applies to a whole item that is one closed contour of 3 or more straight sides.
+fn regular_shape(s: &State, r: &Ref) -> Result<(), String> {
+    let Ref::Item { item } = *r else { return Err("regular takes a whole item".into()) };
+    match path_contours(s, item)? {
+        [c] if c.closed && c.vertices.len() >= 3 && c.vertices.iter().all(|v| v.bulge == 0.0) => Ok(()),
+        _ => Err(format!("item {item} is not one closed shape with straight sides")),
     }
 }
 

@@ -162,19 +162,37 @@ impl Document {
     /// Add constraints inferred for new geometry (INFER) and settle. When they cannot all hold
     /// together they are all dropped and the geometry stays as drawn. Returns how many were added.
     pub fn infer_new(&mut self, found: Vec<(Kind, Vec<Ref>)>) -> usize {
-        if found.is_empty() || self.settle(false).is_err() {
+        self.constrain_new(Vec::new(), found)
+    }
+
+    /// Add the constraints new geometry was made with (`own`: typed sizes, a polygon's regularity;
+    /// dimensional kinds become parameters at their current value) and the `inferred` ones, and
+    /// settle. When they cannot all hold together the inferred ones are dropped, then all of them;
+    /// the geometry stays as drawn. Returns how many were added.
+    pub fn constrain_new(&mut self, own: Vec<(Kind, Vec<Ref>)>, inferred: Vec<(Kind, Vec<Ref>)>) -> usize {
+        if (own.is_empty() && inferred.is_empty()) || self.settle(false).is_err() {
             return 0;
         }
         let before = self.s.clone();
-        let n = found.into_iter().filter(|(kind, refs)| self.add_constraint(*kind, refs.clone()).is_ok()).count();
-        if n > 0 && self.settle(true).is_err() {
-            self.s = before;
+        for set in [[own.clone(), inferred].concat(), own] {
+            let n = set.into_iter().filter(|(kind, refs)| self.add_new(*kind, refs.clone()).is_ok()).count();
+            if n == 0 || self.settle(true).is_ok() {
+                return n;
+            }
+            self.s = before.clone();
             self.solved = None;
             self.hold.clear();
             self.touch();
-            return 0;
         }
-        n
+        0
+    }
+
+    fn add_new(&mut self, kind: Kind, refs: Vec<Ref>) -> Result<u64, String> {
+        match kind {
+            Kind::DimRadial | Kind::DimDiameter => self.add_dimension(kind, refs, None, None, 0.0),
+            k if k.is_dimension() => self.add_dimension(kind, refs, None, None, 8.0),
+            _ => self.add_constraint(kind, refs),
+        }
     }
 
     /// Solve after a change (see the module doc). On failure the change is undone and the error returned;

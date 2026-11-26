@@ -49,6 +49,7 @@ pub(super) fn constrain_title(cmd: Cmd) -> &'static str {
             Kind::Smooth => "Smooth",
             Kind::Symmetric => "Symmetric",
             Kind::Equal => "Equal",
+            Kind::Regular => "Regular",
             Kind::DimHorizontal => "Horizontal distance",
             Kind::DimVertical => "Vertical distance",
             Kind::DimAligned => "Length",
