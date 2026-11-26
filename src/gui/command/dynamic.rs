@@ -29,6 +29,10 @@ enum Kind {
     Polygon,
     /// Height of a 3-point rectangle, from its first edge.
     Height,
+    /// ROTATE's angle around the base point (counter-clockwise).
+    Angle,
+    /// SCALE's factor (the distance from the base point, as in AutoCAD).
+    Factor,
 }
 
 impl Kind {
@@ -42,6 +46,8 @@ impl Kind {
             Kind::Sweep => &[("Angle", "°")],
             Kind::Polygon => &[("Radius", "mm"), ("Sides", "")],
             Kind::Height => &[("Height", "mm")],
+            Kind::Angle => &[("Angle", "°")],
+            Kind::Factor => &[("Factor", "×")],
         }
     }
 
@@ -115,6 +121,11 @@ impl App {
             (Cmd::Rectang, Step::Draw, 1) => Kind::Size,
             (Cmd::Rectang, Step::Draw, 2) => Kind::Height,
             (Cmd::Move | Cmd::Copy, Step::Second, _) => Kind::LengthAngle,
+            (Cmd::Rotate, Step::Second, _) => Kind::Angle,
+            (Cmd::Scale, Step::Second, _) => Kind::Factor,
+            // Everything else that asks for a point after a first one: length and angle from it.
+            (Cmd::Text, ..) => return None,
+            (_, Step::Second, 1..) | (_, Step::Draw | Step::Ux, 1..) if self.tool.points() != 1 => Kind::LengthAngle,
             _ => return None,
         })
     }
@@ -140,6 +151,8 @@ impl App {
             Kind::Size if self.rect_in(Cmd::Rectang, RectMode::Center) => [2.0 * (p[0] - last[0]).abs(), 2.0 * (p[1] - last[1]).abs()],
             Kind::Size => [p[0] - self.draft[0][0], p[1] - self.draft[0][1]],
             Kind::Height => [height_from(self.draft[0], self.draft[1], p), 0.0],
+            Kind::Angle => [(last[1] - p[1]).atan2(p[0] - last[0]).to_degrees(), 0.0],
+            Kind::Factor => [distance(last, p), 0.0],
             Kind::Sweep => {
                 let (centre, start) = if self.cmdline.arc_mode == ArcMode::StartCenterEnd { (self.draft[1], self.draft[0]) } else { (self.draft[0], self.draft[1]) };
                 let ang = |q: Point| (centre[1] - q[1]).atan2(q[0] - centre[0]).to_degrees();
@@ -176,6 +189,11 @@ impl App {
             Kind::LengthAngle => [last[0] + a * b.to_radians().cos(), last[1] - a * b.to_radians().sin()],
             Kind::Size if cmd.is_some_and(|c| self.rect_in(c, RectMode::Center)) => [last[0] + a / 2.0, last[1] + b / 2.0],
             Kind::Size => [self.draft[0][0] + a, self.draft[0][1] + b],
+            Kind::Angle => {
+                let len = distance(last, pointer).max(1.0);
+                [last[0] + len * a.to_radians().cos(), last[1] - len * a.to_radians().sin()]
+            }
+            Kind::Factor => toward(last, Some(pointer), a),
             Kind::Height => {
                 let (a0, b0) = (self.draft[0], self.draft[1]);
                 let len = distance(a0, b0).max(1e-12);
