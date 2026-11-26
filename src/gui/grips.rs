@@ -34,12 +34,8 @@ impl Grip {
     }
 }
 
-/// Centre and radius of a full circle contour (two half-circle arcs).
 fn circle(c: &Contour) -> Option<(Point, f64)> {
-    let [a, b] = c.vertices.as_slice() else { return None };
-    let half = |v: f64| (v.abs() - 1.0).abs() < 1e-9;
-    (c.closed && half(a.bulge) && half(b.bulge) && a.bulge.signum() == b.bulge.signum())
-        .then(|| ([(a.x + b.x) / 2.0, (a.y + b.y) / 2.0], distance([a.x, a.y], [b.x, b.y]) / 2.0))
+    c.as_circle()
 }
 
 /// The grips of one selected item, with their positions.

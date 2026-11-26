@@ -2,6 +2,7 @@
 //! so they can do the same things and share one undo history.
 
 mod chain;
+pub mod constraints;
 mod file;
 pub mod geom;
 pub mod item;
@@ -9,6 +10,7 @@ pub mod ops;
 
 pub use geom::{BBox, Contour, Point, Transform};
 pub use item::{Item, Op, Shape};
+pub use constraints::{Constraint, Kind, Ref};
 pub use ops::BoolOp;
 
 use std::collections::BTreeMap;
@@ -40,11 +42,14 @@ pub struct State {
     #[serde(skip)]
     pub images: BTreeMap<u64, Arc<Img>>,
     pub next_id: u64,
+    /// Geometric and dimensional constraints (see `constraints`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub constraints: Vec<Constraint>,
 }
 
 impl Default for State {
     fn default() -> Self {
-        Self { width: 300.0, height: 200.0, notes: String::new(), items: Vec::new(), images: BTreeMap::new(), next_id: 1 }
+        Self { width: 300.0, height: 200.0, notes: String::new(), items: Vec::new(), images: BTreeMap::new(), next_id: 1, constraints: Vec::new() }
     }
 }
 
@@ -58,6 +63,10 @@ pub struct Document {
     pub selection: Vec<u64>,
     /// Bumped on every change, so views know when to refresh.
     pub rev: u64,
+    /// The last state the constraint solver settled (see `settle`).
+    solved: Option<State>,
+    /// References the next `settle` should keep in place (the first object of a new constraint).
+    hold: Vec<Ref>,
 }
 
 impl Document {
@@ -149,6 +158,9 @@ impl Document {
 
     pub fn delete(&mut self, ids: &[u64]) {
         self.s.items.retain(|i| !ids.contains(&i.id));
+        let values = constraints::parameter_values(&self.s).unwrap_or_default();
+        self.s.constraints.retain(|c| c.refs.iter().all(|r| !ids.contains(&r.item())));
+        constraints::freeze_orphans(&mut self.s, &values);
         self.selection.retain(|id| !ids.contains(id));
         // Drop images nothing points at any more (undo snapshots keep their own reference).
         let used: Vec<u64> = self.s.items.iter().filter_map(|i| if let Shape::Image { image, .. } = i.shape { Some(image) } else { None }).collect();

@@ -65,6 +65,14 @@ impl Contour {
         Self { vertices: vec![Vertex::new(cx - r, cy, 1.0), Vertex::new(cx + r, cy, 1.0)], closed: true }
     }
 
+    /// Centre and radius when this is a full circle (two half-circle arcs).
+    pub fn as_circle(&self) -> Option<(Point, f64)> {
+        let [a, b] = self.vertices.as_slice() else { return None };
+        let half = |v: f64| (v.abs() - 1.0).abs() < 1e-9;
+        (self.closed && half(a.bulge) && half(b.bulge) && a.bulge.signum() == b.bulge.signum())
+            .then(|| ([(a.x + b.x) / 2.0, (a.y + b.y) / 2.0], distance([a.x, a.y], [b.x, b.y]) / 2.0))
+    }
+
     pub fn line(a: Point, b: Point) -> Self {
         Self { vertices: vec![Vertex::new(a[0], a[1], 0.0), Vertex::new(b[0], b[1], 0.0)], closed: false }
     }
