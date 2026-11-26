@@ -18,6 +18,7 @@ mod items_file;
 mod laser;
 mod layers;
 mod reply;
+mod xtool;
 
 use reply::{Detail, IdsDetail, changed};
 
@@ -30,7 +31,8 @@ Contours are polylines whose segments can be arcs: each vertex has a bulge = tan
 Constraints (as in AutoCAD) bind geometry: add_constraint (coincident, parallel, tangent, …; the first object stays, the second moves), add_dimensional_constraint (a named parameter like d1 = 40 or d2 = d1 / 2 that drives the size), set_parameter, list_constraints, delete_constraints, auto_constrain. A reference names geometry in a path: {kind: point, item, vertex}, {kind: segment, item, segment} (segment k runs from vertex k to k+1; a circle is segment 0), {kind: centre, item, segment}, {kind: item, item}; contour defaults to 0. After every change the solver keeps all constraints satisfied, moving as little as possible; a change that cannot be satisfied is refused and undone, naming the conflicting constraints.
 Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. A large document comes back as a summary without geometry (or ask for one with geometry: false); get_document with ids gives the geometry of particular items. Tools that change items reply compactly (per item id, name, layer, op, kind, bbox, rotation, contour and vertex counts); pass verbose: true for the full geometry. Call export_png without a path to look at the result.
 Mirrored copy: transform_items with mirror_x/mirror_y and copy: true. boolean keeps the first item's layer (and so its op). import_svg maps colours to ops (shapes with neither fill nor stroke, or a grey or green fill, come in as no_output, useful as boolean cutters) and says which SVG element (svg_id, element index) each item came from.
-Laser settings: list_machines and list_materials show the user's machines and material library; set_laser_setup picks the document's machine, laser module and material, and get_laser_setup returns the power/speed/passes to use per operation and per layer. Before the user lasers, run preflight_check and look at export_png with preview: true.";
+Laser settings: list_machines and list_materials show the user's machines and material library; set_laser_setup picks the document's machine, laser module and material, and get_laser_setup returns the power/speed/passes to use per operation and per layer. Before the user lasers, run preflight_check and look at export_png with preview: true.
+Import and share: search_xtool_materials and import_xtool_materials copy settings from xTool Studio's local material cache (only materials the user opened there), import_xtool_project from an .xs project; export_library and import_library write and merge .scrlib files for other Scriber users.";
 
 // ---------- parameters ----------
 
@@ -502,7 +504,7 @@ pub(super) fn fail(msg: impl std::fmt::Display) -> ToolResult {
 
 impl Server {
     pub fn new(doc: Shared, repaint: Arc<dyn Fn() + Send + Sync>) -> Self {
-        Self { doc, repaint, tool_router: Self::tool_router() + Self::constraint_router() + Self::laser_router() + Self::editing_router() + Self::layers_router() }
+        Self { doc, repaint, tool_router: Self::tool_router() + Self::constraint_router() + Self::laser_router() + Self::editing_router() + Self::layers_router() + Self::xtool_router() }
     }
 
     /// Run `f` on the locked document, then repaint the GUI.

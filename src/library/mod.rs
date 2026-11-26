@@ -4,7 +4,9 @@
 
 mod machines;
 mod materials;
+pub mod exchange;
 pub mod store;
+pub mod xtool;
 
 pub use machines::{Laser, LaserKind, Machine};
 pub use materials::{Category, Material, Operation, Setting};

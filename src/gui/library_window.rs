@@ -9,6 +9,7 @@ use eframe::egui::{self, Color32, RichText};
 use material_list::{Filter, Picked};
 use widgets::Confirm;
 
+mod import_export;
 mod machines;
 mod material_list;
 mod materials;
@@ -77,6 +78,8 @@ fn show(ctx: &egui::Context, ed: &mut Editor) -> bool {
             ui.add_space(24.0);
             ui.selectable_value(&mut ed.tab, Tab::Machines, RichText::new("Machines").size(15.0));
             ui.selectable_value(&mut ed.tab, Tab::Materials, RichText::new("Materials").size(15.0));
+            ui.add_space(24.0);
+            import_export::menus(ui, ed);
         });
         ui.add_space(4.0);
         ui.separator();
