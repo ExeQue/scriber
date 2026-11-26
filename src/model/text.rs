@@ -35,9 +35,34 @@ pub fn usvg_options() -> &'static usvg::Options<'static> {
     static OPT: OnceLock<usvg::Options<'static>> = OnceLock::new();
     OPT.get_or_init(|| {
         let mut opt = usvg::Options::default();
-        opt.fontdb_mut().load_system_fonts();
+        let db = opt.fontdb_mut();
+        db.load_system_fonts();
+        add_legacy_families(db);
         opt
     })
+}
+
+/// fontdb files every face under its typographic family ("Noto Sans"), so weights such as
+/// "Noto Sans Light" or "Noto Sans Black" cannot be named. File those faces under their legacy
+/// family name too, as fontconfig and other programs' font menus list them.
+fn add_legacy_families(db: &mut usvg::fontdb::Database) {
+    use skrifa::{FontRef, MetadataProvider, string::StringId};
+    use usvg::fontdb::Language;
+    let legacy = |data: &[u8], index: u32| {
+        let font = FontRef::from_index(data, index).ok()?;
+        Some(font.localized_strings(StringId::FAMILY_NAME).english_or_first()?.to_string())
+    };
+    let extra: Vec<_> = db
+        .faces()
+        .filter_map(|face| {
+            let name = db.with_face_data(face.id, legacy)??;
+            let new = !face.families.iter().any(|(n, _)| *n == name);
+            new.then(|| usvg::fontdb::FaceInfo { families: vec![(name, Language::English_UnitedStates)], ..face.clone() })
+        })
+        .collect();
+    for face in extra {
+        db.push_face_info(face);
+    }
 }
 
 /// Installed font families, sorted and without duplicates.
@@ -230,5 +255,19 @@ mod tests {
         let p = place(&c, [10.0, 5.0], 90.0);
         let v = &p[0].vertices[1];
         assert!((v.x - 10.0).abs() < 1e-9 && (v.y - 6.0).abs() < 1e-9, "{v:?}");
+    }
+
+    #[test]
+    fn weights_are_listed_and_render() {
+        // A "<family> Light" next to its "<family>" (e.g. Noto Sans Light): listed, and drawn
+        // with the light face, not the regular one. Skipped on a system without such a font.
+        let all = families();
+        let outline = |font: &str| glyphs(&Style { text: "H", font, size: 10f64.to_bits(), bold: false, italic: false }).contours.clone();
+        // Latin fonts only: a script font without an H draws a fallback font's H at any weight.
+        let candidates = ["Noto Sans Light", "Noto Serif Light", "Source Sans Pro Light", "Open Sans Light", "Roboto Light", "Lato Light"];
+        let light_face = |f: &str| usvg_options().fontdb.faces().any(|face| face.families[0].0 == f.trim_end_matches(" Light") && face.weight == usvg::fontdb::Weight::LIGHT);
+        let Some(light) = candidates.into_iter().find(|f| light_face(f)) else { return eprintln!("no light Latin font; skipped") };
+        assert!(all.iter().any(|n| n == light), "{light} is not listed");
+        assert_ne!(outline(light), outline(light.trim_end_matches(" Light")), "{light}");
     }
 }
