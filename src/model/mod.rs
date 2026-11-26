@@ -131,6 +131,8 @@ impl Document {
     fn after_history(&mut self) {
         let ids: Vec<u64> = self.s.items.iter().map(|i| i.id).collect();
         self.selection.retain(|id| ids.contains(id));
+        // Every state in the history was solved: it is what the next edit is compared with.
+        self.solved = Some(self.s.clone());
         self.touch();
     }
 
@@ -430,8 +432,10 @@ impl Document {
     }
 
     /// Trim the contour of item `id` nearest `at` back to the nearest crossings on either side of `at`, with
-    /// the `edges` items (empty = every other path). An item left with nothing is deleted.
-    pub fn trim(&mut self, id: u64, at: Point, edges: &[u64]) -> Result<(), String> {
+    /// the `edges` items (empty = every other path). An item left with nothing is deleted. Its
+    /// constraints follow the geometry that is left; with `constrain` (INFER) each new end also
+    /// stays on the edge it was trimmed against.
+    pub fn trim(&mut self, id: u64, at: Point, edges: &[u64], constrain: bool) -> Result<(), String> {
         let item = self.paths(&[id])?.remove(0);
         let edge_ids: Vec<u64> = if edges.is_empty() {
             self.s.items.iter().filter(|i| i.id != id && matches!(i.shape, Shape::Path { .. })).map(|i| i.id).collect()
@@ -444,6 +448,10 @@ impl Document {
             self.delete(&[id]);
         } else {
             self.item_mut(id).unwrap().shape = Shape::Path { contours };
+            self.remap_constraints(id, item.shape.contours(), constrain);
+            if constrain {
+                self.bind_trimmed_ends(id, item.shape.contours(), &edge_ids);
+            }
             self.touch();
         }
         Ok(())
@@ -585,7 +593,7 @@ mod tests {
         let line = d.add("line", Op::Cut, Shape::path(Contour::line([0.0, 150.0], [30.0, 150.0])));
         let e1 = d.add("e1", Op::Cut, Shape::path(Contour::line([10.0, 140.0], [10.0, 160.0])));
         let e2 = d.add("e2", Op::Cut, Shape::path(Contour::line([20.0, 140.0], [20.0, 160.0])));
-        d.trim(line, [15.0, 150.0], &[e1, e2]).unwrap();
+        d.trim(line, [15.0, 150.0], &[e1, e2], true).unwrap();
         assert!((d.item(line).unwrap().shape.metrics().length - 20.0).abs() < 1e-9);
     }
 }

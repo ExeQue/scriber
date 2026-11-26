@@ -384,6 +384,9 @@ pub struct Trim {
     /// Cutting edges; empty = every other path.
     #[serde(default)]
     pub edges: Vec<u64>,
+    /// Keep each new end on the edge it was trimmed against (a coincident constraint, as INFER
+    /// does while drawing). Default true.
+    pub constrain: Option<bool>,
 }
 
 // ---------- server ----------
@@ -839,11 +842,11 @@ impl Server {
         })
     }
 
-    #[tool(description = "Trim a path (AutoCAD TRIM): the piece around `at` is removed back to the nearest crossings with the cutting edges (default: every other path). An open line keeps the parts on either side; a closed shape needs two crossings and becomes open. An item with nothing left is deleted.")]
+    #[tool(description = "Trim a path (AutoCAD TRIM): the piece around `at` is removed back to the nearest crossings with the cutting edges (default: every other path). An open line keeps the parts on either side; a closed shape needs two crossings and becomes open. An item with nothing left is deleted. Constraints on the item follow what is left (a trimmed circle's tangents move to the arc), and each new end stays on its cutting edge unless constrain is false.")]
     fn trim(&self, Parameters(p): Parameters<Trim>) -> ToolResult {
         let ids: Vec<u64> = p.id.into_iter().collect();
         self.edit_ids(&ids, |d, ids| match ids.as_slice() {
-            [id] => match d.trim(*id, p.at, &p.edges) {
+            [id] => match d.trim(*id, p.at, &p.edges, p.constrain.unwrap_or(true)) {
                 Ok(()) => ok(json!({"id": id, "item": d.item(*id)})),
                 Err(e) => fail(e),
             },

@@ -16,6 +16,7 @@ pub mod expr;
 mod geo;
 mod infer;
 pub mod pick;
+mod remap;
 mod residual;
 pub mod selection;
 mod solve;
@@ -23,8 +24,10 @@ mod solve;
 mod tests;
 #[cfg(test)]
 mod attach_tests;
+#[cfg(test)]
+mod trim_tests;
 
-pub(crate) use doc::freeze_orphans;
+pub(crate) use doc::{distinct, freeze_orphans};
 pub use solve::parameter_values;
 
 use rmcp::schemars::{self, JsonSchema};

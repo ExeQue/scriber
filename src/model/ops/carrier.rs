@@ -5,7 +5,7 @@ use super::EPS;
 use crate::model::geom::{Point, Vertex, arc_params, distance};
 
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Carrier {
+pub(crate) enum Carrier {
     /// Through `p` with unit direction `u`.
     Line { p: Point, u: Point },
     Circle { c: Point, r: f64 },

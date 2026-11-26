@@ -1,8 +1,9 @@
 //! CAD operations as pure functions on contours. `Document` applies them to items.
 
+mod arcs;
 mod array;
 mod boolean;
-mod carrier;
+pub(crate) mod carrier;
 mod chamfer;
 mod corner;
 mod fillet;
@@ -13,6 +14,7 @@ mod split;
 mod stretch;
 mod trim;
 
+pub use arcs::merge_arcs;
 pub use array::{grid_offsets, polar_angles};
 pub use boolean::{BoolOp, boolean};
 pub use chamfer::{chamfer, chamfer_objects};

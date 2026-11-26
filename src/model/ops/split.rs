@@ -33,8 +33,14 @@ fn opened_at(p: &Polyline<f64>, s: f64, total: f64) -> Option<Contour> {
 
 /// Break `c` at the point nearest `a` (it opens a closed contour there, splits an open one in two), or,
 /// with `b`, take out the piece between the two points: on an open contour the part between them, on a
-/// closed one the shorter way round. Returns what is left.
+/// closed one the shorter way round. Returns what is left, arcs of one circle merged.
 pub fn break_at(c: &Contour, a: Point, b: Option<Point>) -> Result<Vec<Contour>, String> {
+    let mut kept = pieces(c, a, b)?;
+    kept.iter_mut().for_each(super::merge_arcs);
+    Ok(kept)
+}
+
+fn pieces(c: &Contour, a: Point, b: Option<Point>) -> Result<Vec<Contour>, String> {
     let p = c.pline();
     let total = p.path_length();
     let sa = at_length(&p, a)?;
@@ -50,7 +56,7 @@ pub fn break_at(c: &Contour, a: Point, b: Option<Point>) -> Result<Vec<Contour>,
     let sb = at_length(&p, b)?;
     let (lo, hi) = (sa.min(sb), sa.max(sb));
     if hi - lo < EPS.sqrt() {
-        return break_at(c, a, None);
+        return pieces(c, a, None);
     }
     let kept: Vec<Contour> = if c.closed {
         if hi - lo <= total - (hi - lo) {

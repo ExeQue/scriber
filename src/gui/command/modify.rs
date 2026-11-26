@@ -198,7 +198,8 @@ impl App {
             }
             (Cmd::Trim, Entry::Point(p)) => {
                 let id = self.item_at(p)?;
-                self.apply_to(&[id], |d, ids| d.trim(ids[0], p, &[]))
+                let infer = self.aids.infer;
+                self.apply_to(&[id], |d, ids| d.trim(ids[0], p, &[], infer))
             }
             (Cmd::Offset, Entry::Point(p)) if step == Step::Pick => {
                 let id = self.item_at(p)?;

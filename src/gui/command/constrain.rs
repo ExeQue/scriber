@@ -186,6 +186,10 @@ impl App {
             (Step::Constrain, Entry::Point(p)) => {
                 let n = self.cmdline.constrain.refs.len();
                 let r = self.pick_ref(p, takes_point(cmd, n))?;
+                let mut picked = self.cmdline.constrain.refs.clone();
+                picked.push(r);
+                // Same point or object again: say so and keep waiting for another.
+                crate::model::constraints::distinct(&picked).map_err(|e| format!("{e}."))?;
                 self.mark_picked(r.item(), p);
                 self.cmdline.constrain.refs.push(r);
                 if !complete(cmd, &self.cmdline.constrain.refs) {

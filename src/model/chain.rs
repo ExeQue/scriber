@@ -96,6 +96,7 @@ impl Document {
             joined.vertices.pop();
             joined.closed = true;
         }
+        super::ops::merge_arcs(&mut joined);
         Some(joined)
     }
 

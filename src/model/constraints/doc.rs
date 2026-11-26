@@ -41,6 +41,7 @@ impl Document {
         if kind.is_dimension() {
             return Err(format!("{} is dimensional; add it with a value", kind.name()));
         }
+        distinct(&refs)?;
         let id = self.s.next_id;
         let c = Constraint { id, kind, refs, name: String::new(), expr: String::new(), offset: 0.0 };
         System::default().add(&self.s, &c, 0.0)?;
@@ -63,6 +64,7 @@ impl Document {
         if !kind.is_dimension() {
             return Err(format!("{} is not dimensional", kind.name()));
         }
+        distinct(&refs)?;
         let name = match name {
             Some(n) => n.trim().to_string(),
             None => (1..).map(|n| format!("{}{n}", kind.prefix())).find(|n| self.parameter(n).is_none()).unwrap(),
@@ -223,6 +225,16 @@ fn first_point(refs: &[Ref]) -> Ref {
         Ref::Segment { item, contour, segment } if refs.len() == 1 => Ref::Point { item, contour, vertex: segment },
         r => r,
     }
+}
+
+/// A constraint between two (or three) things needs different ones: not the same point twice.
+pub(crate) fn distinct(refs: &[Ref]) -> Result<(), String> {
+    for (i, r) in refs.iter().enumerate() {
+        if refs[..i].contains(r) {
+            return Err(if matches!(r, Ref::Point { .. } | Ref::Centre { .. }) { "Pick two different points" } else { "Pick two different objects" }.into());
+        }
+    }
+    Ok(())
 }
 
 fn same_refs(a: &[Ref], b: &[Ref]) -> bool {

@@ -34,7 +34,7 @@ pub fn trim(contours: &[Contour], edges: &[Contour], at: Point) -> Result<Vec<Co
     let before = cuts.iter().copied().filter(|s| *s < picked).max_by(f64::total_cmp);
     let after = cuts.iter().copied().filter(|s| *s > picked).min_by(f64::total_cmp);
 
-    let kept: Vec<Contour> = if p.is_closed() {
+    let mut kept: Vec<Contour> = if p.is_closed() {
         if cuts.len() < 2 {
             return Err("a closed contour needs at least two crossings to trim between".into());
         }
@@ -49,6 +49,7 @@ pub fn trim(contours: &[Contour], edges: &[Contour], at: Point) -> Result<Vec<Co
         [before.and_then(|b| slice(p, 0.0, b)), after.and_then(|a| slice(p, a, total))].into_iter().flatten().collect()
     };
     let mut out = contours.to_vec();
+    kept.iter_mut().for_each(super::merge_arcs);
     out.splice(ci..=ci, kept);
     Ok(out)
 }
@@ -98,6 +99,7 @@ mod tests {
         let out = trim(&circle, &[Contour::line([0.0, -20.0], [0.0, 20.0])], [-10.0, 0.0]).unwrap();
         assert_eq!(out.len(), 1);
         assert!(!out[0].closed);
+        assert_eq!(out[0].vertices.len(), 2, "one half-circle arc: {:?}", out[0]);
         let b = out[0].bbox();
         assert!(b[0].abs() < 1e-9 && (b[2] - 10.0).abs() < 1e-9 && (b[3] - 20.0).abs() < 1e-9);
         assert!((out[0].length() - std::f64::consts::PI * 10.0).abs() < 1e-6);
