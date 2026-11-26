@@ -677,7 +677,7 @@ mod tests {
         assert!(field("description").len() > 40);
 
         let doc = std::sync::Arc::new(std::sync::Mutex::new(crate::model::Document::new(100.0, 100.0)));
-        let server = crate::mcp::Server::new(doc, std::sync::Arc::new(|| {}));
+        let server = crate::mcp::Server::new(crate::model::workspace::Workspace::from_shared(doc), std::sync::Arc::new(|| {}));
         // Backticked snake_case words are tool names, apart from these arguments and values.
         let not_tools = ["no_output", "use_work_area", "line_interval", "timed_out"];
         let mut tools = 0;
