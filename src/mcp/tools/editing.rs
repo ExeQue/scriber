@@ -178,7 +178,7 @@ impl Server {
 
     #[tool(description = "Select similar: select every item on the same layer and with the same kind of shape as the given items (empty = the selection). Returns the new selection.")]
     fn select_similar(&self, Parameters(p): Parameters<IdList>) -> ToolResult {
-        self.with(|d| {
+        self.with_select(true, |d| {
             let ids = if p.ids.is_empty() { d.selection.clone() } else { p.ids.clone() };
             d.selection = d.similar(&ids);
             d.rev += 1;
@@ -188,7 +188,7 @@ impl Server {
 
     #[tool(description = "Quick select: select the items with the given laser operation (from their layer), kind of shape and size (longer side of the bounding box, mm); missing filters match anything. Returns the new selection.")]
     fn quick_select(&self, Parameters(p): Parameters<QuickSelect>) -> ToolResult {
-        self.with(|d| {
+        self.with_select(true, |d| {
             d.selection = d.quick_select(p.op, p.kind.as_deref(), p.min_size, p.max_size);
             d.rev += 1;
             ok(json!({"selection": d.selection}))

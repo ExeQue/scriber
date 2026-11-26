@@ -118,8 +118,6 @@ impl Server {
             if p.current == Some(true) {
                 d.set_current_layer(p.id);
             }
-            let s = d.s.clone();
-            d.selection.retain(|id| s.items.iter().any(|i| i.id == *id && s.editable(i)));
             d.touch();
             ok(layers(d))
         })

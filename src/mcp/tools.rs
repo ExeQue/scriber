@@ -30,7 +30,7 @@ A path holds one or more contours; several contours make a compound path whose h
 CAD operations: fillet, chamfer, offset (also kerf compensation), boolean (union/difference/intersection), array_rectangular, array_polar, trim, stretch, join, explode, align, break_item, extend, lengthen, match_properties, group/ungroup, select_similar and quick_select. Guide lines (add_items kind xline/ray/centerline/centermark) help placing things and are never lasered or exported.
 Contours are polylines whose segments can be arcs: each vertex has a bulge = tan(sweep/4) for the segment to the next vertex (0 = straight). Prefer add_items with kind rect/circle/arc/polygon/line/polyline over building arcs by hand; for Bézier curves use kind curve (quadratic or cubic control points, turned into arcs), for SVG path data import_svg with data. Big batches: write the items array to a JSON file and give add_items its path.
 Constraints (as in AutoCAD) bind geometry: add_constraint (coincident, parallel, tangent, …; the first object stays, the second moves), add_dimensional_constraint (a named parameter like d1 = 40 or d2 = d1 / 2 that drives the size), set_parameter, list_constraints, delete_constraints, auto_constrain. A reference names geometry in a path: {kind: point, item, vertex}, {kind: segment, item, segment} (segment k runs from vertex k to k+1; a circle is segment 0), {kind: centre, item, segment}, {kind: item, item}; contour defaults to 0. After every change the solver keeps all constraints satisfied, moving as little as possible; a change that cannot be satisfied is refused and undone, naming the conflicting constraints.
-Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. A large document comes back as a summary without geometry (or ask for one with geometry: false); get_document with ids gives the geometry of particular items. Tools that change items reply compactly (per item id, name, layer, op, kind, bbox, rotation, contour and vertex counts); pass verbose: true for the full geometry. Call export_png without a path to look at the result.
+Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. Your changes leave the user's selection alone (items you add or copy are not selected); only select, select_similar, quick_select and add_items with select: true change it. A large document comes back as a summary without geometry (or ask for one with geometry: false); get_document with ids gives the geometry of particular items. Tools that change items reply compactly (per item id, name, layer, op, kind, bbox, rotation, contour and vertex counts); pass verbose: true for the full geometry. Call export_png without a path to look at the result.
 Mirrored copy: transform_items with mirror_x/mirror_y and copy: true. boolean keeps the first item's layer (and so its op). import_svg maps colours to ops (shapes with neither fill nor stroke, or a grey or green fill, come in as no_output, useful as boolean cutters) and says which SVG element (svg_id, element index) each item came from.
 Laser settings: list_machines and list_materials show the user's machines and material library; set_laser_setup picks the document's machine, laser module and material, and get_laser_setup returns the power/speed/passes to use per operation and per layer. Before the user lasers, run preflight_check and look at export_png with preview: true.
 Import and share: search_xtool_materials and import_xtool_materials copy settings from xTool Studio's local material cache (only materials the user opened there), import_xtool_project from an .xs project; export_library and import_library write and merge .scrlib files for other Scriber users.
@@ -191,7 +191,7 @@ pub struct AddItems {
     pub items: Vec<NewItem>,
     /// Or a JSON file (absolute path) holding the same items array (or {"items": [...]}), for big batches.
     pub path: Option<String>,
-    /// Select the new items in the GUI (default true).
+    /// Select the new items in the GUI (default false: the user's selection stays as it is).
     pub select: Option<bool>,
     /// Join the new items to what they touch, as drawing in the GUI does (INFER): coincident on
     /// ends and centres within 1e-6 mm of another item's, concentric for shared arc centres.
@@ -512,10 +512,23 @@ impl Server {
     /// Run `f` on the locked document, then repaint the GUI.
     /// The document settles its constraints afterwards; a change that breaks them is undone and
     /// the tool fails with the conflicting constraints.
+    /// The person's selection stays as it was (minus items that are gone or now locked or hidden):
+    /// items an agent adds never replace it. Tools that select on purpose use `with_select`.
     pub(super) fn with(&self, f: impl FnOnce(&mut Document) -> ToolResult) -> ToolResult {
+        self.with_select(false, f)
+    }
+
+    /// Like `with`; `selects` = the tool sets the selection on purpose, so it is kept.
+    pub(super) fn with_select(&self, selects: bool, f: impl FnOnce(&mut Document) -> ToolResult) -> ToolResult {
         let mut d = self.doc.lock().unwrap();
+        let before = d.selection.clone();
         let r = f(&mut d);
         let settled = d.settle(true);
+        if !selects {
+            let s = &d.s;
+            let kept = before.into_iter().filter(|id| s.items.iter().any(|i| i.id == *id && s.editable(i))).collect();
+            d.selection = kept;
+        }
         drop(d);
         (self.repaint)();
         match settled {
@@ -568,7 +581,7 @@ impl Server {
 
     #[tool(description = "Select items in the GUI (empty list clears the selection).")]
     fn select(&self, Parameters(p): Parameters<Ids>) -> ToolResult {
-        self.with(|d| match d.resolve_editable(&p.ids) {
+        self.with_select(true, |d| match d.resolve_editable(&p.ids) {
             Ok(ids) => {
                 d.selection = ids;
                 d.rev += 1;
@@ -594,7 +607,8 @@ impl Server {
         if let Some(e) = p.items.iter().find_map(|it| it.shape.input_error()) {
             return fail(e);
         }
-        self.with(|d| {
+        let select = p.select.unwrap_or(false);
+        self.with_select(select, |d| {
             if let Some(l) = p.items.iter().filter_map(|it| it.layer).find(|l| d.s.layer(*l).is_none()) {
                 return fail(format!("no layer with id {l}; see list_layers"));
             }
@@ -616,7 +630,7 @@ impl Server {
                 }
                 ids.push(id);
             }
-            if p.select.unwrap_or(true) {
+            if select {
                 d.selection = ids.clone();
             }
             let found: Vec<_> = if p.infer.unwrap_or(false) { ids.iter().flat_map(|id| attach::link_constraints(&d.s, *id, &attach::touching(&d.s, *id))).collect() } else { Vec::new() };
@@ -678,12 +692,11 @@ impl Server {
         })
     }
 
-    #[tool(description = "Move, rotate, scale and/or mirror items (empty ids = the selection). Order: mirror, scale, rotate around the pivot, then move by dx/dy. The pivot defaults to the centre of the items' bounding box. Each item's rotation (see get_document) adds the rotate angle; a mirror negates it; a non-uniform scale resets it to 0 unless the item's angle is a multiple of 90°. copy: true transforms copies and keeps the originals (a mirrored copy: mirror_x or mirror_y with copy); the copies become the selection.")]
+    #[tool(description = "Move, rotate, scale and/or mirror items (empty ids = the selection). Order: mirror, scale, rotate around the pivot, then move by dx/dy. The pivot defaults to the centre of the items' bounding box. Each item's rotation (see get_document) adds the rotate angle; a mirror negates it; a non-uniform scale resets it to 0 unless the item's angle is a multiple of 90°. copy: true transforms copies and keeps the originals (a mirrored copy: mirror_x or mirror_y with copy).")]
     fn transform_items(&self, Parameters(p): Parameters<TransformItems>) -> ToolResult {
         self.edit_ids(&p.ids, |d, mut ids| {
             if p.copy {
                 ids = d.duplicate(&ids, 0.0, 0.0);
-                d.selection = ids.clone();
             }
             d.transform(&ids, &p.transform);
             let mut out = changed(d, &ids, p.detail.verbose);
@@ -692,11 +705,11 @@ impl Server {
         })
     }
 
-    #[tool(description = "Copy items, offset by dx/dy (empty ids = the selection). The copies become the selection.")]
+    #[tool(description = "Copy items, offset by dx/dy (empty ids = the selection).")]
     fn duplicate_items(&self, Parameters(p): Parameters<Duplicate>) -> ToolResult {
         self.edit_ids(&p.ids, |d, ids| {
-            d.selection = d.duplicate(&ids, p.dx, p.dy);
-            ok(changed(d, &d.selection, p.detail.verbose))
+            let new = d.duplicate(&ids, p.dx, p.dy);
+            ok(changed(d, &new, p.detail.verbose))
         })
     }
 
@@ -799,7 +812,6 @@ impl Server {
         self.with(|d| {
             d.checkpoint();
             let id = d.place_image(img, [p.x, p.y], p.width, &name);
-            d.selection = vec![id];
             ok(changed(d, &[id], p.detail.verbose))
         })
     }
@@ -859,7 +871,7 @@ impl Server {
 
     #[tool(description = "Open a .scrbr file, replacing the current document. Fails on unsaved changes unless force is set.")]
     fn open(&self, Parameters(p): Parameters<OpenFile>) -> ToolResult {
-        self.with(|d| {
+        self.with_select(true, |d| {
             if d.dirty && !p.force {
                 return fail("the current document has unsaved changes; save it first or pass force: true");
             }
@@ -876,7 +888,7 @@ impl Server {
 
     #[tool(description = "Start a new empty document (material size in mm, default 300 × 200). Fails on unsaved changes unless force is set.")]
     fn new_document(&self, Parameters(p): Parameters<NewDoc>) -> ToolResult {
-        self.with(|d| {
+        self.with_select(true, |d| {
             if d.dirty && !p.force {
                 return fail("the current document has unsaved changes; save it first or pass force: true");
             }
@@ -908,11 +920,10 @@ impl Server {
         })
     }
 
-    #[tool(description = "Add offset copies of paths (empty ids = the selection), keeping the originals. Positive distance = outward for closed shapes (their holes shrink), to the left on screen for open ones. For laser kerf compensation of a part, offset by half the kerf and cut the copy. The copies become the selection.")]
+    #[tool(description = "Add offset copies of paths (empty ids = the selection), keeping the originals. Positive distance = outward for closed shapes (their holes shrink), to the left on screen for open ones. For laser kerf compensation of a part, offset by half the kerf and cut the copy.")]
     fn offset(&self, Parameters(p): Parameters<Offset>) -> ToolResult {
         self.edit_ids(&p.ids, |d, ids| match d.offset(&ids, p.distance) {
             Ok(new) => {
-                d.selection = new.clone();
                 let mut out = changed(d, &new, p.detail.verbose);
                 out["bbox"] = json!(d.bbox(&new));
                 ok(out)
@@ -929,22 +940,20 @@ impl Server {
         })
     }
 
-    #[tool(description = "Copy items into a grid (empty ids = the selection): rows × columns in total, the original being the top-left cell, dx mm between columns and dy between rows. The copies become the selection.")]
+    #[tool(description = "Copy items into a grid (empty ids = the selection): rows × columns in total, the original being the top-left cell, dx mm between columns and dy between rows.")]
     fn array_rectangular(&self, Parameters(p): Parameters<ArrayRect>) -> ToolResult {
         self.edit_ids(&p.ids, |d, ids| match d.array_rectangular(&ids, p.rows, p.columns, p.dx, p.dy) {
             Ok(new) => {
-                d.selection = new.clone();
                 ok(changed(d, &new, p.detail.verbose))
             }
             Err(e) => fail(e),
         })
     }
 
-    #[tool(description = "Copy items around a centre (empty ids = the selection): count items in total spread over angle degrees (default 360 = evenly round, positive = clockwise). rotate (default true) turns each copy; false keeps its orientation. The copies become the selection.")]
+    #[tool(description = "Copy items around a centre (empty ids = the selection): count items in total spread over angle degrees (default 360 = evenly round, positive = clockwise). rotate (default true) turns each copy; false keeps its orientation.")]
     fn array_polar(&self, Parameters(p): Parameters<ArrayPolar>) -> ToolResult {
         self.edit_ids(&p.ids, |d, ids| match d.array_polar(&ids, p.count, p.centre, p.angle.unwrap_or(360.0), p.rotate.unwrap_or(true)) {
             Ok(new) => {
-                d.selection = new.clone();
                 ok(changed(d, &new, p.detail.verbose))
             }
             Err(e) => fail(e),
@@ -963,7 +972,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Import an SVG file (path) or SVG text/base64 (data). Each path becomes an item (subpaths stay one compound path), curves become arcs, text becomes outlines and raster images greyscale images. Stroke colour sets the op: red = cut, blue = score, black/dark = engrave, grey or green = no_output, other colours = cut. A fill on a closed path means engrave the area, except a grey or green fill (no_output); a path with both a fill and a stroke becomes two items (the fill's op, then the stroke's) unless both give the same op. A path with neither fill nor stroke (or a fully transparent fill) comes in as no_output, handy as a boolean cutter. Each item goes on the current layer when that has its op, else on the first layer with it. Units in the file (mm, cm, in) are honoured; plain numbers are px at 96 per inch. The new items become the selection. Returns ids and items (compact, verbose: true for geometry), each with svg_id (the element's id, empty when it has none) and element (index of the SVG path/image in document order; one element can give two items).")]
+    #[tool(description = "Import an SVG file (path) or SVG text/base64 (data). Each path becomes an item (subpaths stay one compound path), curves become arcs, text becomes outlines and raster images greyscale images. Stroke colour sets the op: red = cut, blue = score, black/dark = engrave, grey or green = no_output, other colours = cut. A fill on a closed path means engrave the area, except a grey or green fill (no_output); a path with both a fill and a stroke becomes two items (the fill's op, then the stroke's) unless both give the same op. A path with neither fill nor stroke (or a fully transparent fill) comes in as no_output, handy as a boolean cutter. Each item goes on the current layer when that has its op, else on the first layer with it. Units in the file (mm, cm, in) are honoured; plain numbers are px at 96 per inch. Returns ids and items (compact, verbose: true for geometry), each with svg_id (the element's id, empty when it has none) and element (index of the SVG path/image in document order; one element can give two items).")]
     fn import_svg(&self, Parameters(p): Parameters<ImportSvg>) -> ToolResult {
         let bytes = match (&p.path, &p.data) {
             (Some(path), _) => std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}")),

@@ -152,3 +152,24 @@ fn import_svg_maps_elements_and_keeps_cutters() {
     let diff = reply(s.boolean(args(json!({"ids": [ids[0], ids[1]], "operation": "difference"}))));
     assert_eq!((diff["items"][0]["op"].as_str(), diff["items"][0]["layer"].as_u64(), diff["items"][0]["contours"].as_u64()), (Some("cut"), Some(layer), Some(2)));
 }
+
+#[test]
+fn agent_changes_leave_the_selection_alone() {
+    let (s, doc) = server();
+    let ids = squares(&s, 3);
+    assert!(doc.lock().unwrap().selection.is_empty(), "add_items selects nothing by default");
+    reply(s.select(args(json!({"ids": [ids[0], ids[1]]}))));
+
+    squares(&s, 2);
+    reply(s.duplicate_items(args(json!({"ids": [ids[2]], "dx": 5, "dy": 0}))));
+    reply(s.duplicate_items(args(json!({"dx": 5, "dy": 0}))));
+    assert_eq!(doc.lock().unwrap().selection, [ids[0], ids[1]]);
+
+    // Deleted items drop out of the selection.
+    reply(s.delete_items(args(json!({"ids": [ids[1]]}))));
+    assert_eq!(doc.lock().unwrap().selection, [ids[0]]);
+
+    // Asking for it still selects.
+    let new = reply(s.add_items(args(json!({"items": [{"shape": {"kind": "circle", "cx": 50, "cy": 50, "r": 5}}], "select": true}))));
+    assert_eq!(json!(doc.lock().unwrap().selection), new["ids"]);
+}
