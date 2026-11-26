@@ -146,7 +146,7 @@ impl App {
     }
 }
 
-/// A menu entry with the constraint's glyph before its name, like the toolbar shows it.
+/// A menu entry with the constraint's glyph before its name, like the ribbon shows it.
 fn icon_item(ui: &mut egui::Ui, kind: Kind, label: &str) -> egui::Response {
     let height = 22.0;
     let font = egui::TextStyle::Button.resolve(ui.style());

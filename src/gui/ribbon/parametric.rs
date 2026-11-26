@@ -33,13 +33,13 @@ const SIZES: [Cmd; 7] = [
 impl App {
     pub(super) fn parametric(&mut self, ui: &mut Ui) {
         panel(ui, "Geometric", |ui| {
-            self.large(ui, Some(Cmd::AutoConstrain), "Find");
+            self.large(ui, Some(Cmd::AutoConstrain), Cmd::AutoConstrain.title());
             let cmds: Vec<_> = GEOMETRIC.iter().map(|&k| (Some(Cmd::Constrain(k)), Cmd::Constrain(k).title())).collect();
             self.smalls(ui, &cmds);
         });
         panel(ui, "Lock sizes", |ui| {
-            // >>> The large "Dimension" button (smart DIM) goes here; until then, Lock distance stands in.
-            self.large(ui, Some(Cmd::DcLinear), "Lock distance");
+            // >>> The large "Dimension" button (smart DIM) goes here; until then, Distance (DCLINEAR) stands in.
+            self.large(ui, Some(Cmd::DcLinear), Cmd::DcLinear.title());
             // <<<
             ui.vertical(|ui| {
                 ui.menu_button("More ▾", |ui| {
@@ -59,9 +59,9 @@ impl App {
             self.large(ui, Some(Cmd::Parameters), "Parameters");
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
-                self.smalls(ui, &[(Some(Cmd::DelConstraint), "Remove constraints")]);
+                self.smalls(ui, &[(Some(Cmd::DelConstraint), Cmd::DelConstraint.title())]);
                 let tip = "Show or hide the constraint icons: for the selected shapes, or all when nothing is selected";
-                if self.small(ui, self.bars, Icon::Cmd(Some(Cmd::ConstraintBar)), "Show constraints", tip) {
+                if self.small(ui, self.bars, Icon::Cmd(Some(Cmd::ConstraintBar)), Cmd::ConstraintBar.title(), tip) {
                     self.start(Cmd::ConstraintBar);
                 }
             });
