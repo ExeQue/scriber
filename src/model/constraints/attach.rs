@@ -118,6 +118,18 @@ pub fn axis_constraints(s: &State, item: u64) -> Vec<(Kind, Vec<Ref>)> {
     out
 }
 
+/// A rectangle (one closed contour of four straight sides) stays a rectangle: three corners
+/// Perpendicular (the fourth follows). No Horizontal/Vertical, so it can still be turned.
+pub fn rect_constraints(s: &State, item: u64) -> Vec<(Kind, Vec<Ref>)> {
+    let Ok(contours) = path_contours(s, item) else { return Vec::new() };
+    let [c] = &contours[..] else { return Vec::new() };
+    if !c.closed || c.vertices.len() != 4 || c.vertices.iter().any(|v| v.bulge != 0.0) {
+        return Vec::new();
+    }
+    let seg = |k: usize| Ref::Segment { item, contour: 0, segment: k };
+    (0..3).map(|k| (Kind::Perpendicular, vec![seg(k), seg(k + 1)])).collect()
+}
+
 /// A placed point of a new item that was locked to a tracking path, and what the new segment
 /// through it gets when it runs along that path: Perpendicular, Parallel or Collinear to the line
 /// `target`, Perpendicular to an arc (along its radius), Concentric with an arc (on its circle), or

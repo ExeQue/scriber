@@ -9,7 +9,7 @@ use crate::gui::grips::Grip;
 use crate::gui::snap::{self, Snap};
 use crate::gui::tools::Tool;
 use crate::gui::tracking::{Path, Source, Track};
-use crate::model::constraints::attach::{Along, Link, along_constraints, axis_constraints, bind, link_constraints};
+use crate::model::constraints::attach::{Along, Link, along_constraints, axis_constraints, bind, link_constraints, rect_constraints};
 use crate::model::{Kind, Point, Ref};
 
 /// What a segment drawn along tracking path `t` through `p` keeps.
@@ -63,7 +63,9 @@ impl App {
             return;
         }
         let mut found = link_constraints(&d.s, id, &links);
-        if self.tool == Tool::Rect || (self.aids.ortho && matches!(self.tool, Tool::Line | Tool::Polyline)) {
+        if self.tool == Tool::Rect {
+            found.extend(rect_constraints(&d.s, id));
+        } else if self.aids.ortho && matches!(self.tool, Tool::Line | Tool::Polyline) {
             found.extend(axis_constraints(&d.s, id));
         }
         for c in along_constraints(&d.s, id, &along) {

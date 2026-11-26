@@ -1,6 +1,6 @@
 //! INFER and constraints on the selection, through the `Document` API.
 
-use super::attach::{Link, axis_constraints, link_constraints, touching};
+use super::attach::{Link, axis_constraints, link_constraints, rect_constraints, touching};
 use super::selection::selection_refs;
 use super::{Kind, Ref};
 use crate::model::geom::distance;
@@ -64,6 +64,13 @@ fn rectangles_stay_level_and_agents_get_joined_by_coordinates() {
     let r = add(&mut d, Contour::rect(0.0, 0.0, 40.0, 20.0, 0.0));
     let kinds: Vec<Kind> = axis_constraints(&d.s, r).into_iter().map(|c| c.0).collect();
     assert_eq!(kinds, [Kind::Horizontal, Kind::Vertical, Kind::Horizontal, Kind::Vertical]);
+    let kinds: Vec<Kind> = rect_constraints(&d.s, r).into_iter().map(|c| c.0).collect();
+    assert_eq!(kinds, [Kind::Perpendicular; 3], "upright too");
+    let t = crate::model::Transform { rotate: 30.0, pivot: Some([0.0, 0.0]), ..Default::default() };
+    let turned = add(&mut d, Contour::rect(0.0, 0.0, 40.0, 20.0, 0.0).transformed(&t, [0.0, 0.0]));
+    let kinds: Vec<Kind> = rect_constraints(&d.s, turned).into_iter().map(|c| c.0).collect();
+    assert_eq!(kinds, [Kind::Perpendicular; 3]);
+    assert_eq!(d.infer_new(rect_constraints(&d.s, turned)), 3, "they hold together");
     let l = add(&mut d, Contour::line([40.0, 20.0], [80.0, 60.0]));
     let links = touching(&d.s, l);
     assert_eq!(links.len(), 1);

@@ -68,6 +68,8 @@ pub(super) enum Icon {
     Glyph(&'static str),
     /// One way a tool draws (split buttons).
     Variant(Cmd, usize),
+    /// A colour (layers).
+    Swatch(Color32),
 }
 
 impl App {
@@ -298,6 +300,10 @@ fn sensed_button(ui: &mut Ui, sense: Sense, large: bool, icon_only: bool, on: bo
     };
     match icon {
         Icon::Cmd(cmd) => paint_icon(painter, icon_rect, fg, cmd),
+        Icon::Swatch(c) => {
+            painter.rect_filled(icon_rect.shrink(4.0), CornerRadius::same(4), c);
+            painter.rect_stroke(icon_rect.shrink(4.0), CornerRadius::same(4), Stroke::new(1.0, fg), egui::StrokeKind::Outside);
+        }
         Icon::Variant(cmd, n) => variant_icons::paint_variant(painter, icon_rect, fg, cmd, n),
         Icon::Glyph(g) => _ = painter.text(icon_rect.center(), egui::Align2::CENTER_CENTER, g, FontId::proportional(icon_rect.height()), fg),
     }

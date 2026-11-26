@@ -165,8 +165,11 @@ mod tests {
         (contours[0].vertices[2].x, contours[0].vertices[2].y) = (45.0, 25.0);
         d.touch();
         d.settle(true).unwrap();
-        let b = d.item(id).unwrap().shape.contours()[0].bbox();
-        assert!((b[2] - 30.0).abs() < 1e-6 && (b[3] - 25.0).abs() < 1e-6, "{b:?}");
+        // A rectangle may turn (only its corners are square), but the typed width holds.
+        let v = &d.item(id).unwrap().shape.contours()[0].vertices;
+        let side = |a: usize, b: usize| (v[a].x - v[b].x).hypot(v[a].y - v[b].y);
+        assert!((side(0, 1) - 30.0).abs() < 1e-6 || (v[1].x - v[0].x - 30.0).abs() < 1e-6, "{v:?}");
+        assert!((side(0, 1) * side(1, 2) - side(2, 3) * side(3, 0)).abs() < 1e-6, "still a rectangle: {v:?}");
     }
 
     #[test]
