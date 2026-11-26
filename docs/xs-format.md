@@ -3,7 +3,8 @@
 Reverse-engineered from three real projects written by xTool Studio 1.9.11 (Linux), device M2 (`JS002`), module `laser_blue_10W`.
 Not an official spec. Everything marked **(guess)** is inference, **(unseen)** means no sample contained it.
 Samples were small: the first three had only `PATH` and `LINE`. A fourth sample (`unknowns`, same app version) added the native primitives `RECT`, `CIRCLE`, `STAR`, `REGULAR_POLYGON` (section 2b), a freehand `PATH` with `Q`/`C` segments, and the observation that elements bound to a processing type keep default fill/stroke flags.
-**It did NOT contain** text, bitmaps, real groups, rotated or skewed elements, patches (all defaults, no material), or a `BITMAP_ENGRAVING` profile, although the request expected them: those remain **(unseen)** (section 5).
+**It did NOT contain** text, bitmaps, real groups, rotated or skewed elements, patches (all defaults, no material), or a `BITMAP_ENGRAVING` profile.
+A fifth sample (`unknowns-2`, same version) contains only **text and images** (2 `TEXT`, 7 `BITMAP`, one bitmap profile, 5 image-mode patches; section 2c, 2d). It has **no** groups, rotated elements, custom power/speed or library material: those stay **(unseen)**.
 Test every claim against the real app before relying on it; the safest first step is "write a file, open it in xTool Studio, re-save, diff".
 
 ## 1. Archive layout
@@ -22,7 +23,7 @@ A zip (deflate, with directory entries; entry order in the samples: `meta/`, `pr
 | `vectors/svg/index.json`, `vectors/svg/data-<k>.json` | content-addressed store of long path data (only when a path references it) | optional |
 | `resources/project-cover.png` + `.meta.json` | thumbnail shown in the project list | optional (guess; `project.json.cover` points at it) |
 
-Images (bitmaps) would presumably live under `resources/` or a `vectors/`-like bucket **(unseen)**.
+Images (bitmaps) live in `resources/<sha256 of the file bytes>.<ext>` (verified: `.png`, the original file stored as imported, RGBA 8-bit) plus a sidecar `<same name>.meta.json` `{"ref":"resources/<name>","metadata":{"kind":"image","source":{"type":"workspace","value":"<name>"}}}` (no `mimeType` here, unlike the cover). Duplicated images share one resource file. See 2c.
 
 ### How ids link
 
@@ -62,7 +63,7 @@ display.groupTags[] ─► canvas.groupData key
 
 `id` (uuid), `name` (null), `type`, `x`,`y` (world bbox top-left, see below), `angle`, `scale{x,y}`, `skew{x,y}`, `pivot{x,y}`, `localSkew{x,y}`, `offsetX`,`offsetY`, `lockRatio`, `isClosePath`, `zOrder` (int, higher = on top; group members share), `groupTags[]` (or a lone `groupTag`: a single uuid in the old-style LINE/PATH of one sample), `layerTag`/`layerColor` (`#rrggbb`), `visible`, `visibleState`, `lockState`, `originColor`, `enableTransform`, `resourceOrigin` (""), `customData` (`tabBreaks{}`, `startPoint{}`, optionally `from.templateId`), `rootComponentId` (""), `minCanvasVersion` ("0.0.0"), `alpha` (1), `fill{paintType:"color",visible,color,alpha}`, `stroke{paintType,visible,color,alpha,width,cap,join,miterLimit,alignment}`, `effects[]`, `transform[a,b,c,d,e,f]`, `width`, `height`, `isFill`, `lineColor` (int, rgb), `fillColor` ("#rrggbb").
 
-Types seen: `PATH`, `LINE`, and the native primitives `RECT`, `CIRCLE`, `STAR`, `REGULAR_POLYGON` (section 2b). Still **(unseen)**: text, bitmap, QR, groups-as-elements (guess `TEXT`, `BITMAP`, `QRCODE`, `GROUP`; do not rely on the names). A rectangle or circle drawn in the app IS stored natively (not as `PATH`). Safest export is still `PATH` for everything (always read; native primitives carry no geometry, so a reader needs the type-specific rules below).
+Types seen: `PATH`, `LINE`, and the native primitives `RECT`, `CIRCLE`, `STAR`, `REGULAR_POLYGON` (section 2b). Also seen: `TEXT`, `BITMAP` (section 2c). Still **(unseen)**: QR, groups-as-elements. A rectangle or circle drawn in the app IS stored natively (not as `PATH`). Safest export is still `PATH` for everything (always read; native primitives carry no geometry, so a reader needs the type-specific rules below).
 
 - `PATH` extra fields: `points: []`, `fillRule` (`"nonzero"` / `"evenodd"`), `graphicX`,`graphicY` (equal to `offsetX`/`offsetY` in samples), `isCompoundPath` (multi-contour), `pathCornerData: null`, `sourceId` (optional; shared by pieces that came from one split path), and exactly one of
   - `dPath`: inline SVG path string (absolute coordinates, `M L H V C Z` seen; commas not needed), or
@@ -73,7 +74,7 @@ Types seen: `PATH`, `LINE`, and the native primitives `RECT`, `CIRCLE`, `STAR`, 
 - Unit mm, canvas coordinates, y grows down **(guess from layout; the samples never show the machine origin)**. The canvas is not tied to the material: positions like x 400, y 280 occur. Origin versus the machine bed is not in these files.
 - `transform = [a,b,c,d,e,f]` is an SVG-style affine matrix applied to the raw geometry: `world = [a c; b d] * (dPath coordinates) + (e,f)`. Check: a path with `dPath` min x = 171.07, `scale.x` .898, `e` 17.41 has `x` = 171.07 (= 171.07*.898 + 17.41).
 - `x`,`y` = top-left of the world bounding box (after `transform`), `width`,`height` = world bbox size (scaled). `offsetX`/`offsetY` = `e`/`f`. `scale` = (`a`,`d`) when unrotated. So for an unrotated, unscaled path whose dPath is already in world coordinates: `transform=[1,0,0,1,0,0]`, `x,y` = bbox min, `width,height` = bbox size. (One sample has dPath in world coordinates with `f` = -3 and `y` = 3 less than the dPath min y, i.e. the bbox then includes the transform; keep `x,y` = bbox of `transform * dPath`.)
-- Rotation: `angle` (unit **unknown**; 0 on every element of every sample, including `unknowns`: no rotated element has been seen) plus `skew`/`pivot` (always 0). Bake rotation into the path data and write angle 0 to avoid the question.
+- Rotation: `angle` (unit **unknown**; 0 on every element of every sample, including `unknowns` and `unknowns-2`: no rotated element has been seen) plus `skew`/`pivot` (always 0). Bake rotation into the path data and write angle 0 to avoid the question.
 - Stroke width in the samples is 0.33 to 1.64 (display width, doesn't affect cutting). `lineColor` is an int of the layer colour (e.g. 0x9928FF, 16421416) and `fillColor` a hex; they seem to be UI defaults, **not** the layer colour: the real colour lives in `stroke.color` (int, e.g. 16711680 = red) and `originColor` ("#ff0000"), `layerTag`/`layerColor`. In two samples `stroke.color` = 0 and `originColor` "#000000" with `layerTag` `#00befe` (imported path whose colour was reassigned); so which of the four is authoritative is **unknown**; write them all consistently. The `unknowns` sample shows the same split on all 7 elements: `layerTag`/`layerColor` `#00befe`, `stroke.color` 0, `originColor` `#000000`, and `lineColor` 16421416 / `fillColor` `#f9932b` identical on every type (UI defaults, unrelated to the layer). Strong evidence that `layerTag` (matching `layerData`) is what determines the layer and `stroke.color`/`originColor` are not; none of them is used for processing.
 
 ### 2b. Element types (all fields are on top of the common set above)
@@ -88,7 +89,8 @@ Native primitives have **no** `dPath`, `points`, `fillRule`, `graphicX/Y`, `isCo
 | `CIRCLE` | none | ellipse inscribed in the `width` x `height` box with top-left `(e,f)` = `x,y`; one type for circle and ellipse (here 64.4 x 52.9). **Odd:** `scale` and `transform a,d` were 0.01 (not 1) while `width`/`height` held the real size: a resize-artefact, **guess**: `width/height` win and the unit geometry is not 1 x 1. When writing, try `scale 1,1`, `transform [1,0,0,1,x,y]`; if the app draws it wrong, fall back to `PATH`. |
 | `STAR` | `count` (points, 5), `starInnerScale` (inner/outer radius, 0.382), `oWidth`, `oHeight`, `primitiveCornerData` | regular star. `oWidth/oHeight` = the nominal (untrimmed) box, `offsetX/Y` = `e,f` = top-left of that box; `x,y,width,height` = the TIGHT bbox of the actual outline, so `x - offsetX` = 1.73 = (70.72 - 67.26)/2 (horizontally centred) and `y == offsetY` (a point touches the top). |
 | `REGULAR_POLYGON` | `count` (sides, 3), `oWidth`, `oHeight`, `primitiveCornerData` | same convention as `STAR` (nominal box `o*` + tight bbox `x,y,width,height`; triangle: `x - offsetX` = 4.39 = (65.59 - 56.80)/2). Orientation / vertex 0 position: **unknown**, presumably apex up. |
-| `TEXT`, `BITMAP`, `QR`, group | **(unseen)** | - |
+| `TEXT`, `BITMAP` | see 2c | - |
+| `QR`, group | **(unseen)** | - |
 
 All primitives: `transform=[1,0,0,1,offsetX,offsetY]` (except the CIRCLE oddity), `isClosePath:true`, `lockRatio:true`, `fill.visible:true`, `stroke.visible:false`, `isFill:false`.
 
@@ -101,6 +103,34 @@ Minimal native examples (common fields as in section 4, only the differing ones 
  "count":5,"starInnerScale":0.382,"primitiveCornerData":null,"transform":[1,0,0,1,10,20]}
 ```
 (Untested as written; STAR/POLYGON `x,y,width,height` need the tight bbox, which a writer would have to compute.)
+
+### 2c. TEXT and BITMAP (from `unknowns-2`)
+
+**`TEXT`** (common fields plus): `text` (string; multi-line **unseen**), `resolution:1`, `fillRule:"nonzero"`, `isClosePath:true`, `isFill:false`, `fill.visible:true`, `stroke.visible:false`, `customData.from.officialFontId` (int, only for one of the two fonts; omit), and
+- `style`: `{fontSize, fontFamily, fontSubfamily:"Regular", fontSource:"build-in", letterSpacing:0, leading:0, align:"center", curveX:10, curveY:0, isUppercase:false, isWeld:false, direction:"auto", writingMode:"horizontal-tb", textOrientation:"mixed"}`. Both fonts were xTool built-ins (`fontSource:"build-in"`); a system/custom font value is **unseen**. `letterSpacing`/`leading` = 0 is the only value seen (unit **unknown**); `align` was `center` for single lines (other values **unseen**, probably left/right).
+- **Size:** `fontSize` is in points at the displayed size and equals `72 * scale.x` exactly (223.16 = 72 * 3.0995; 112.98 = 72 * 1.5692). The stored glyph geometry is for a 72 pt (= 25.4 mm) em, so `world = transform * glyph coordinates` and the real em height in mm is `fontSize * 25.4 / 72` **(verified numerically: capHeight 18.288 * 3.0995 = 56.7 mm)**. `scale` is uniform (`lockRatio:true`); resizing text changes `scale` and `fontSize` together.
+- `fontData`: `fontInfo{unitsPerEm:1000, lineHeight, ascent, descent (negative), capHeight, xHeight, lineGap}` in mm at the 25.4 mm em (lineHeight about 1.22-1.25 em); `glyphData{<char>:{dPath, advanceWidth, advanceHeight, leftBearing, topBearing, bbox{minX,minY,maxX,maxY}}}` (one entry per distinct char, **outlines with y negative upward**, baseline y = 0, `M L Q Z` only); `glyphDataByGid{<json string>: ...}`; `layout{paragraphDirection, lines[{index, baseDirection, clusters[{chars, logicalIndex, span, sourceSpan, direction, bidiLevel, glyphs[{gid,dx,dy,advanceWidth,advanceHeight}], advanceWidth, advanceHeight, graphemeCount, fontFamily, fontSubfamily, fontSource}]}]}` (shaping result).
+- **`charJSONs`**: an array with **one ready-made `PATH` display per character**, i.e. the glyph outlines ARE stored (each: `type:"PATH"`, `dPath` of that glyph at the 72 pt scale, same `scale`/`transform` scale as the text, own `offsetX/Y` = glyph origin on the baseline in world mm, `fill.visible:true`, `zOrder:0`, `isClosePath:true`, `customData:{}`). So an importer can ignore fonts and read `charJSONs[*]` as ordinary paths (counter-holes such as in `e` are inside one `dPath`, `nonzero` direction-based, **guess**).
+- Geometry of the text element itself: `transform=[s,0,0,s,offsetX,offsetY]`, `offsetX/Y` = (text origin: left edge of the first advance, baseline); `x,y,width,height` = tight bbox of the outlines (so `x != offsetX` by the first left bearing; `y < offsetY`: y is the top of the ink, baseline at `offsetY`). `width/height` are world mm.
+- Both texts were bound to `VECTOR_ENGRAVING` (score, outline) in the base binding, **not** to the fill type; fill vs line is chosen in the binding, as for other shapes.
+- Export guess: write text as outlines (`PATH`) as now. Native `TEXT` would need a full `fontData`/`charJSONs` set computed from a font xTool knows (**do not attempt**).
+
+**`BITMAP`** (common fields plus; `isClosePath:false`, `isFill:true`, `lockRatio:true`, `angle:0`):
+- `resourcePath:"resources/<sha256>.png"`, `format:"png"`, `originWidth`/`originHeight` (source pixels, 1280 x 640), `currentUrl:""`, `opacity:1`, `mask:null`, `modifyData:{}`, `warpLocalOffset:null`, `filterList:[]`, `filterList_V2:[]`, `originAutoAdjust:null`, `autoStrength:0`.
+- **Size:** `scale = (s,s)`, `transform=[s,0,0,s,offsetX,offsetY]`, `x,y = offsetX/Y` (top-left), `width = originWidth * s`, `height = originHeight * s` (verified: 1280 * 0.114754 = 146.88), and `dpi{dpiX,dpiY} = 25.4 / s` (221.34 here). So the image is a unit-pixel raster scaled by `s` (mm per pixel); no separate crop was seen (`mask:null`; crop **unseen**).
+- **Image adjustments**, all defaults, identical on all 7 copies: `grayValue:[0,255]` (levels range), `sharpness:50`, `brightness:0`, `contrast:0`, `saturation:0`, `temperature:0`, `tone:0`, `colorInverted:false`, `colorInvertedFillTransparent:false`, `colorInvertedTransparentColor:"black"`, `isGray:false`. Value ranges **unknown** (brightness/contrast likely -100..100, **guess**).
+- `filterAttrsMap` (the app's stored per-filter parameters; filters themselves not applied here, `filterList` empty): `emboss{strength:5}`, `halftone{radius:4,angle:45}`, `binary{threshold:128}`, `sketch{strength:2}`, `dot{angle:45,scale:14}`.
+- `sourceId`: id of the display this one was duplicated from (omit on a first image).
+- The image mode is **not** on the element: it is `bitmapMode` in the bound profile/patch (2d).
+- **Bytes:** the original PNG is stored untouched; the app does not store a dithered result. Any greyscale/RGBA PNG should work (**guess**; only 8-bit RGBA seen).
+
+### 2d. Image engraving and its modes
+
+`profiles.json` then has a fourth profile (processingType `BITMAP_ENGRAVING`; created because the project has a bitmap, also listed in `profileRefs`), values: `power:1, speed:80, repeat:1, laser:"laser_blue_10W", density:100, dpiX:254, dpiY:254, bitmapScanMode:"zMode", bitmapMode:"grayscale", processHead:"LASER", powerCutoffType:"FOLLOW_ACTUALLY_POWER", powerCutoffValue:3, airPump:15`. (No `kerf*`, `scanAngle`, `ramp*`, `fill_type`.)
+
+`bitmapMode` values seen (this is the "image mode" dropdown; there is no "dither" entry, each dither algorithm is its own mode): `grayscale` (profile default, element with no patch), `Jarvis`, `Bayer`, `Stucki`, `Atkinson`, `Sierra`. Exact case as written. No extra per-mode parameters exist: every patch has the same key set as the profile and only `bitmapMode` differs (threshold-like parameters are in the element's `filterAttrsMap`, not in the profile). Other modes the app may offer (e.g. Floyd-Steinberg, Burkes, black/white threshold) are **unseen**; do not guess names.
+
+Binding pattern: one base binding on the bitmap profile for the grayscale image (no `patchIds`), and one binding per distinct patch (`patchIds:[<patch>]`, `displayIds` = the images using it; two Bayer images share one binding+patch). The text elements sat in the VECTOR_ENGRAVING base binding with its two empty shadow bindings; the bitmap bindings have **no** shadows. Patches here are `source:"custom"` with the full value set in `overrides` (mode change only, power 1/speed 80 are the untouched defaults). Image scan resolution is `density` (lines/cm) with `dpiX/dpiY` = round(density * 2.54), as for fill.
 
 **Single `groupTag`:** every element in `unknowns` has `groupTags:[]` plus a lone `groupTag:"<uuid>"` (unique per element, no matching `groupData` entry, `groupData` empty). It is a per-element id artefact, not a group. Real groups were not in the sample.
 
@@ -123,7 +153,7 @@ Everything lives in `devices/device-<code>-<n>.json`:
 - `VECTOR_ENGRAVING` = score/line engrave: `power:1, speed:20, repeat:1, laser:"laser_blue_10W", kerfDistance:0, processHead:"LASER", enableKerf:false, powerCutoffType:"FOLLOW_ACTUALLY_POWER", powerCutoffValue:3, airPump:15`.
 - `FILL_VECTOR_ENGRAVING` = area engrave: adds `density:100` (lines per cm; 100 = 0.1 mm, goes with `dpiX/dpiY:254`), `needGapNumDensity:true, bitmapScanMode:"zMode", scanAngle:0, angleType:2, crossAngle:false, outlineTrace:false, ramp:false, ramp_length:0.5, ramp_min_power:1, ramp_outer_edge:false, fill_type:"regular", offset_fill_direction:"IN_TO_OUT"`; `speed:80`, `airPump:15`.
 - `VECTOR_CUTTING`: `speed:16`, `cuttingDrop:false, sinkingMethod:"one", firstCuttingDropValue:1, cuttingDropValue:1, descentIntervalDescent:1, descentPerStep:1, enableBreakPoint:false, breakPointGenMode:"auto", breakPointSize:0.5, breakPointMode:"count", breakPointCount:2, breakPointDistance:100, breakPointPower:0, enableKerf:false, enableOverCut:false, overCutDistance:0.5, powerCutoffValue:15, airPump:100`.
-- `BITMAP_ENGRAVING` (image engraving) is **(unseen)** in profiles.json; the existing reader treats it as skipped. Likely appears in `profiles.json` only when the project has a bitmap; fields would be like FILL (power, speed, density/dpi, `bitmapScanMode`).
+- `BITMAP_ENGRAVING` (image engraving): appears as a fourth profile only when the project has a bitmap; values in 2d.
 Profile id format: `profile:<12 random alphanumerics>`.
 All three profiles were present even when a type had no element (the app writes all).
 
@@ -201,9 +231,11 @@ Must be generated: `projectId`/`projectTraceID` (uuid v4, equal), canvas id (uui
 
 Resolved by the `unknowns` sample: native `RECT`/`CIRCLE`/`STAR`/`REGULAR_POLYGON` exist and their fields (section 2b); `fill.visible`/`isFill` do not decide processing; `layerTag` (not `stroke.color`) carries the layer; profiles.json is unchanged (still exactly three profiles, no `BITMAP_ENGRAVING` unless a bitmap exists); project/device/cover files show nothing new (cover has a `.meta.json` sidecar `{"ref","metadata":{"kind":"image","source":{"type":"workspace","value":"project-cover.png"},"mimeType":"image/png"}}`).
 
+Resolved by `unknowns-2`: text storage (2c: `style`, `fontData`, `charJSONs` outlines stored, `fontSize = 72 * scale`), bitmap storage (`resources/<sha256>.png` + sidecar, size/dpi from `scale`), image adjustments, `BITMAP_ENGRAVING` profile and the `bitmapMode` enum (2d). Not in that sample, still unknown: groups, rotation, custom values, library material (all of A.1 and the group/material parts below), bitmap crop, other `bitmapMode` names, multi-line/aligned text.
+
 A. Still unknown
 1. `angle` unit and its relation to `transform`, `x/y`, `offsetX/Y`, `pivot` for rotated elements (none in any sample).
-2. Text (font, size, content, glyph outlines cached or not), bitmaps (file location under `resources/`, format, crop, dpi/density, greyscale/dither, `BITMAP_ENGRAVING` profile fields), real groups (`groupData`/`groupTags` with several members, `groupData.rotation` unit), QR.
+2. Real groups (`groupData`/`groupTags` with several members, `groupData.rotation` unit), QR, bitmap crop, further `bitmapMode` names, multi-line text, patches with a library `material` object or custom values (only the guessed shapes in section 3).
 3. `CIRCLE` scale 0.01 oddity; orientation of `REGULAR_POLYGON`; per-corner radii in `primitiveCornerData`.
 4. Whether an element in no binding is accepted; whether shadow bindings are required.
 5. Machine bed origin versus canvas origin: a file has no bed reference; export at its own x,y and let the user position the job (guess).
@@ -243,8 +275,8 @@ B. Risks that could make xTool Studio reject or "repair" a file
 | Material (library) thickness | `data.thickness`; `data.material` 1 (generic default, seen) or the xTool id if known; `data.focalLen` as guess above |
 | Machine module (diode 10 W) | `laser:"laser_blue_10W"` in overrides, `device.power:[10]` (module string pattern `laser_<source>_<watts>W`, source blue/red/co2 per the importer) |
 | One patch per (layer, op) group | distinct patch + base binding per setting set; elements sharing a setting share the binding |
-| Image (greyscale) | BITMAP element + BITMAP_ENGRAVING profile/patch (**unseen**, still needs a sample; `unknowns` had none) |
-| Text | convert to outlines (path) at export; native TEXT **(unseen)** |
+| Image (greyscale) | `BITMAP` display (2c): PNG bytes to `resources/<sha256>.png` + `.meta.json`, `originWidth/Height` = pixels, `s` = mm per pixel (= item width_mm / pixels), `transform [s,0,0,s,x,y]`, `x,y` top-left, `width/height` mm, `dpi` 25.4/s, adjustments at the defaults; add the 4th `BITMAP_ENGRAVING` profile (2d) to `profiles.json`/`profileRefs`; bind the image in a base binding on it (no shadows); mode `grayscale` (leave the Scriber greyscale as the PNG; `bitmapMode` per Scriber dithering if it has one: `Jarvis`/`Bayer`/`Stucki`/`Atkinson`/`Sierra`); Scriber line interval -> `density` as for engrave. Untested in the app. |
+| Text | convert to outlines (path) at export (xTool itself keeps glyph outlines in `charJSONs`, so outline PATHs are a faithful representation; native `TEXT` needs `fontData`, do not write); outline text of an engrave layer: fill type as for shapes |
 | Groups | `groupData` + `groupTags` (optional; export flat) |
 | Notes/guides/dimensions | not exported |
 
