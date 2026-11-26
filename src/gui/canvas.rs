@@ -283,14 +283,15 @@ impl App {
     }
 
     /// The items under `p` in the order a click picks them: lines within a few pixels (front
-    /// first), then the areas containing `p`, smallest first.
+    /// first), then the filled areas containing `p` (engraved shapes, text, images), smallest first.
+    /// Like AutoCAD, an outline is picked on its line, not by clicking inside it.
     pub(super) fn hits(&self, d: &Document, p: Point) -> Vec<u64> {
         let tol = (PICKBOX / self.view.zoom) as f64;
         let (mut lines, mut inside) = (Vec::new(), Vec::new());
         for item in d.s.items.iter().rev().filter(|i| self.visible(i)) {
             if item.shape.outline(0.05).iter().any(|line| line.windows(2).any(|s| segment_distance(p, s[0], s[1]) <= tol)) {
                 lines.push(item.id);
-            } else if item.shape.contains(p) {
+            } else if picks_inside(item) && item.shape.contains(p) {
                 inside.push((item.shape.metrics().area.unwrap_or(f64::MAX), item.id));
             }
         }
@@ -523,4 +524,10 @@ pub(super) fn tooltip(painter: &egui::Painter, at: Pos2, text: &str) {
     let pos = at + vec2(16.0, -16.0 - galley.size().y);
     painter.rect_filled(Rect::from_min_size(pos, galley.size()).expand(3.0), 3.0, Color32::from_black_alpha(200));
     painter.galley(pos, galley, Color32::WHITE);
+}
+
+/// Shapes that can be picked by clicking inside them: what is drawn filled (engraved areas, text,
+/// images). Plain outlines are picked on their line.
+fn picks_inside(item: &Item) -> bool {
+    matches!(item.shape, Shape::Text { .. } | Shape::Image { .. }) || item.engraves_area()
 }
