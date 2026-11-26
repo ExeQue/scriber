@@ -11,6 +11,7 @@ pub use materials::{Category, Material, Operation, Setting};
 
 use std::sync::{LazyLock, Mutex, MutexGuard};
 
+#[allow(dead_code)]
 mod builtin {
     include!(concat!(env!("OUT_DIR"), "/builtin.rs"));
 }
@@ -33,6 +34,13 @@ pub fn builtin_machines() -> Vec<Machine> {
     parse_all(builtin::MACHINES)
 }
 
+/// Scriber ships no material presets: people build their own library. Tests use fixtures.
+#[cfg(not(test))]
+pub fn builtin_materials() -> Vec<Material> {
+    Vec::new()
+}
+
+#[cfg(test)]
 pub fn builtin_materials() -> Vec<Material> {
     parse_all(builtin::MATERIALS)
 }
