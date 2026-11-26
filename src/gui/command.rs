@@ -3,6 +3,7 @@
 //! `place_point`), Enter/Space, the right-click menu and the toolbar buttons.
 
 mod card;
+mod curves;
 mod context_menu;
 mod draw;
 mod edit;
@@ -146,6 +147,9 @@ pub struct CommandLine {
     /// The running command has made its undo step (one per command).
     checkpointed: bool,
     modify: modify::ModifyState,
+    /// How ARC and CIRCLE are drawn (the last way used).
+    arc_mode: curves::ArcMode,
+    circle_mode: curves::CircleMode,
     /// ROTATE angle and SCALE factor as set on the command card.
     card_angle: f64,
     card_factor: f64,
@@ -163,6 +167,8 @@ impl CommandLine {
             text_height: 10.0,
             checkpointed: false,
             modify: modify::ModifyState::new(),
+            arc_mode: curves::ArcMode::default(),
+            circle_mode: curves::CircleMode::default(),
             card_angle: 90.0,
             card_factor: 2.0,
         }
@@ -340,7 +346,7 @@ impl App {
             (Step::Second, Cmd::Mirror) => "Specify second point of mirror line:",
             (Step::Second, _) => "Specify second point:",
             (Step::EraseSource, _) => "Erase source objects? [Yes/No] <No>:",
-            (Step::Draw, _) => draw::prompt(cmd, n),
+            (Step::Draw, _) => self.curve_prompt(cmd, n).unwrap_or_else(|| draw::prompt(cmd, n)),
             (Step::Value | Step::Pick | Step::Side | Step::Choose, _) => "",
         };
         text.into()

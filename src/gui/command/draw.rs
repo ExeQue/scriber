@@ -61,6 +61,10 @@ impl App {
                 self.set_step(Step::Draw);
                 self.draw_point(toward(centre, toward_p, r));
             }
+            (_, Entry::Number(n)) if self.curve_entry(cmd, &Entry::Number(n)) => {
+                let p = self.curve_number(cmd, n, pointer).ok_or("Specify a point.")?;
+                self.draw_point(p);
+            }
             (_, Entry::Empty) => self.enter_draw(cmd),
             (_, Entry::Word(w)) => self.draw_option(cmd, &w)?,
             (_, entry) => {
@@ -73,8 +77,11 @@ impl App {
 
     fn draw_option(&mut self, cmd: Cmd, word: &str) -> Result<(), String> {
         let n = self.draft.len();
+        if self.curve_option(cmd, word) {
+            return Ok(());
+        }
         match cmd {
-            Cmd::Circle if n == 1 && is_option(word, "Diameter") => self.set_step(Step::Diameter),
+            Cmd::Circle if n == 1 && self.cmdline.circle_mode == super::curves::CircleMode::CenterRadius && is_option(word, "Diameter") => self.set_step(Step::Diameter),
             Cmd::Rectang if n == 0 && is_option(word, "Fillet") => self.set_step(Step::Fillet),
             Cmd::Pline if n >= 3 && is_option(word, "Close") => {
                 self.draft.push(self.draft[0]);
@@ -111,7 +118,8 @@ impl App {
             return;
         }
         self.draft.push(p);
-        if self.tool.points() > 0 && self.draft.len() >= self.tool.points() {
+        let needed = self.active_cmd().and_then(|c| self.curve_points(c)).unwrap_or(self.tool.points());
+        if needed > 0 && self.draft.len() >= needed {
             self.finish_draft(false);
         }
     }
@@ -141,7 +149,7 @@ impl App {
             }
             return self.end();
         }
-        let Some((name, mut shape)) = self.tool.shape(&pts, self.sides) else { return };
+        let Some((name, mut shape)) = self.draft_shape(&pts) else { return };
         if let (Tool::Rect, [a, b, ..]) = (self.tool, &pts[..]) {
             shape = Shape::path(Contour::rect(a[0], a[1], b[0] - a[0], b[1] - a[1], self.cmdline.fillet));
         }

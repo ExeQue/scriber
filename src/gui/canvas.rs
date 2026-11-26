@@ -388,7 +388,7 @@ impl App {
         }
         let mut pts = self.draft.clone();
         pts.push(p);
-        let Some((_, shape)) = self.tool.shape(&pts, self.sides) else { return };
+        let Some((_, shape)) = self.draft_shape(&pts) else { return };
         let op = if self.tool == Tool::Dimension { Op::Annotate } else { self.new_op };
         let stroke = Stroke::new(1.5, op_color(op).gamma_multiply(0.7));
         for line in shape.outline(tol) {

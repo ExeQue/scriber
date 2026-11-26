@@ -281,6 +281,50 @@ pub fn point_in_poly(p: Point, poly: &[Point]) -> bool {
     inside
 }
 
+/// The circle through three points: centre and radius. None when the points lie on a line.
+pub fn circle_3p(a: Point, b: Point, c: Point) -> Option<(Point, f64)> {
+    let d = 2.0 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+    if d.abs() < 1e-12 {
+        return None;
+    }
+    let sq = |p: Point| p[0] * p[0] + p[1] * p[1];
+    let x = (sq(a) * (b[1] - c[1]) + sq(b) * (c[1] - a[1]) + sq(c) * (a[1] - b[1])) / d;
+    let y = (sq(a) * (c[0] - b[0]) + sq(b) * (a[0] - c[0]) + sq(c) * (b[0] - a[0])) / d;
+    let centre = [x, y];
+    Some((centre, distance(centre, a)))
+}
+
+impl Contour {
+    /// The arc from `a` through `b` to `c`.
+    pub fn arc_3p(a: Point, b: Point, c: Point) -> Option<Self> {
+        let (centre, _) = circle_3p(a, b, c)?;
+        let ang = |p: Point| (p[1] - centre[1]).atan2(p[0] - centre[0]);
+        let turn = |from: f64, to: f64| (to - from).rem_euclid(2.0 * PI);
+        // Sweep with increasing angle from a to c; go the other way when b is not on that side.
+        let up = turn(ang(a), ang(c));
+        let sweep = if turn(ang(a), ang(b)) < up { up } else { up - 2.0 * PI };
+        Some(Self { vertices: vec![Vertex::new(a[0], a[1], (sweep / 4.0).tan()), Vertex::new(c[0], c[1], 0.0)], closed: false })
+    }
+
+    /// The shorter arc of radius `r` from `start` to `end`, counter-clockwise on screen (as AutoCAD draws arcs).
+    pub fn arc_start_end_radius(start: Point, end: Point, r: f64) -> Option<Self> {
+        let chord = distance(start, end);
+        if chord < 1e-9 || r < chord / 2.0 {
+            return None;
+        }
+        // Counter-clockwise on screen is decreasing angle in our y-down coordinates: negative bulge.
+        let sweep = 2.0 * (chord / (2.0 * r)).asin();
+        Some(Self { vertices: vec![Vertex::new(start[0], start[1], -(sweep / 4.0).tan()), Vertex::new(end[0], end[1], 0.0)], closed: false })
+    }
+
+    /// Arc around `centre` from the angle of `start` to the angle of `end`, counter-clockwise on screen.
+    pub fn arc_ccw(centre: Point, start: Point, end: Point) -> Self {
+        let ang = |p: Point| (p[1] - centre[1]).atan2(p[0] - centre[0]).to_degrees();
+        // `arc` runs clockwise on screen, so walk it from end to start.
+        Self::arc(centre[0], centre[1], distance(centre, start), ang(end), ang(start))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,6 +349,25 @@ mod tests {
         let a = Contour::arc(0.0, 0.0, 10.0, 0.0, 90.0);
         assert!(a.vertices[1].x.abs() < 1e-9 && (a.vertices[1].y - 10.0).abs() < 1e-9);
         assert!(a.flatten(0.01).iter().all(|p| (p[0].hypot(p[1]) - 10.0).abs() < 1e-6 && p[0] >= -1e-9 && p[1] >= -1e-9));
+    }
+
+    #[test]
+    fn three_point_circles_and_arcs() {
+        let (c, r) = circle_3p([0.0, 0.0], [10.0, 0.0], [5.0, 5.0]).unwrap();
+        assert!((c[0] - 5.0).abs() < 1e-9 && c[1].abs() < 1e-9 && (r - 5.0).abs() < 1e-9);
+        assert!(circle_3p([0.0, 0.0], [1.0, 1.0], [2.0, 2.0]).is_none());
+        // The arc passes through the middle point, whichever way round it goes.
+        for mid in [[5.0, 5.0], [5.0, -5.0]] {
+            let a = Contour::arc_3p([0.0, 0.0], mid, [10.0, 0.0]).unwrap();
+            let pts = a.flatten(0.001);
+            assert!(pts.iter().any(|p| distance(*p, mid) < 0.1), "{mid:?}");
+            assert!((a.length() - PI * 5.0).abs() < 1e-6);
+        }
+        let a = Contour::arc_start_end_radius([0.0, 0.0], [10.0, 0.0], 5.0).unwrap();
+        assert!((a.length() - PI * 5.0).abs() < 1e-6);
+        // Counter-clockwise on screen from left to right goes below (y grows down).
+        assert!(a.flatten(0.01).iter().any(|p| p[1] > 4.9));
+        assert!(Contour::arc_start_end_radius([0.0, 0.0], [10.0, 0.0], 4.0).is_none());
     }
 
     #[test]

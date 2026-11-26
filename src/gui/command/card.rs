@@ -74,10 +74,26 @@ impl App {
                     }
                 });
             }
-            (Cmd::Circle, Step::Draw) if !self.draft.is_empty() => {
-                if ui.button("Give the diameter instead").clicked() {
+            (Cmd::Circle, Step::Draw) => {
+                ui.horizontal_wrapped(|ui| {
+                    for mode in super::curves::CircleMode::ALL {
+                        if ui.selectable_label(self.cmdline.circle_mode == mode, mode.label()).clicked() {
+                            self.set_circle_mode(mode);
+                        }
+                    }
+                });
+                if self.draft.len() == 1 && self.cmdline.circle_mode == super::curves::CircleMode::CenterRadius && ui.button("Give the diameter instead").clicked() {
                     self.answer(Entry::Word("DIAMETER".into()), None);
                 }
+            }
+            (Cmd::Arc, Step::Draw) => {
+                ui.horizontal_wrapped(|ui| {
+                    for mode in super::curves::ArcMode::ALL {
+                        if ui.selectable_label(self.cmdline.arc_mode == mode, mode.label()).clicked() {
+                            self.set_arc_mode(mode);
+                        }
+                    }
+                });
             }
             (Cmd::Fillet, _) => {
                 ui.horizontal(|ui| {
