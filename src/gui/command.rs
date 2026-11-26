@@ -17,6 +17,7 @@ mod polygons;
 mod rects;
 mod preview;
 mod reshape;
+mod smart_dim;
 mod ux;
 mod variants;
 
@@ -56,6 +57,8 @@ pub enum Cmd {
     /// GC* and DC* (DCLINEAR is `DcLinear`): add one constraint.
     Constrain(Kind),
     DcLinear,
+    /// DIM: the smart dimension, one tool for every dimensional constraint.
+    Dim,
     AutoConstrain,
     DelConstraint,
     ConstraintBar,
@@ -83,7 +86,7 @@ pub enum Cmd {
 }
 
 /// Name, alias and the canvas tool used while the command asks for points.
-const COMMANDS: [(Cmd, &str, &str, Tool); 67] = [
+const COMMANDS: [(Cmd, &str, &str, Tool); 68] = [
     (Cmd::Line, "LINE", "L", Tool::Line),
     (Cmd::Circle, "CIRCLE", "C", Tool::Circle),
     (Cmd::Arc, "ARC", "A", Tool::Arc),
@@ -122,6 +125,7 @@ const COMMANDS: [(Cmd, &str, &str, Tool); 67] = [
     (Cmd::Constrain(Kind::Symmetric), "GCSYMMETRIC", "GCSYMMETRIC", Tool::Pick),
     (Cmd::Constrain(Kind::Equal), "GCEQUAL", "GCEQUAL", Tool::Pick),
     (Cmd::DcLinear, "DCLINEAR", "DCLINEAR", Tool::Pick),
+    (Cmd::Dim, "DIM", "DIM", Tool::Pick),
     (Cmd::Constrain(Kind::DimHorizontal), "DCHORIZONTAL", "DCHORIZONTAL", Tool::Pick),
     (Cmd::Constrain(Kind::DimVertical), "DCVERTICAL", "DCVERTICAL", Tool::Pick),
     (Cmd::Constrain(Kind::DimAligned), "DCALIGNED", "DCALIGNED", Tool::Pick),
@@ -244,6 +248,7 @@ pub struct CommandLine {
     dynamic: dynamic::DynInput,
     circle_mode: curves::CircleMode,
     constrain: constrain::ConstrainState,
+    smart_dim: smart_dim::SmartDim,
     ux: ux::UxState,
     /// ROTATE angle and SCALE factor as set on the command card.
     card_angle: f64,
@@ -269,6 +274,7 @@ impl CommandLine {
             dynamic: dynamic::DynInput::default(),
             circle_mode: curves::CircleMode::default(),
             constrain: constrain::ConstrainState::default(),
+            smart_dim: smart_dim::SmartDim::default(),
             ux: ux::UxState::default(),
             card_angle: 90.0,
             card_factor: 2.0,

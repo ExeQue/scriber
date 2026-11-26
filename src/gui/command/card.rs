@@ -260,7 +260,7 @@ pub(super) fn title(cmd: Cmd) -> &'static str {
         Cmd::Polygon => "Polygon",
         Cmd::Pline => "Polyline",
         Cmd::Text => "Text",
-        Cmd::DimLinear => "Dimension",
+        Cmd::DimLinear => "Dimension note",
         Cmd::Dist => "Measure distance",
         Cmd::Erase => "Delete",
         Cmd::Move => "Move",

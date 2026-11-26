@@ -12,6 +12,7 @@ use crate::gui::grips::Grip;
 use crate::gui::select::Drag;
 
 use crate::model::Point;
+use crate::model::constraints::expr::fmt_num;
 use crate::model::geom::distance;
 use eframe::egui::{self, DragValue, Event, Key, RichText};
 
@@ -33,6 +34,8 @@ enum Kind {
     Angle,
     /// SCALE's factor (the distance from the base point, as in AutoCAD).
     Factor,
+    /// DIM: the value of the dimension being placed.
+    Dimension { angle: bool },
 }
 
 impl Kind {
@@ -48,6 +51,8 @@ impl Kind {
             Kind::Height => &[("Height", "mm")],
             Kind::Angle => &[("Angle", "°")],
             Kind::Factor => &[("Factor", "×")],
+            Kind::Dimension { angle: true } => &[("Angle", "°")],
+            Kind::Dimension { angle: false } => &[("Value", "mm")],
         }
     }
 
@@ -123,6 +128,7 @@ impl App {
             (Cmd::Move | Cmd::Copy, Step::Second, _) => Kind::LengthAngle,
             (Cmd::Rotate, Step::Second, _) => Kind::Angle,
             (Cmd::Scale, Step::Second, _) => Kind::Factor,
+            (Cmd::Dim, Step::Location, _) => Kind::Dimension { angle: self.dim_is_angle() },
             // Everything else that asks for a point after a first one: length and angle from it.
             (Cmd::Text, ..) => return None,
             (_, Step::Second, 1..) | (_, Step::Draw | Step::Ux, 1..) if self.tool.points() != 1 => Kind::LengthAngle,
@@ -143,6 +149,9 @@ impl App {
 
     /// The measurements the mouse gives right now.
     fn live(&self, kind: Kind, p: Point) -> [f64; 2] {
+        if let Kind::Dimension { .. } = kind {
+            return [self.dim_live(p), 0.0];
+        }
         let Some(last) = self.dyn_base() else { return [0.0; 2] };
         match kind {
             Kind::Radius { .. } => [distance(last, p), 0.0],
@@ -154,6 +163,7 @@ impl App {
             Kind::Height => [height_from(self.draft[0], self.draft[1], p), 0.0],
             Kind::Angle => [(last[1] - p[1]).atan2(p[0] - last[0]).to_degrees(), 0.0],
             Kind::Factor => [distance(last, p), 0.0],
+            Kind::Dimension { .. } => [0.0; 2],
             Kind::Sweep => {
                 let (centre, start) = if self.cmdline.arc_mode == ArcMode::StartCenterEnd { (self.draft[1], self.draft[0]) } else { (self.draft[0], self.draft[1]) };
                 let ang = |q: Point| (centre[1] - q[1]).atan2(q[0] - centre[0]).to_degrees();
@@ -196,6 +206,7 @@ impl App {
                 [last[0] + len * a.to_radians().cos(), last[1] - len * a.to_radians().sin()]
             }
             Kind::Factor => toward(last, Some(pointer), a),
+            Kind::Dimension { .. } => pointer,
             Kind::Height => {
                 let (a0, b0) = (self.draft[0], self.draft[1]);
                 let len = distance(a0, b0).max(1e-12);
@@ -225,6 +236,10 @@ impl App {
         let (slot, v) = if matches!(kind, Kind::Radius { diameter: true }) && i == 1 { (0, v / 2.0) } else { (i, v) };
         self.cmdline.dynamic.values[slot] = v;
         self.cmdline.dynamic.locked[slot] = true;
+        // DIM keeps the typed value itself: dynamic input resets when the click places it.
+        if let Kind::Dimension { .. } = kind {
+            self.cmdline.smart_dim.value = fmt_num(v);
+        }
     }
 
     fn shown(&self, kind: Kind, i: usize, values: [f64; 2]) -> f64 {
@@ -235,6 +250,12 @@ impl App {
     }
 
     fn place_from_values(&mut self) {
+        if let Some(Kind::Dimension { .. }) = self.dyn_kind() {
+            if let Err(e) = self.dim_enter() {
+                self.cmdline.log(e);
+            }
+            return;
+        }
         let Some(p) = self.point_from_values(self.pointer_mm.unwrap_or_default()) else { return };
         if matches!(self.drag, Some(Drag::Grip { .. })) {
             self.move_grip(p, false, false);
@@ -346,6 +367,9 @@ impl App {
     fn unlock_field(&mut self, kind: Kind, i: usize) {
         let slot = if matches!(kind, Kind::Radius { .. } | Kind::Polygon) { 0 } else { i };
         self.cmdline.dynamic.locked[slot] = false;
+        if let Kind::Dimension { .. } = kind {
+            self.cmdline.smart_dim.value.clear();
+        }
     }
 
     /// The fields next to the cursor: the active one is highlighted, locked values show a lock.

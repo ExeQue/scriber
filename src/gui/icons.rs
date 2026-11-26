@@ -39,6 +39,7 @@ pub(super) fn help(cmd: Option<Cmd>) -> &'static str {
         Cmd::Redo => "Do again what Undo took back.",
         Cmd::Constrain(k) => constraint_help(k),
         Cmd::DcLinear => "Lock the horizontal or vertical distance between two points; drag it to change.",
+        Cmd::Dim => "Lock a size: click a line for its length, a circle or arc for its size, two corners for their distance or two lines for their angle; type a value to change it.",
         Cmd::AutoConstrain => "Add the constraints the selection already nearly meets (joined ends, level lines, right angles, …).",
         Cmd::DelConstraint => "Remove every constraint from the selected shapes. They stay where they are.",
         Cmd::ConstraintBar => "Show or hide the constraint icons (for the selection, or all).",
@@ -256,6 +257,10 @@ pub(super) fn paint_icon(p: &egui::Painter, r: Rect, c: Color32, cmd: Option<Cmd
             line(&[(flip(0.05), 0.45), (flip(0.2), 0.68), (flip(0.38), 0.5)]);
         }
         Cmd::Constrain(k) => glyphs::paint(p, r, c, k),
+        Cmd::Dim => {
+            glyphs::paint(p, r, c, Kind::DimAligned);
+            p.text(at(0.5, 0.15), egui::Align2::CENTER_CENTER, "d", egui::FontId::proportional(r.height() * 0.45), c);
+        }
         Cmd::DcLinear => {
             glyphs::paint(p, r, c, Kind::DimHorizontal);
             p.text(at(0.5, 0.15), egui::Align2::CENTER_CENTER, "d", egui::FontId::proportional(r.height() * 0.45), c);

@@ -124,6 +124,9 @@ impl App {
 
     /// "Add constraint" and the constraint commands that work on the selection.
     fn constraint_menu(&mut self, ui: &mut egui::Ui) {
+        if ui.button(title(Cmd::Dim)).on_hover_text("DIM: lock a length, distance, angle, radius or diameter").clicked() {
+            self.start(Cmd::Dim);
+        }
         ui.menu_button("Add constraint", |ui| {
             for kind in Kind::GEOMETRIC {
                 if icon_item(ui, kind, title(Cmd::Constrain(kind))).clicked() {

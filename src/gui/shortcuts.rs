@@ -25,8 +25,7 @@ const KEYS: &[(Key, Action)] = &[
     (Key::A, Action::Run(Cmd::Arc)),
     (Key::G, Action::Run(Cmd::Polygon)),
     (Key::T, Action::Run(Cmd::Text)),
-    // ponytail: D goes to the smart DIM command once it lands on main.
-    (Key::D, Action::Run(Cmd::DimLinear)),
+    (Key::D, Action::Run(Cmd::Dim)),
     (Key::I, Action::Run(Cmd::Dist)),
     (Key::M, Action::Run(Cmd::Move)),
     (Key::K, Action::Run(Cmd::Copy)),

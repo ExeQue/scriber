@@ -21,7 +21,7 @@ pub struct ConstrainState {
 
 impl Cmd {
     pub(super) fn constrains(self) -> bool {
-        matches!(self, Cmd::Constrain(_) | Cmd::DcLinear | Cmd::AutoConstrain | Cmd::DelConstraint | Cmd::ConstraintBar | Cmd::Parameters)
+        matches!(self, Cmd::Constrain(_) | Cmd::DcLinear | Cmd::Dim | Cmd::AutoConstrain | Cmd::DelConstraint | Cmd::ConstraintBar | Cmd::Parameters)
     }
 
     /// The constraint kind; DCLINEAR picks horizontal or vertical when the dimension is placed.
@@ -57,6 +57,7 @@ pub(super) fn constrain_title(cmd: Cmd) -> &'static str {
             Kind::DimDiameter => "Diameter",
         },
         Cmd::DcLinear => "Distance",
+        Cmd::Dim => "Dimension",
         Cmd::AutoConstrain => "Auto constrain",
         Cmd::DelConstraint => "Remove",
         Cmd::ConstraintBar => "Show icons",
@@ -89,6 +90,7 @@ impl App {
         self.cmdline.constrain = ConstrainState::default();
         match cmd {
             Cmd::Parameters => self.show_parameters = true,
+            Cmd::Dim => self.start_dim(),
             Cmd::ConstraintBar => {
                 let sel = self.doc.lock().unwrap().selection.clone();
                 if sel.is_empty() {
@@ -115,6 +117,9 @@ impl App {
     }
 
     pub(super) fn constrain_prompt(&self, cmd: Cmd, step: Step) -> String {
+        if cmd == Cmd::Dim {
+            return self.dim_prompt(step);
+        }
         let n = self.cmdline.constrain.refs.len();
         let dim = cmd == Cmd::DcLinear || cmd.kind().is_dimension();
         let text = match (step, cmd.kind()) {
@@ -145,6 +150,9 @@ impl App {
     }
 
     pub(super) fn constrain_step(&mut self, cmd: Cmd, step: Step, entry: Entry) -> Result<(), String> {
+        if cmd == Cmd::Dim {
+            return self.dim_step(step, entry);
+        }
         match (step, entry) {
             (Step::Expr, Entry::Empty) => {
                 let text = std::mem::take(&mut self.cmdline.input);
@@ -276,7 +284,7 @@ impl App {
     }
 
     /// The point (when allowed and near) or the line/arc/circle under `p`.
-    fn pick_ref(&self, p: Point, points: bool) -> Result<Ref, String> {
+    pub(super) fn pick_ref(&self, p: Point, points: bool) -> Result<Ref, String> {
         let d = self.doc.lock().unwrap();
         let tol = (APERTURE / self.view.zoom) as f64;
         if points {
@@ -291,7 +299,7 @@ impl App {
 
     /// Change the document as part of the command's undo step, and solve at once so a conflict is
     /// reported here (and the change undone).
-    fn change(&mut self, f: impl FnOnce(&mut Document) -> Result<String, String>) -> Result<String, String> {
+    pub(super) fn change(&mut self, f: impl FnOnce(&mut Document) -> Result<String, String>) -> Result<String, String> {
         let mut d = self.doc.lock().unwrap();
         let before = d.s.clone();
         let out = match f(&mut d) {
@@ -313,6 +321,9 @@ impl App {
 
     /// The command card's fields for the constraint commands.
     pub(super) fn constrain_fields(&mut self, ui: &mut egui::Ui, cmd: Cmd, step: Step) {
+        if cmd == Cmd::Dim {
+            return self.dim_fields(ui, step);
+        }
         match step {
             Step::Expr => {
                 ui.horizontal(|ui| {

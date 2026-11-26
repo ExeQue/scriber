@@ -38,9 +38,7 @@ impl App {
             self.smalls(ui, &cmds);
         });
         panel(ui, "Lock sizes", |ui| {
-            // >>> The large "Dimension" button (smart DIM) goes here; until then, Distance (DCLINEAR) stands in.
-            self.large(ui, Some(Cmd::DcLinear), Cmd::DcLinear.title());
-            // <<<
+            self.large(ui, Some(Cmd::Dim), Cmd::Dim.title());
             ui.vertical(|ui| {
                 ui.menu_button("More ▾", |ui| {
                     for c in SIZES {

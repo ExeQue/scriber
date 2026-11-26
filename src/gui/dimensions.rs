@@ -43,64 +43,67 @@ impl App {
     }
 
     pub(super) fn paint_dimensions(&mut self, painter: &egui::Painter, s: &State) {
-        let mut labels = Vec::new();
         let values = parameter_values(s).unwrap_or_default();
-        let stroke = Stroke::new(1.0, DIM);
-        let line = |a: Point, b: Point| painter.line_segment([self.w2s(a), self.w2s(b)], stroke);
-        for c in s.constraints.iter().filter(|c| c.kind.is_dimension()) {
-            let Some(place) = dim_place(s, c.kind, &c.refs) else { continue };
-            // The dimension line's ends (or the arc's), and where the label goes.
-            let (a, b, mid) = match place {
-                DimPlace::Linear(p, q) => {
-                    let (a2, b2) = match c.kind {
-                        Kind::DimHorizontal => ([p[0], p[1] + c.offset], [q[0], p[1] + c.offset]),
-                        Kind::DimVertical => ([p[0] + c.offset, p[1]], [p[0] + c.offset, q[1]]),
-                        _ => {
-                            let len = (q[0] - p[0]).hypot(q[1] - p[1]).max(1e-9);
-                            let n = [(q[1] - p[1]) / len, -(q[0] - p[0]) / len];
-                            (add(p, n, c.offset), add(q, n, c.offset))
-                        }
-                    };
-                    line(p, a2);
-                    line(q, b2);
-                    line(a2, b2);
-                    (a2, b2, [(a2[0] + b2[0]) / 2.0, (a2[1] + b2[1]) / 2.0])
-                }
-                DimPlace::Angle(i, u, v) => {
-                    let r = c.offset.abs().max(2.0);
-                    let (a0, mut a1) = (u[1].atan2(u[0]), v[1].atan2(v[0]));
-                    let mut sweep = a1 - a0;
-                    if sweep > std::f64::consts::PI {
-                        sweep -= std::f64::consts::TAU;
-                    } else if sweep < -std::f64::consts::PI {
-                        sweep += std::f64::consts::TAU;
-                    }
-                    a1 = a0 + sweep;
-                    let pts: Vec<Pos2> = (0..=24).map(|k| self.w2s(add(i, [(a0 + sweep * k as f64 / 24.0).cos(), (a0 + sweep * k as f64 / 24.0).sin()], r))).collect();
-                    painter.add(egui::Shape::line(pts, stroke));
-                    let at = |t: f64| add(i, [t.cos(), t.sin()], r);
-                    (at(a0), at(a1), at(a0 + sweep / 2.0))
-                }
-                DimPlace::Circle(m, r) => {
-                    let d = [c.offset.to_radians().cos(), c.offset.to_radians().sin()];
-                    let tip = add(m, d, r);
-                    let from = if c.kind == Kind::DimDiameter { add(m, d, -r) } else { m };
-                    line(from, tip);
-                    (from, tip, add(m, d, r * 1.25))
-                }
-            };
-            let (sa, sb) = (self.w2s(a), self.w2s(b));
-            if matches!(place, DimPlace::Linear(..)) || c.kind == Kind::DimDiameter {
-                arrow_head(painter, sa, sb, DIM);
-            }
-            arrow_head(painter, sb, sa, DIM);
-            let galley = painter.layout_no_wrap(label(c, values.get(&c.name).copied()), FontId::proportional(13.0), DIM);
-            let rect = Rect::from_center_size(self.w2s(mid) - vec2(0.0, galley.size().y / 2.0 + 2.0), galley.size()).expand(2.0);
-            painter.rect_filled(rect, 2.0, Color32::from_white_alpha(220));
-            painter.galley(rect.min + vec2(2.0, 2.0), galley, DIM);
-            labels.push((c.id, rect));
-        }
+        let labels = s.constraints.iter().filter(|c| c.kind.is_dimension()).filter_map(|c| Some((c.id, self.paint_lock_dimension(painter, s, c, values.get(&c.name).copied(), DIM)?))).collect();
         self.dim_labels = labels;
+        self.paint_dim_preview(painter, s);
+    }
+
+    /// One dimensional constraint, in `color`; returns its label's rectangle.
+    pub(in crate::gui) fn paint_lock_dimension(&self, painter: &egui::Painter, s: &State, c: &Constraint, value: Option<f64>, color: Color32) -> Option<Rect> {
+        let stroke = Stroke::new(1.0, color);
+        let line = |a: Point, b: Point| painter.line_segment([self.w2s(a), self.w2s(b)], stroke);
+        let place = dim_place(s, c.kind, &c.refs)?;
+        // The dimension line's ends (or the arc's), and where the label goes.
+        let (a, b, mid) = match place {
+            DimPlace::Linear(p, q) => {
+                let (a2, b2) = match c.kind {
+                    Kind::DimHorizontal => ([p[0], p[1] + c.offset], [q[0], p[1] + c.offset]),
+                    Kind::DimVertical => ([p[0] + c.offset, p[1]], [p[0] + c.offset, q[1]]),
+                    _ => {
+                        let len = (q[0] - p[0]).hypot(q[1] - p[1]).max(1e-9);
+                        let n = [(q[1] - p[1]) / len, -(q[0] - p[0]) / len];
+                        (add(p, n, c.offset), add(q, n, c.offset))
+                    }
+                };
+                line(p, a2);
+                line(q, b2);
+                line(a2, b2);
+                (a2, b2, [(a2[0] + b2[0]) / 2.0, (a2[1] + b2[1]) / 2.0])
+            }
+            DimPlace::Angle(i, u, v) => {
+                let r = c.offset.abs().max(2.0);
+                let (a0, mut a1) = (u[1].atan2(u[0]), v[1].atan2(v[0]));
+                let mut sweep = a1 - a0;
+                if sweep > std::f64::consts::PI {
+                    sweep -= std::f64::consts::TAU;
+                } else if sweep < -std::f64::consts::PI {
+                    sweep += std::f64::consts::TAU;
+                }
+                a1 = a0 + sweep;
+                let pts: Vec<Pos2> = (0..=24).map(|k| self.w2s(add(i, [(a0 + sweep * k as f64 / 24.0).cos(), (a0 + sweep * k as f64 / 24.0).sin()], r))).collect();
+                painter.add(egui::Shape::line(pts, stroke));
+                let at = |t: f64| add(i, [t.cos(), t.sin()], r);
+                (at(a0), at(a1), at(a0 + sweep / 2.0))
+            }
+            DimPlace::Circle(m, r) => {
+                let d = [c.offset.to_radians().cos(), c.offset.to_radians().sin()];
+                let tip = add(m, d, r);
+                let from = if c.kind == Kind::DimDiameter { add(m, d, -r) } else { m };
+                line(from, tip);
+                (from, tip, add(m, d, r * 1.25))
+            }
+        };
+        let (sa, sb) = (self.w2s(a), self.w2s(b));
+        if matches!(place, DimPlace::Linear(..)) || c.kind == Kind::DimDiameter {
+            arrow_head(painter, sa, sb, color);
+        }
+        arrow_head(painter, sb, sa, color);
+        let galley = painter.layout_no_wrap(label(c, value), FontId::proportional(13.0), color);
+        let rect = Rect::from_center_size(self.w2s(mid) - vec2(0.0, galley.size().y / 2.0 + 2.0), galley.size()).expand(2.0);
+        painter.rect_filled(rect, 2.0, Color32::from_white_alpha(220));
+        painter.galley(rect.min + vec2(2.0, 2.0), galley, color);
+        Some(rect)
     }
 }
 
