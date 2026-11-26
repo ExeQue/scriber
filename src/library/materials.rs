@@ -149,6 +149,9 @@ pub struct Material {
     pub category: Category,
     /// Thickness in mm.
     pub thickness: f64,
+    /// The sheet's colour in the laser preview (RGB); none = wood.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<[u8; 3]>,
     #[serde(default)]
     pub notes: String,
     /// Where the settings come from.
@@ -230,7 +233,7 @@ mod tests {
     #[test]
     fn named_profiles() {
         let engrave = |name: &str, power: f64| Setting { name: name.into(), power, ..Setting::new("m", "l", Operation::Engrave) };
-        let mut m = Material { id: "oak".into(), name: "Oak".into(), category: Category::Wood, thickness: 3.0, notes: String::new(), source: String::new(), settings: vec![engrave("Photo", 20.0)] };
+        let mut m = Material { id: "oak".into(), name: "Oak".into(), category: Category::Wood, thickness: 3.0, notes: String::new(), source: String::new(), color: None, settings: vec![engrave("Photo", 20.0)] };
         assert_eq!(m.setting("m", None, Operation::Engrave).unwrap().name, "Photo", "without an unnamed one the first is the default");
         m.put(engrave("", 30.0));
         m.put(engrave("Dark", 60.0));

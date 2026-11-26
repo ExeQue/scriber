@@ -2,6 +2,7 @@
 //! the SVG export (`State::effective_op`), sorted into what to paint. Painting lives in the GUI and export.
 
 use super::{Contour, Item, Op, Shape, State};
+use crate::library::Library;
 
 /// RGB colours of the preview.
 pub struct Palette {
@@ -15,9 +16,15 @@ pub struct Palette {
     pub score: [u8; 3],
 }
 
-/// Wood when a material is chosen, a neutral grey when not.
-pub fn palette(s: &State) -> Palette {
-    if s.material.is_some() {
+/// The material's own colour, else wood when a material is chosen, a neutral grey when not.
+pub fn palette(s: &State, lib: &Library) -> Palette {
+    if let Some(c) = s.material.as_deref().and_then(|id| lib.material(id)).and_then(|m| m.color) {
+        let mix = |to: f32, t: f32| c.map(|v| (v as f32 + (to - v as f32) * t).round() as u8);
+        // Laser marks darken a light sheet; on a dark one (black acrylic, slate) they show lighter.
+        let dark = (0.299 * c[0] as f32 + 0.587 * c[1] as f32 + 0.114 * c[2] as f32) < 60.0;
+        let mark = |t: f32| if dark { mix(255.0, t) } else { mix(0.0, t) };
+        Palette { sheet: c, piece: mix(255.0, 0.15), bed: [40, 40, 44], burn: mark(0.65), cut: mark(0.8), score: mark(0.5) }
+    } else if s.material.is_some() {
         Palette { sheet: [214, 178, 128], piece: [224, 190, 142], bed: [40, 40, 44], burn: [74, 44, 22], cut: [40, 24, 12], score: [96, 60, 30] }
     } else {
         Palette { sheet: [222, 222, 218], piece: [234, 234, 230], bed: [40, 40, 44], burn: [62, 62, 62], cut: [30, 30, 30], score: [90, 90, 90] }
@@ -71,7 +78,23 @@ pub fn scene(s: &State) -> Scene<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::library::store;
     use crate::model::{Document, Guide};
+
+    #[test]
+    fn a_material_colour_is_the_sheet() {
+        // A library file from before colours loads, without one.
+        let file = serde_json::from_str(r#"{"materials": [{"id": "card", "name": "Red glitter card", "thickness": 0.3}]}"#).unwrap();
+        let mut lib = store::merged(file);
+        let mut d = Document::new(100.0, 100.0);
+        d.s.material = Some("card".into());
+        assert_eq!(lib.material("card").unwrap().color, None);
+        assert_eq!(palette(&d.s, &lib).sheet, [214, 178, 128], "wood without a colour");
+        lib.material_mut("card").unwrap().color = Some([200, 30, 40]);
+        let p = palette(&d.s, &lib);
+        assert_eq!(p.sheet, [200, 30, 40]);
+        assert!(p.piece.iter().zip(p.sheet).all(|(a, b)| *a >= b) && p.burn[0] < 100, "piece lighter, burn darker");
+    }
 
     #[test]
     fn pieces_holes_and_what_is_left_out() {

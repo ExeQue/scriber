@@ -12,7 +12,7 @@ fn hex([r, g, b]: [u8; 3]) -> String {
 /// `px` is one pixel in mm: lines are a pixel wide and the pieces' shadow two pixels.
 pub(super) fn svg(s: &State, px: f64) -> String {
     let (w, h) = (s.width, s.height);
-    let p = palette(s);
+    let p = palette(s, &crate::library::get());
     let sc = scene(s);
     let mut out = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}mm\" height=\"{h}mm\" viewBox=\"0 0 {w} {h}\">\n");
     writeln!(out, "<rect width=\"{w}\" height=\"{h}\" fill=\"{}\"/>", hex(p.sheet)).unwrap();

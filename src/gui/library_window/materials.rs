@@ -35,7 +35,7 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
         match action {
             Some(ListAction::Add) => {
                 let category = ed.filter.category.unwrap_or_default();
-                let m = Material { id: lib.new_id("New material"), name: "New material".into(), category, thickness: 3.0, notes: String::new(), source: String::new(), settings: Vec::new() };
+                let m = Material { id: lib.new_id("New material"), name: "New material".into(), category, thickness: 3.0, notes: String::new(), source: String::new(), color: None, settings: Vec::new() };
                 lib.materials.push(m);
                 ed.material = lib.materials.len() - 1;
             }
@@ -78,6 +78,19 @@ fn form(ui: &mut egui::Ui, m: &mut Material, machines: &[Machine], index: usize,
             ui.end_row();
             field_label(ui, "Thickness");
             ui.add(DragValue::new(&mut m.thickness).range(0.0..=100.0).speed(0.1).suffix(" mm"));
+            ui.end_row();
+            field_label(ui, "Colour").on_hover_text("The sheet's colour in the laser preview");
+            ui.horizontal(|ui| {
+                let mut c = m.color.unwrap_or([214, 178, 128]);
+                if ui.color_edit_button_srgb(&mut c).changed() {
+                    m.color = Some(c);
+                }
+                if m.color.is_none() {
+                    ui.label(RichText::new("wood (default)").weak());
+                } else if ui.small_button("Default").on_hover_text("Back to the wood colour").clicked() {
+                    m.color = None;
+                }
+            });
             ui.end_row();
         });
     });

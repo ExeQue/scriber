@@ -81,7 +81,7 @@ mod tests {
         d.add("face", Op::Engrave, Shape::path(Contour::rect(60.0, 10.0, 10.0, 10.0, 0.0)));
         d.add("note", Op::NoOutput, Shape::path(Contour::rect(80.0, 10.0, 10.0, 10.0, 0.0)));
         let img = image::load_from_memory(&super::preview_png(&d.s, 50.8).unwrap()).unwrap().to_rgb8();
-        let p = crate::model::preview::palette(&d.s);
+        let p = crate::model::preview::palette(&d.s, &crate::library::get());
         assert_eq!(img.get_pixel(190, 90).0, p.sheet, "bare material");
         assert_eq!(img.get_pixel(30, 30).0, p.piece, "the cut-out piece");
         assert_eq!(img.get_pixel(50, 50).0, p.bed, "its hole");

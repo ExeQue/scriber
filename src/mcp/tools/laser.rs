@@ -44,6 +44,8 @@ pub struct SaveMaterial {
     /// What kind of material (for filtering); a new material without one is "other".
     pub category: Option<Category>,
     pub notes: Option<String>,
+    /// The sheet's colour in the laser preview as [r, g, b] (0-255); [] clears it (back to wood).
+    pub color: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -89,7 +91,7 @@ impl Server {
         ok(json!(library::get().machines))
     }
 
-    #[tool(description = "List the material library: each material with its thickness and laser settings per machine, laser module and operation (cut, score, engrave): power %, speed mm/s, passes, and for engrave line_interval (mm between lines; tell people lines per cm = 10 / line_interval) and bidirectional.")]
+    #[tool(description = "List the material library: each material with its thickness, color (preview sheet colour [r, g, b], missing = wood) and laser settings per machine, laser module and operation (cut, score, engrave): power %, speed mm/s, passes, and for engrave line_interval (mm between lines; tell people lines per cm = 10 / line_interval) and bidirectional.")]
     fn list_materials(&self, Parameters(p): Parameters<ListMaterials>) -> ToolResult {
         let lib = library::get();
         let Some(machine) = p.machine else { return ok(json!(lib.materials)) };
@@ -169,7 +171,7 @@ impl Server {
         }
     }
 
-    #[tool(description = "Add a material (no id: name and thickness needed) or change an existing one's name, thickness or notes. Returns it with its id.")]
+    #[tool(description = "Add a material (no id: name and thickness needed) or change an existing one's name, thickness, category, notes or color (the sheet colour in the laser preview, [r, g, b]; [] clears it). Returns it with its id.")]
     fn save_material(&self, Parameters(p): Parameters<SaveMaterial>) -> ToolResult {
         let r = library::update(|lib| {
             let mut m = match &p.id {
@@ -177,13 +179,20 @@ impl Server {
                 None => {
                     let name = p.name.clone().ok_or("a new material needs a name")?;
                     let thickness = p.thickness.ok_or("a new material needs a thickness")?;
-                    Material { id: lib.new_id(&name), name, category: Category::Other, thickness, notes: String::new(), source: String::new(), settings: Vec::new() }
+                    Material { id: lib.new_id(&name), name, category: Category::Other, thickness, notes: String::new(), source: String::new(), color: None, settings: Vec::new() }
                 }
             };
             m.name = p.name.unwrap_or(m.name);
             m.thickness = p.thickness.unwrap_or(m.thickness);
             m.category = p.category.unwrap_or(m.category);
             m.notes = p.notes.unwrap_or(m.notes);
+            if let Some(c) = p.color {
+                m.color = match c[..] {
+                    [] => None,
+                    [r, g, b] => Some([r, g, b]),
+                    _ => return Err("color is [r, g, b], or [] to clear it".into()),
+                };
+            }
             lib.put_material(m.clone());
             Ok(m)
         });
