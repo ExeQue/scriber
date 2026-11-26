@@ -1,7 +1,7 @@
 //! The MCP tools: one per document command, mirroring what the GUI can do.
 
 use crate::export;
-use crate::model::{Contour, Document, Op, Shape, Shared, Transform};
+use crate::model::{BoolOp, Contour, Document, Op, Shape, Shared, Transform};
 use base64::Engine;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
@@ -16,6 +16,7 @@ const INSTRUCTIONS: &str = "Scriber is a 2D CAD program for laser cutters. You e
 Units are millimetres. Origin is the top-left corner of the material, x grows right, y grows DOWN (like SVG). Angles are degrees, positive = clockwise on screen.
 Each item has an op for its lines: cut (red, cut through), score (blue, mark a line), engrave (black line), none (lines ignored) or annotate (notes and dimensions for people, never lasered). Separately, fill: true engraves the enclosed area (closed paths and text). Example: a coaster with an engraved face is op cut + fill true.
 A path holds one or more contours; several contours make a compound path whose holes stay empty when filled (even-odd). Use combine_items/break_apart to build or split them.
+CAD operations: fillet, chamfer, offset (also kerf compensation), boolean (union/difference/intersection), array_rectangular, array_polar and trim.
 Contours are polylines whose segments can be arcs: each vertex has a bulge = tan(sweep/4) for the segment to the next vertex (0 = straight). Prefer add_items with kind rect/circle/arc/polygon/line/polyline over building arcs by hand.
 Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. Call export_png without a path to look at the result.";
 
@@ -198,6 +199,84 @@ pub struct NewDoc {
     /// Discard unsaved changes.
     #[serde(default)]
     pub force: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct Fillet {
+    /// Item ids; empty = the selection. Two open lines/polylines are joined where they meet, and that corner is rounded.
+    #[serde(default)]
+    pub ids: Vec<u64>,
+    /// Arc radius in mm (0 with two open items just joins them into a sharp corner).
+    pub radius: f64,
+    /// Only round the corner nearest this point; missing = every sharp corner.
+    pub at: Option<[f64; 2]>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct Chamfer {
+    /// Item ids; empty = the selection. Two open lines/polylines are joined where they meet, and that corner is cut.
+    #[serde(default)]
+    pub ids: Vec<u64>,
+    /// How far back along the incoming side (or the first item) the cut starts, in mm.
+    pub distance: f64,
+    /// Along the outgoing side (or the second item); default = distance.
+    pub distance2: Option<f64>,
+    /// Only cut the corner nearest this point; missing = every sharp corner.
+    pub at: Option<[f64; 2]>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct Offset {
+    #[serde(default)]
+    pub ids: Vec<u64>,
+    /// mm. Positive = outward for closed shapes (holes shrink), to the left on screen for open ones; negative = inward / right.
+    pub distance: f64,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BooleanItems {
+    /// Two or more closed paths; empty = the selection. For difference the first one is the base.
+    #[serde(default)]
+    pub ids: Vec<u64>,
+    pub operation: BoolOp,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ArrayRect {
+    #[serde(default)]
+    pub ids: Vec<u64>,
+    pub rows: u32,
+    pub columns: u32,
+    /// Distance between columns in mm (negative = to the left).
+    #[serde(default)]
+    pub dx: f64,
+    /// Distance between rows in mm (positive = down).
+    #[serde(default)]
+    pub dy: f64,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ArrayPolar {
+    #[serde(default)]
+    pub ids: Vec<u64>,
+    /// Items in total, the original included.
+    pub count: u32,
+    pub centre: [f64; 2],
+    /// Degrees to spread them over, positive = clockwise; default 360 (evenly round).
+    pub angle: Option<f64>,
+    /// Turn the copies with the angle (default true); false only moves them.
+    pub rotate: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct Trim {
+    /// The item to trim; missing = the single selected item.
+    pub id: Option<u64>,
+    /// A point on the piece to remove.
+    pub at: [f64; 2],
+    /// Cutting edges; empty = every other path.
+    #[serde(default)]
+    pub edges: Vec<u64>,
 }
 
 // ---------- server ----------
@@ -540,6 +619,80 @@ impl Server {
             ok(summary(d))
         })
     }
+
+    #[tool(description = "Round corners with an arc (empty ids = the selection): the corner nearest `at`, or every sharp corner between straight segments. With exactly two open lines/polylines, they are extended or shortened to meet, joined into one path, and that corner is rounded (AutoCAD FILLET of two objects).")]
+    fn fillet(&self, Parameters(p): Parameters<Fillet>) -> ToolResult {
+        self.edit_ids(&p.ids, |d, ids| match d.fillet(&ids, p.radius, p.at) {
+            Ok(()) => ok(json!({"ids": existing(d, &ids)})),
+            Err(e) => fail(e),
+        })
+    }
+
+    #[tool(description = "Cut corners off with a straight line (empty ids = the selection): the corner nearest `at`, or every sharp corner. distance goes back along the incoming side, distance2 (default = distance) along the outgoing one. Two open lines/polylines are joined where they meet, like fillet.")]
+    fn chamfer(&self, Parameters(p): Parameters<Chamfer>) -> ToolResult {
+        self.edit_ids(&p.ids, |d, ids| match d.chamfer(&ids, p.distance, p.distance2.unwrap_or(p.distance), p.at) {
+            Ok(()) => ok(json!({"ids": existing(d, &ids)})),
+            Err(e) => fail(e),
+        })
+    }
+
+    #[tool(description = "Add offset copies of paths (empty ids = the selection), keeping the originals. Positive distance = outward for closed shapes (their holes shrink), to the left on screen for open ones. For laser kerf compensation of a part, offset by half the kerf and cut the copy. The copies become the selection.")]
+    fn offset(&self, Parameters(p): Parameters<Offset>) -> ToolResult {
+        self.edit_ids(&p.ids, |d, ids| match d.offset(&ids, p.distance) {
+            Ok(new) => {
+                d.selection = new.clone();
+                ok(json!({"ids": new, "bbox": d.bbox(&new)}))
+            }
+            Err(e) => fail(e),
+        })
+    }
+
+    #[tool(description = "Union, difference or intersection of two or more closed paths (empty ids = the selection). Difference subtracts the others from the first id. The result replaces the first item (keeping its name, op and fill); holes become contours of a compound path; the other items are deleted.")]
+    fn boolean(&self, Parameters(p): Parameters<BooleanItems>) -> ToolResult {
+        self.edit_ids(&p.ids, |d, ids| match d.boolean(&ids, p.operation) {
+            Ok(id) => ok(serde_json::to_value(d.item(id).unwrap()).unwrap()),
+            Err(e) => fail(e),
+        })
+    }
+
+    #[tool(description = "Copy items into a grid (empty ids = the selection): rows × columns in total, the original being the top-left cell, dx mm between columns and dy between rows. The copies become the selection.")]
+    fn array_rectangular(&self, Parameters(p): Parameters<ArrayRect>) -> ToolResult {
+        self.edit_ids(&p.ids, |d, ids| match d.array_rectangular(&ids, p.rows, p.columns, p.dx, p.dy) {
+            Ok(new) => {
+                d.selection = new.clone();
+                ok(json!({"ids": new}))
+            }
+            Err(e) => fail(e),
+        })
+    }
+
+    #[tool(description = "Copy items around a centre (empty ids = the selection): count items in total spread over angle degrees (default 360 = evenly round, positive = clockwise). rotate (default true) turns each copy; false keeps its orientation. The copies become the selection.")]
+    fn array_polar(&self, Parameters(p): Parameters<ArrayPolar>) -> ToolResult {
+        self.edit_ids(&p.ids, |d, ids| match d.array_polar(&ids, p.count, p.centre, p.angle.unwrap_or(360.0), p.rotate.unwrap_or(true)) {
+            Ok(new) => {
+                d.selection = new.clone();
+                ok(json!({"ids": new}))
+            }
+            Err(e) => fail(e),
+        })
+    }
+
+    #[tool(description = "Trim a path (AutoCAD TRIM): the piece around `at` is removed back to the nearest crossings with the cutting edges (default: every other path). An open line keeps the parts on either side; a closed shape needs two crossings and becomes open. An item with nothing left is deleted.")]
+    fn trim(&self, Parameters(p): Parameters<Trim>) -> ToolResult {
+        let ids: Vec<u64> = p.id.into_iter().collect();
+        self.edit_ids(&ids, |d, ids| match ids.as_slice() {
+            [id] => match d.trim(*id, p.at, &p.edges) {
+                Ok(()) => ok(json!({"id": id, "item": d.item(*id)})),
+                Err(e) => fail(e),
+            },
+            _ => fail("give one id or select exactly one item"),
+        })
+    }
+}
+
+/// The ids that still exist (fillet and chamfer may merge two items into one).
+fn existing(d: &Document, ids: &[u64]) -> Vec<u64> {
+    ids.iter().copied().filter(|id| d.item(*id).is_some()).collect()
 }
 
 #[tool_handler(router = self.tool_router)]
