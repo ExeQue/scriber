@@ -126,22 +126,39 @@ impl App {
     fn constraint_menu(&mut self, ui: &mut egui::Ui) {
         ui.menu_button("Add constraint", |ui| {
             for kind in Kind::GEOMETRIC {
-                let cmd = Cmd::Constrain(kind);
-                if ui.button(title(cmd)).on_hover_text(cmd.name()).clicked() {
-                    self.start(cmd);
+                if icon_item(ui, kind, title(Cmd::Constrain(kind))).clicked() {
+                    self.start(Cmd::Constrain(kind));
                 }
             }
             ui.separator();
-            for cmd in [Cmd::DcLinear, Cmd::Constrain(Kind::DimAligned), Cmd::Constrain(Kind::DimAngular), Cmd::Constrain(Kind::DimRadial), Cmd::Constrain(Kind::DimDiameter)] {
-                if ui.button(title(cmd)).on_hover_text(cmd.name()).clicked() {
+            let dims = [(Cmd::DcLinear, Kind::DimHorizontal), (Cmd::Constrain(Kind::DimAligned), Kind::DimAligned), (Cmd::Constrain(Kind::DimAngular), Kind::DimAngular), (Cmd::Constrain(Kind::DimRadial), Kind::DimRadial), (Cmd::Constrain(Kind::DimDiameter), Kind::DimDiameter)];
+            for (cmd, kind) in dims {
+                if icon_item(ui, kind, title(cmd)).clicked() {
                     self.start(cmd);
                 }
             }
         });
         for cmd in [Cmd::AutoConstrain, Cmd::DelConstraint, Cmd::ConstraintBar] {
-            if ui.button(title(cmd)).on_hover_text(cmd.name()).clicked() {
+            if ui.button(title(cmd)).clicked() {
                 self.start(cmd);
             }
         }
     }
+}
+
+/// A menu entry with the constraint's glyph before its name, like the toolbar shows it.
+fn icon_item(ui: &mut egui::Ui, kind: Kind, label: &str) -> egui::Response {
+    let height = 22.0;
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width().max(200.0), height), egui::Sense::click());
+    let visuals = ui.style().interact(&response);
+    if response.hovered() {
+        ui.painter().rect_filled(rect, 3.0, visuals.weak_bg_fill);
+    }
+    let icon = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 3.0), egui::vec2(16.0, 16.0));
+    crate::gui::glyphs::paint(ui.painter(), icon, visuals.text_color(), kind);
+    ui.painter().text(egui::pos2(icon.right() + 8.0, rect.center().y), egui::Align2::LEFT_CENTER, label, egui::TextStyle::Button.resolve(ui.style()), visuals.text_color());
+    if response.clicked() {
+        ui.close();
+    }
+    response
 }
