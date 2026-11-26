@@ -37,6 +37,7 @@ mod settings;
 mod shortcuts;
 mod snap;
 mod svg_import;
+mod dxf_import;
 mod tabs;
 mod tools;
 mod tracking;
@@ -58,7 +59,9 @@ enum Want {
     Save(u64, AfterSave),
     ImportImage(u64),
     ImportSvg,
+    ImportDxf,
     ExportSvg(u64),
+    ExportDxf(u64),
     ExportPng(u64),
     ExportXs(u64),
 }
@@ -172,6 +175,9 @@ struct App {
     confirm_close: bool,
     allow_close: bool,
     svg_dialog: Option<svg_import::SvgDialog>,
+    dxf_dialog: Option<dxf_import::DxfDialog>,
+    /// The op last picked per DXF layer name (None = skipped), for the next DXF import.
+    dxf_ops: std::collections::BTreeMap<String, Option<Op>>,
     /// The open "Machines & materials" window.
     library: Option<library_window::Editor>,
     /// The automatic library sources sync started with the editor: one line when something changed.
@@ -322,6 +328,8 @@ impl App {
             confirm_close: false,
             allow_close: false,
             svg_dialog: None,
+            dxf_dialog: None,
+            dxf_ops: Default::default(),
             library: None,
             library_sync: None,
             ribbon: ribbon::Ribbon::default(),
@@ -362,6 +370,8 @@ impl App {
             Want::Save(id, after) => self.save_to(id, path.with_extension("scrbr"), after),
             Want::ImportImage(id) => self.import_image_into(id, &path, [10.0, 10.0]),
             Want::ImportSvg => self.svg_file_chosen(path),
+            Want::ImportDxf => self.dxf_file_chosen(path, None),
+            Want::ExportDxf(id) => self.export_dxf_to(id, &path),
             Want::ExportSvg(id) => self.export_svg_to(id, &path),
             Want::ExportPng(id) => self.export_png_to(id, &path),
             Want::ExportXs(id) => self.export_xs_to(id, &path),
@@ -460,6 +470,20 @@ impl App {
         self.message = match std::fs::write(path, svg) {
             Ok(()) => format!("{} {}", "Exported", path.display()),
             Err(e) => format!("{}: {e}", "Export failed"),
+        };
+    }
+
+    fn export_dxf(&mut self, ctx: &egui::Context) {
+        self.dialog.save(ctx, Want::ExportDxf(self.doc_id), rfd::FileDialog::new().add_filter("DXF", &["dxf"]).set_file_name("design.dxf"));
+    }
+
+    fn export_dxf_to(&mut self, id: u64, path: &Path) {
+        let Some(doc) = self.ws.get(id) else { return };
+        let out = export::dxf::dxf(&doc.lock().unwrap().s, false);
+        self.message = match out.and_then(|o| std::fs::write(path, &o.bytes).map(|()| o).map_err(|e| e.to_string())) {
+            Ok(o) if o.skipped == 0 => format!("Exported {} ({} entities on {} layers)", path.display(), o.entities, o.layers),
+            Ok(o) => format!("Exported {} ({} entities on {} layers); {} images left out", path.display(), o.entities, o.layers, o.skipped),
+            Err(e) => format!("Export failed: {e}"),
         };
     }
 
@@ -694,8 +718,8 @@ impl eframe::App for App {
         self.override_window(&ctx);
 
 
-        let svg = self.svg_dialog.is_some();
-        self.popouts.track(&[("parameters", self.show_parameters), ("agents", self.show_agents), ("check", self.check.open), ("shortcuts", self.show_shortcuts), ("svg", svg)]);
+        let (svg, dxf) = (self.svg_dialog.is_some(), self.dxf_dialog.is_some());
+        self.popouts.track(&[("parameters", self.show_parameters), ("agents", self.show_agents), ("check", self.check.open), ("shortcuts", self.show_shortcuts), ("svg", svg), ("dxf", dxf)]);
         if self.show_layers {
             self.layers_dialog(&ctx);
         }
@@ -710,6 +734,7 @@ impl eframe::App for App {
             self.shortcuts_window(&ctx);
         }
         self.svg_import_window(&ctx);
+        self.dxf_import_window(&ctx);
         self.library_window(&ctx);
         if self.confirm_close {
             self.close_dialog(&ctx);

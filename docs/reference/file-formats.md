@@ -7,6 +7,7 @@
 | `library.json` | Your own material library | The app, in its config folder |
 | `machines/*.json` | Built-in machines | Shipped with Scriber |
 | `.svg`, `.png` | Exports for laser software | File → Export |
+| `.dxf` | CAD drawing, in and out | File → Import DXF…, File → Export DXF… |
 | `.xs` | xTool Studio project | File → Export xTool Studio (.xs)… |
 
 ## `.scrbr` projects
@@ -58,5 +59,19 @@ named after its `id`.
   Inkscape-style layer group per shown Scriber layer, in laser order (engrave, score, cut). Text is
   converted to outlines.
 - **PNG**: a picture of the drawing.
+- **DXF**: ASCII, AutoCAD 2004 (`AC1018`), `$INSUNITS` = 4 (mm). One DXF layer per shown layer
+  (name and nearest AutoCAD colour index; entities carry the exact colour as a true colour when the
+  layer's colour is not in the palette). Contours are `LWPOLYLINE`s with bulges, full circles
+  `CIRCLE`s, text its outlines. y is flipped: the DXF origin is the material's bottom-left corner.
+
+## DXF import
+
+Reads ASCII and binary DXF from R12 to 2018 (with the [`dxf`](https://crates.io/crates/dxf) crate).
+`LINE`, `ARC`, `CIRCLE`, `LWPOLYLINE`, 2D/3D `POLYLINE` (as flat), `ELLIPSE`, `SPLINE` (NURBS of any
+degree, or through fit points), `TEXT`, `MTEXT` and `INSERT` (nested, with arrays) come in; `POINT`
+is ignored and other entities (`HATCH`, `DIMENSION`, `LEADER`, images, 3D faces, …) are left out
+and listed. Entities in blocks on layer `0` take the layer of the `INSERT`, and colour `BYBLOCK`
+its colour. Paper space is ignored. Units: `$INSUNITS` (none = mm). See
+[Importing DXF](../guide/drawing#importing-dxf) for the layer dialog.
 - **`.xs`**: see [Exporting](../guide/exporting#xtool-studio-projects) and the
   [.xs format notes](../xs-format).

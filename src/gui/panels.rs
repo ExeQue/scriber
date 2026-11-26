@@ -46,8 +46,14 @@ impl App {
                 if ui.button("Import SVG…").clicked() {
                     self.import_svg_dialog(ui.ctx());
                 }
+                if ui.button("Import DXF…").clicked() {
+                    self.import_dxf_dialog(ui.ctx());
+                }
                 if ui.button("Export SVG for the laser…").clicked() {
                     self.export_svg(ui.ctx());
+                }
+                if ui.button("Export DXF…").clicked() {
+                    self.export_dxf(ui.ctx());
                 }
                 if ui.button("Export PNG…").clicked() {
                     self.export_png(ui.ctx());

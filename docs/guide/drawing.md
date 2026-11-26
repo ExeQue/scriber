@@ -47,10 +47,35 @@ last point) or `@40<30` (40 mm at 30°). A plain number uses the pointer's direc
 - **Note dimension** (Annotate): a measurement drawn for people, on a *No output* layer. It does not
   drive the shape; for that use a [locked size](./constraints).
 
-## Images and SVG files
+## Images, SVG and DXF files
 
 - File → **Import image…** places a PNG, JPEG or other picture. It is turned to greyscale and is
   engraved.
 - File → **Import SVG…** reads vector drawings. The stroke colour picks the layer: red = cut,
   blue = score, black = engrave, grey or green = no output, any other colour = cut. A filled closed
   shape is engraved. You can also paste SVG text straight onto the canvas.
+- File → **Import DXF…** reads drawings from CAD programs (or drop a `.dxf` on the canvas). See
+  below.
+
+### Importing DXF
+
+A dialog lists the DXF's layers, each with its colour and how many items it holds, and asks what
+the laser does with each: **Cut**, **Score**, **Engrave**, **No output** or **Skip** (leave it out).
+Each layer you import becomes a Scriber layer with the same name. The first guess comes from the
+layer's name when it says what to do ("Cut", "Engrave", …), else from its colour: red cut, blue
+score, black and dark grey engrave, grey no output, white (AutoCAD's colour 7) and any other colour
+cut. Layers that are turned off in the DXF start as Skip. Scriber remembers your choice for each
+layer name, so the next DXF from the same CAD program comes in the same way. A layer that holds
+several colours is split into one row per colour.
+
+- Units come from the file (`$INSUNITS`: mm, cm, inch, …). A file without units is read as
+  millimetres; the dialog shows which.
+- The DXF origin lands on the bottom-left corner of the material, unless you tick **Place at**.
+- Lines, arcs, circles and polylines come in exactly (arcs stay arcs). Ellipses and splines are
+  turned into arcs that stay within 0.01 mm of the curve.
+- Lines and arcs that touch end to end are joined into one shape (closed when they come round), and
+  shapes inside other shapes become one compound path, so holes stay empty when engraved.
+- Blocks (INSERT) are placed with their position, rotation, scale and arrays, also blocks in blocks.
+- TEXT and MTEXT become text items in the default sans-serif font (the DXF's own font is not
+  matched).
+- Points, hatches, dimensions, leaders and images are left out; the dialog lists what was skipped.

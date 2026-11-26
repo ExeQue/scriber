@@ -42,8 +42,8 @@ with them.
    items. On a big document it returns a summary; ask for the geometry of the ids you need.
 2. **Build with `add_items`.** Prefer the simple kinds (`rect`, `circle`, `arc`, `polygon`, `line`,
    `polyline`, `text`) over hand-made paths with bulges; use `curve` for Bézier curves and
-   `import_svg` with data for SVG path strings. Send related items in one call: it is one undo step
-   for the person. For a very large batch, write the items to a JSON file and pass its path.
+   `import_svg` with data for SVG path strings (`import_dxf` for a DXF file from a CAD program).
+   Send related items in one call: it is one undo step for the person. For a very large batch, write the items to a JSON file and pass its path.
 3. **Shape it with the CAD tools** (`fillet`, `offset`, `boolean`, `array_polar`, `trim`, …) rather
    than recomputing coordinates yourself.
 4. **Lock the sizes the person cares about.** When they give a size ("40 mm wide", "holes 3 mm"),
@@ -113,7 +113,7 @@ To follow a review:
    outside the material, details smaller than the beam, ops without settings).
 5. Look at `export_png` with `preview: true`: it shows what the laser makes (burned areas, cut-out
    pieces with their holes). Show it to the person before they laser.
-6. `export_svg` writes a file for other laser software, if they want one. Scriber does not run the
+6. `export_svg` (or `export_dxf` for CAD programs) writes a file for other laser software, if they want one. Scriber does not run the
    laser; the person sends the job from their laser software.
 
 ## Materials

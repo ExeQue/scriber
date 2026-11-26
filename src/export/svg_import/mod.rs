@@ -2,7 +2,7 @@
 //! this module turns its paths into contours in mm, with curves fitted as arcs, and maps the paint
 //! to laser operations the way laser software reads colours.
 
-mod biarc;
+pub(crate) mod biarc;
 
 use crate::model::geom::{Point, Vertex, distance};
 use crate::model::{Contour, Document, Img, Op, Shape};
@@ -53,9 +53,14 @@ const NEAR: f64 = 100.0;
 
 fn stroke_op(paint: &Paint) -> Op {
     let Paint::Color(c) = paint else { return Op::Cut };
+    colour_op([c.red, c.green, c.blue])
+}
+
+/// A line colour → laser operation (also used for DXF layer colours).
+pub(crate) fn colour_op(c: [u8; 3]) -> Op {
     let dist = |rgb: [u8; 3]| {
         let d = |a: u8, b: u8| (a as f64 - b as f64).powi(2);
-        (d(c.red, rgb[0]) + d(c.green, rgb[1]) + d(c.blue, rgb[2])).sqrt()
+        (d(c[0], rgb[0]) + d(c[1], rgb[1]) + d(c[2], rgb[2])).sqrt()
     };
     STROKE_OPS.iter().map(|(rgb, op)| (dist(*rgb), *op)).filter(|(d, _)| *d <= NEAR).min_by(|a, b| a.0.total_cmp(&b.0)).map_or(Op::Cut, |(_, op)| op)
 }

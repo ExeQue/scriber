@@ -19,6 +19,9 @@ impl App {
                 if self.small(ui, false, Icon::Glyph("💾"), "SVG for the laser", "Save the drawing as an SVG file for the laser software") {
                     self.export_svg(ui.ctx());
                 }
+                if self.small(ui, false, Icon::Glyph("💾"), "DXF for CAD", "Save the drawing as a DXF file (mm, one DXF layer per layer) for CAD programs and laser software") {
+                    self.export_dxf(ui.ctx());
+                }
                 if self.small(ui, false, Icon::Glyph("🖼"), "PNG picture", "Save a picture of the drawing") {
                     self.export_png(ui.ctx());
                 }

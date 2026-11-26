@@ -10,6 +10,7 @@ use rmcp::schemars::{self, JsonSchema};
 use rmcp::{ErrorData as McpError, ServerHandler, tool, tool_handler, tool_router};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -34,7 +35,7 @@ CAD operations: fillet, chamfer, offset (also kerf compensation), boolean (union
 Contours are polylines whose segments can be arcs: each vertex has a bulge = tan(sweep/4) for the segment to the next vertex (0 = straight). Prefer add_items with kind rect/circle/arc/polygon/line/polyline over building arcs by hand; for Bézier curves use kind curve (quadratic or cubic control points, turned into arcs), for SVG path data import_svg with data. Big batches: write the items array to a JSON file and give add_items its path.
 Constraints (as in AutoCAD) bind geometry: add_constraint (coincident, parallel, tangent, …; the first object stays, the second moves), add_dimensional_constraint (a named parameter like d1 = 40 or d2 = d1 / 2 that drives the size), set_parameter, list_constraints, delete_constraints, auto_constrain. A reference names geometry in a path: {kind: point, item, vertex}, {kind: segment, item, segment} (segment k runs from vertex k to k+1; a circle is segment 0), {kind: centre, item, segment}, {kind: item, item}; contour defaults to 0. After every change the solver keeps all constraints satisfied, moving as little as possible; a change that cannot be satisfied is refused and undone, naming the conflicting constraints.
 Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. Your changes leave the user's selection alone (items you add or copy are not selected); only select, select_similar, quick_select and add_items with select: true change it. A large document comes back as a summary without geometry (or ask for one with geometry: false); get_document with ids gives the geometry of particular items. Tools that change items reply compactly (per item id, name, layer, op, kind, bbox, rotation, contour and vertex counts); pass verbose: true for the full geometry. Call export_png without a path to look at the result.
-Mirrored copy: transform_items with mirror_x/mirror_y and copy: true. boolean keeps the first item's layer (and so its op). import_svg maps colours to ops (shapes with neither fill nor stroke, or a grey or green fill, come in as no_output, useful as boolean cutters) and says which SVG element (svg_id, element index) each item came from.
+Mirrored copy: transform_items with mirror_x/mirror_y and copy: true. boolean keeps the first item's layer (and so its op). import_svg maps colours to ops (shapes with neither fill nor stroke, or a grey or green fill, come in as no_output, useful as boolean cutters) and says which SVG element (svg_id, element index) each item came from. import_dxf brings in DXF files with one layer per DXF layer (pass layers: {name: op} to choose; it replies with the names and the ops used); export_dxf writes one for CAD programs.
 Laser settings: list_machines and list_materials show the user's machines and material library; set_laser_setup picks the document's machine, laser module and material, and get_laser_setup returns the power/speed/passes to use per operation and per layer. Before the user lasers, run preflight_check and look at export_png with preview: true.
 Import and share: search_xtool_materials and import_xtool_materials copy settings from xTool Studio's local material cache (only materials the user opened there), import_xtool_project from an .xs project; export_library and import_library write and merge .scrlib files for other Scriber users.
 Library sources: people can subscribe to machine and material libraries published in public GitHub repositories (subscribe_library with owner/repo or a URL, and optionally a track: a branch, a tag, the latest release or a fixed commit). Their machines and materials are read-only in the library (saving one with the same id makes the user's own copy, which wins). The editor syncs them at start at most once a day; sync_library_sources syncs now and says what changed. list_library_sources, set_library_source (track, enabled) and unsubscribe_library (ask first) manage them; export_library_repository writes the user's own items as a repository folder to publish.
@@ -338,6 +339,47 @@ pub struct ExportSvg {
     /// Include no_output items (notes, dimensions, helpers). Default false, because laser software would burn them.
     #[serde(default)]
     pub include_annotations: bool,
+}
+
+/// What to do with a DXF layer on import.
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DxfLayerOp {
+    Cut,
+    Score,
+    Engrave,
+    #[serde(alias = "annotate", alias = "none")]
+    NoOutput,
+    /// Leave the layer out.
+    Skip,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ImportDxf {
+    /// DXF file to import (ASCII or binary, R12 to 2018).
+    pub path: String,
+    /// Op per DXF layer name (the names import_dxf replies with; a layer with several colours is
+    /// split as "name #rrggbb"): cut, score, engrave, no_output or skip. Layers not named get the
+    /// guess from their name and colour.
+    #[serde(default)]
+    pub layers: BTreeMap<String, DxfLayerOp>,
+    /// Left edge of the drawing in mm; default: where the file puts it (DXF origin = the material's bottom-left corner).
+    pub x: Option<f64>,
+    /// Top edge of the drawing in mm (give x and y together).
+    pub y: Option<f64>,
+    /// Largest distance in mm between an ellipse or spline and the arcs that replace it. Default 0.01.
+    pub tolerance: Option<f64>,
+    #[serde(flatten)]
+    pub detail: Detail,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ExportDxf {
+    /// Where to write the .dxf.
+    pub path: String,
+    /// Include no_output layers (notes, helpers). Default false, because laser software would burn them.
+    #[serde(default)]
+    pub include_no_output: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -819,6 +861,18 @@ impl Server {
         }
     }
 
+    #[tool(description = "Export the document as DXF (ASCII, AutoCAD 2004, $INSUNITS = mm) for CAD programs and laser software: one DXF layer per shown layer (its name, and its colour as AutoCAD colour index plus true colour), contours as LWPOLYLINE with arcs (bulges), full circles as CIRCLE, text as its outlines. The DXF origin is the material's bottom-left corner (y up). Hidden layers, guides, dimensions and images are left out; no_output layers only with include_no_output.")]
+    fn export_dxf(&self, Parameters(p): Parameters<ExportDxf>) -> ToolResult {
+        let out = match export::dxf::dxf(&self.doc.lock().unwrap().s, p.include_no_output) {
+            Ok(o) => o,
+            Err(e) => return fail(e),
+        };
+        match std::fs::write(&p.path, &out.bytes) {
+            Ok(()) => ok(json!({"path": p.path, "layers": out.layers, "entities": out.entities, "skipped_images": out.skipped})),
+            Err(e) => fail(format!("cannot write {}: {e}", p.path)),
+        }
+    }
+
     #[tool(description = "Export the document as an xTool Studio project (.xs) for the document's xTool machine and laser module: one colour layer per shown cut/score/engrave layer, each with its processing type (cut, score = vector engraving, engrave = fill) and the layer's power, speed and passes (and lines per cm). Text goes out as outlines; no-output and hidden layers, guides and dimensions are left out; images are skipped (listed in `skipped`).")]
     fn export_xs(&self, Parameters(p): Parameters<ExportXs>) -> ToolResult {
         let state = self.doc.lock().unwrap().s.clone();
@@ -933,6 +987,57 @@ impl Server {
                 Err(e) => fail(e),
             },
             _ => fail("give one id or select exactly one item"),
+        })
+    }
+
+    #[tool(description = "Import a DXF file (ASCII or binary, R12 to 2018). LINE, ARC, CIRCLE, LWPOLYLINE/POLYLINE (arcs stay arcs), ELLIPSE and SPLINE (fitted as arcs within tolerance), TEXT/MTEXT (text items in the default font) and INSERT (blocks, nested, arrays) come in; POINT, HATCH, DIMENSION and the like are left out (listed in skipped). Units follow $INSUNITS (no units = mm); the DXF origin goes to the material's bottom-left corner unless x/y place the drawing's top-left corner. Lines and arcs touching end to end are joined, closed contours inside one another become one compound path. Each DXF layer (or layer and colour, named \"name #rrggbb\", when a layer has several colours) goes on a Scriber layer of that name with the op from layers, else guessed: a name saying cut/score/engrave/no output, else its colour (red cut, blue score, black/dark grey engrave, grey no_output, white and others cut); layers turned off in the DXF are skipped unless named. Returns ids, bbox, units, layers (name, colour, op or skip, items) and skipped.")]
+    fn import_dxf(&self, Parameters(p): Parameters<ImportDxf>) -> ToolResult {
+        let bytes = match std::fs::read(&p.path) {
+            Ok(b) => b,
+            Err(e) => return fail(format!("cannot read {}: {e}", p.path)),
+        };
+        let ops: BTreeMap<String, Option<Op>> = p
+            .layers
+            .iter()
+            .map(|(name, op)| {
+                let op = match op {
+                    DxfLayerOp::Cut => Some(Op::Cut),
+                    DxfLayerOp::Score => Some(Op::Score),
+                    DxfLayerOp::Engrave => Some(Op::Engrave),
+                    DxfLayerOp::NoOutput => Some(Op::NoOutput),
+                    DxfLayerOp::Skip => None,
+                };
+                (name.clone(), op)
+            })
+            .collect();
+        let at = (p.x.is_some() || p.y.is_some()).then(|| [p.x.unwrap_or(0.0), p.y.unwrap_or(0.0)]);
+        self.with(|d| {
+            let dxf = match export::dxf::import::read(&bytes, d.s.height, p.tolerance.unwrap_or(0.01)) {
+                Ok(x) => x,
+                Err(e) => return fail(e),
+            };
+            let before = d.s.clone();
+            match d.import_dxf(&dxf, &ops, at) {
+                Ok(ids) => {
+                    d.push_undo(before);
+                    let layers: Vec<Value> = dxf
+                        .groups
+                        .iter()
+                        .map(|g| {
+                            let op = ops.get(&g.name).copied().unwrap_or(g.guess);
+                            let [r, gr, b] = g.rgb;
+                            json!({"name": g.name, "colour": format!("#{r:02x}{gr:02x}{b:02x}"), "op": op.map_or(json!("skip"), |o| json!(o)), "items": g.shapes.len()})
+                        })
+                        .collect();
+                    let mut out = changed(d, &ids, p.detail.verbose);
+                    out["bbox"] = json!(d.bbox(&ids));
+                    out["units"] = json!(dxf.units);
+                    out["layers"] = json!(layers);
+                    out["skipped"] = json!(dxf.skipped);
+                    ok(out)
+                }
+                Err(e) => fail(e),
+            }
         })
     }
 

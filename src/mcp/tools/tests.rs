@@ -174,3 +174,25 @@ fn agent_changes_leave_the_selection_alone() {
     let new = reply(s.add_items(args(json!({"items": [{"shape": {"kind": "circle", "cx": 50, "cy": 50, "r": 5}}], "select": true}))));
     assert_eq!(json!(doc.lock().unwrap().selection), new["ids"]);
 }
+
+#[test]
+fn dxf_round_trip_with_chosen_layer_ops() {
+    let (s, doc) = server();
+    squares(&s, 2);
+    reply(s.add_items(args(json!({"items": [{"op": "score", "shape": {"kind": "circle", "cx": 100, "cy": 50, "r": 10}}]}))));
+    let path = std::env::temp_dir().join(format!("scriber-dxf-{}.dxf", std::process::id()));
+    let path = path.to_string_lossy().into_owned();
+    let out = reply(s.export_dxf(args(json!({"path": path}))));
+    assert_eq!((out["layers"].as_u64(), out["entities"].as_u64()), (Some(2), Some(3)));
+    let before = doc.lock().unwrap().s.items.len();
+    let out = reply(s.import_dxf(args(json!({"path": path, "layers": {"Score": "skip", "Cut": "engrave"}}))));
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(out["units"], "mm");
+    let layers: Vec<(&str, &str)> = out["layers"].as_array().unwrap().iter().map(|l| (l["name"].as_str().unwrap(), l["op"].as_str().unwrap())).collect();
+    assert_eq!(layers, [("Cut", "engrave"), ("Score", "skip")]);
+    // The two overlapping squares are not nested: two items on a new engrave layer called Cut.
+    assert_eq!(out["ids"].as_array().unwrap().len(), 2);
+    assert!(out["items"].as_array().unwrap().iter().all(|i| i["op"] == "engrave"));
+    assert_eq!(doc.lock().unwrap().s.items.len(), before + 2);
+    assert!(error(s.import_dxf(args(json!({"path": "/nonexistent.dxf"})))).contains("cannot read"));
+}

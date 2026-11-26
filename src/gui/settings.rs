@@ -1,5 +1,5 @@
 //! The editor's own settings that survive a restart: the status bar toggles (GRID, SNAP, ORTHO,
-//! POLAR with its angles, OSNAP, OTRACK, INFER), a few View choices and the ribbon's tab and fold. Stored as JSON in the
+//! POLAR with its angles, OSNAP, OTRACK, INFER), a few View choices, the ribbon's tab and fold and the ops picked for DXF layers. Stored as JSON in the
 //! user's config folder; a missing or broken file just means the defaults.
 
 use super::App;
@@ -27,6 +27,8 @@ pub struct Settings {
     pub recent: Vec<PathBuf>,
     /// The files open at exit, reopened on start.
     pub open_files: Vec<PathBuf>,
+    /// Import DXF: the op last picked per DXF layer name (null = skipped).
+    dxf_ops: std::collections::BTreeMap<String, Option<crate::model::Op>>,
 }
 
 impl Default for Settings {
@@ -49,6 +51,7 @@ impl Default for Settings {
             ribbon_collapsed: false,
             recent: Vec::new(),
             open_files: Vec::new(),
+            dxf_ops: Default::default(),
         }
     }
 }
@@ -95,6 +98,7 @@ impl App {
             ribbon_collapsed: self.ribbon.collapsed,
             recent: self.ws.recent(),
             open_files: self.ws.docs().iter().filter_map(|(_, d)| d.lock().unwrap().path.clone()).collect(),
+            dxf_ops: self.dxf_ops.clone(),
         }
     }
 
@@ -106,6 +110,7 @@ impl App {
         (self.snap, self.show_guides, self.show_cmdline, self.measure_hover) = (s.snap, s.show_guides, s.show_cmdline, s.measure_hover);
         (self.ribbon.tab, self.ribbon.collapsed) = (s.ribbon_tab, s.ribbon_collapsed);
         self.ws.set_recent(s.recent.clone());
+        self.dxf_ops = s.dxf_ops.clone();
         self.saved_settings = s;
     }
 
