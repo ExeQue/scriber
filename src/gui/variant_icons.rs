@@ -4,7 +4,7 @@
 use crate::gui::command::Cmd;
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, Stroke, pos2};
 
-pub(super) fn paint_variant(p: &Painter, r: Rect, c: Color32, cmd: Cmd, n: usize) {
+pub(in crate::gui) fn paint_variant(p: &Painter, r: Rect, c: Color32, cmd: Cmd, n: usize) {
     let at = |x: f32, y: f32| pos2(r.left() + x * r.width(), r.top() + y * r.height());
     let s = Stroke::new(1.4, c);
     let thin = Stroke::new(1.0, c.gamma_multiply(0.7));

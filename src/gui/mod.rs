@@ -35,6 +35,7 @@ mod snap;
 mod svg_import;
 mod tools;
 mod tracking;
+mod variant_icons;
 mod zoom;
 
 use crate::model::{Document, Op, Point, Shape, Shared, Transform};

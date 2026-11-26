@@ -9,7 +9,6 @@ mod arrange;
 mod home;
 mod laser;
 mod parametric;
-mod variant_icons;
 mod view;
 
 use super::App;
@@ -189,7 +188,7 @@ impl App {
                     };
                     ui.painter().rect_filled(rect, CornerRadius::same(3), bg);
                     let icon = Rect::from_min_size(rect.min + vec2(5.0, 3.0), vec2(20.0, 20.0));
-                    variant_icons::paint_variant(ui.painter(), icon, fg, cmd, n);
+                    crate::gui::variant_icons::paint_variant(ui.painter(), icon, fg, cmd, n);
                     ui.painter().text(pos2(icon.right() + 8.0, rect.center().y), egui::Align2::LEFT_CENTER, *name, FontId::proportional(13.0), fg);
                     if r.clicked() || (f.hold && released && over) {
                         pick = Some(n);
@@ -304,7 +303,7 @@ fn sensed_button(ui: &mut Ui, sense: Sense, large: bool, icon_only: bool, on: bo
             painter.rect_filled(icon_rect.shrink(4.0), CornerRadius::same(4), c);
             painter.rect_stroke(icon_rect.shrink(4.0), CornerRadius::same(4), Stroke::new(1.0, fg), egui::StrokeKind::Outside);
         }
-        Icon::Variant(cmd, n) => variant_icons::paint_variant(painter, icon_rect, fg, cmd, n),
+        Icon::Variant(cmd, n) => crate::gui::variant_icons::paint_variant(painter, icon_rect, fg, cmd, n),
         Icon::Glyph(g) => _ = painter.text(icon_rect.center(), egui::Align2::CENTER_CENTER, g, FontId::proportional(icon_rect.height()), fg),
     }
     if large {

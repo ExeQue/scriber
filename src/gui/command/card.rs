@@ -18,7 +18,6 @@ impl App {
                 ui.add_space(6.0);
                 self.card_fields(ui, cmd, step);
                 self.dyn_fields(ui);
-                self.exact_value(ui, step);
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     // ARRAY is finished with its own "Create copies" button.
@@ -38,13 +37,7 @@ impl App {
     pub(super) fn card_fields(&mut self, ui: &mut egui::Ui, cmd: Cmd, step: Step) {
         match (cmd, step) {
             (Cmd::Rectang, _) => {
-                ui.horizontal_wrapped(|ui| {
-                    for mode in super::rects::RectMode::ALL {
-                        if ui.selectable_label(self.cmdline.rect_mode == mode, mode.label()).clicked() {
-                            self.set_rect_mode(mode);
-                        }
-                    }
-                });
+                self.variant_list(ui, cmd);
                 ui.horizontal(|ui| {
                     ui.label("Rounded corners");
                     ui.add(mm_value(&mut self.cmdline.fillet));
@@ -52,11 +45,7 @@ impl App {
             }
             // Once the centre is down, sides and radius are in the measurement fields below.
             (Cmd::Polygon, _) => {
-                ui.horizontal(|ui| {
-                    ui.label("Size to");
-                    ui.selectable_value(&mut self.cmdline.polygon_flat, false, "a corner");
-                    ui.selectable_value(&mut self.cmdline.polygon_flat, true, "a side");
-                });
+                self.variant_list(ui, cmd);
                 // Once the centre is down, the sides are also in the measurement fields.
                 if !self.draft.is_empty() {
                     return;
@@ -95,22 +84,10 @@ impl App {
                 });
             }
             (Cmd::Circle, Step::Draw) => {
-                ui.horizontal_wrapped(|ui| {
-                    for mode in super::curves::CircleMode::ALL {
-                        if ui.selectable_label(self.cmdline.circle_mode == mode, mode.label()).clicked() {
-                            self.set_circle_mode(mode);
-                        }
-                    }
-                });
+                self.variant_list(ui, cmd);
             }
             (Cmd::Arc, Step::Draw) => {
-                ui.horizontal_wrapped(|ui| {
-                    for mode in super::curves::ArcMode::ALL {
-                        if ui.selectable_label(self.cmdline.arc_mode == mode, mode.label()).clicked() {
-                            self.set_arc_mode(mode);
-                        }
-                    }
-                });
+                self.variant_list(ui, cmd);
             }
             (Cmd::Fillet, _) => {
                 ui.horizontal(|ui| {
@@ -168,22 +145,6 @@ impl App {
             (c, _) if c.ux() => self.ux_fields(ui, c, step),
             _ => {}
         }
-    }
-
-    /// For exact work without the command line: type a length, angle or point (`40`, `10,20`, `@15,0`, `@40<30`).
-    fn exact_value(&mut self, ui: &mut egui::Ui, step: Step) {
-        if !matches!(step, Step::Draw | Step::Base | Step::Second | Step::Diameter | Step::Side | Step::Ux) || self.show_cmdline || self.has_dyn_fields() {
-            return;
-        }
-        ui.horizontal(|ui| {
-            ui.label("Exact value");
-            let field = ui.add(egui::TextEdit::singleline(&mut self.cmdline.input).hint_text("40  or  10,20  or  @40<30").desired_width(150.0));
-            if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                self.submit(None);
-            }
-        })
-        .response
-        .on_hover_text("A number is a length (or angle) in the direction of the mouse. x,y is a point on the material; @dx,dy is relative to the last point; @length<angle goes that far at that angle.");
     }
 
     /// TEXT's font; kept for the next text.
