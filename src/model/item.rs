@@ -195,20 +195,32 @@ impl Shape {
     pub fn metrics(&self) -> Metrics {
         match self {
             Shape::Path { contours } => {
-                let boxes: Vec<BBox> = contours.iter().map(Contour::bbox).collect();
-                let closed: Vec<&Contour> = contours.iter().filter(|c| c.closed).collect();
+                use cavalier_contours::core::math::Vector2;
+                use cavalier_contours::polyline::PlineSource;
+                // Build each contour's polyline once; this runs every frame for the selection and totals.
+                let plines: Vec<_> = contours.iter().map(|c| (c, c.pline())).collect();
+                let boxes: Vec<BBox> = plines
+                    .iter()
+                    .map(|(c, p)| p.extents().map(|e| [e.min_x, e.min_y, e.max_x - e.min_x, e.max_y - e.min_y]).unwrap_or_else(|| c.bbox()))
+                    .collect();
+                let closed: Vec<usize> = (0..contours.len()).filter(|i| contours[*i].closed).collect();
                 // Even-odd: a contour inside an odd number of others is a hole.
+                let inside = |o: usize, q: [f64; 2]| {
+                    let b = boxes[o];
+                    q[0] >= b[0] && q[0] <= b[0] + b[2] && q[1] >= b[1] && q[1] <= b[1] + b[3] && plines[o].1.winding_number(Vector2::new(q[0], q[1])) != 0
+                };
                 let area: f64 = closed
                     .iter()
-                    .map(|c| {
-                        let p = c.vertices.first().map(|v| [v.x, v.y]).unwrap_or_default();
-                        let depth = closed.iter().filter(|o| !std::ptr::eq(**o, *c) && o.contains(p)).count();
-                        if depth % 2 == 0 { c.area() } else { -c.area() }
+                    .map(|&i| {
+                        let q = contours[i].vertices.first().map(|v| [v.x, v.y]).unwrap_or_default();
+                        let depth = closed.iter().filter(|&&o| o != i && inside(o, q)).count();
+                        let a = plines[i].1.area().abs();
+                        if depth % 2 == 0 { a } else { -a }
                     })
                     .sum();
                 Metrics {
                     bbox: super::geom::union(&boxes).unwrap_or([0.0; 4]),
-                    length: contours.iter().map(Contour::length).sum(),
+                    length: plines.iter().map(|(_, p)| p.path_length()).sum(),
                     area: (!closed.is_empty()).then_some(area.abs()),
                 }
             }
