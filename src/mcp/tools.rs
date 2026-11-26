@@ -15,16 +15,17 @@ use std::sync::Arc;
 
 mod editing;
 mod laser;
+mod layers;
 
 const INSTRUCTIONS: &str = "Scriber is a 2D CAD program for laser cutters. You edit the document that is open in the user's Scriber window; every change shows there live and the user can undo it.
 Units are millimetres. Origin is the top-left corner of the material, x grows right, y grows DOWN (like SVG). Angles are degrees, positive = clockwise on screen.
-Each item has one op, as in xTool Studio: cut (red, cut through along the line), score (blue, mark a line), engrave (black, burn the whole area inside closed paths, text and images; an open path with engrave is scored) or no_output (grey, notes, dimensions and helpers for people, never lasered). Example: a coaster with an engraved face is two items with the same shape, one engrave and one cut.
+Layers, as in xTool Studio: every item sits on one layer, and the layer's op says what the laser does with it: cut (red, cut through along the line), score (blue, mark a line), engrave (black, burn the whole area inside closed paths, text and images; an open path on an engrave layer is scored) or no_output (grey, notes, dimensions and helpers for people, never lasered). A layer can also carry its own power/speed/passes (else the material library's preset for its op), so two engrave layers can engrave at different depths. Hidden layers are not lasered or exported; items on locked layers cannot be edited. list_layers, add_layer, update_layer, delete_layer manage them; add_items/update_item take a layer id, or an op, which means the first layer with that op (made if there is none). Example: a coaster with an engraved face is two items with the same shape, one on an engrave layer and one on a cut layer.
 A path holds one or more contours; several contours make a compound path whose holes stay empty when engraved (even-odd). Use combine_items/break_apart to build or split them.
 CAD operations: fillet, chamfer, offset (also kerf compensation), boolean (union/difference/intersection), array_rectangular, array_polar, trim, stretch, join, explode, align, break_item, extend, lengthen, match_properties, group/ungroup, select_similar and quick_select. Guide lines (add_items kind xline/ray/centerline/centermark) help placing things and are never lasered or exported.
 Contours are polylines whose segments can be arcs: each vertex has a bulge = tan(sweep/4) for the segment to the next vertex (0 = straight). Prefer add_items with kind rect/circle/arc/polygon/line/polyline over building arcs by hand.
 Constraints (as in AutoCAD) bind geometry: add_constraint (coincident, parallel, tangent, …; the first object stays, the second moves), add_dimensional_constraint (a named parameter like d1 = 40 or d2 = d1 / 2 that drives the size), set_parameter, list_constraints, delete_constraints, auto_constrain. A reference names geometry in a path: {kind: point, item, vertex}, {kind: segment, item, segment} (segment k runs from vertex k to k+1; a circle is segment 0), {kind: centre, item, segment}, {kind: item, item}; contour defaults to 0. After every change the solver keeps all constraints satisfied, moving as little as possible; a change that cannot be satisfied is refused and undone, naming the conflicting constraints.
 Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. Call export_png without a path to look at the result.
-Laser settings: list_machines and list_materials show the user's machines and material library; set_laser_setup picks the document's machine, laser module and material, and get_laser_setup returns the power/speed/passes to use per operation. Before the user lasers, run preflight_check and look at export_png with preview: true.";
+Laser settings: list_machines and list_materials show the user's machines and material library; set_laser_setup picks the document's machine, laser module and material, and get_laser_setup returns the power/speed/passes to use per operation and per layer. Before the user lasers, run preflight_check and look at export_png with preview: true.";
 
 // ---------- parameters ----------
 
@@ -129,7 +130,10 @@ impl ShapeInput {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NewItem {
     pub shape: ShapeInput,
-    /// Default cut; engrave for text; no_output for dimensions.
+    /// Layer id (see list_layers); wins over op.
+    pub layer: Option<u64>,
+    /// Without a layer: the first layer with this op (made if there is none). Default cut; engrave
+    /// for text; no_output for dimensions and guides.
     pub op: Option<Op>,
     /// Deprecated, kept for old clients: true means op engrave.
     pub fill: Option<bool>,
@@ -152,6 +156,9 @@ pub struct AddItems {
 pub struct UpdateItem {
     pub id: u64,
     pub name: Option<String>,
+    /// Move it to this layer (see list_layers); wins over op.
+    pub layer: Option<u64>,
+    /// Move it to the first layer with this op (made if there is none).
     pub op: Option<Op>,
     /// Deprecated, kept for old clients: true means op engrave.
     pub fill: Option<bool>,
@@ -415,6 +422,7 @@ fn summary(d: &Document) -> Value {
         .iter()
         .map(|i| {
             let mut v = serde_json::to_value(i).unwrap();
+            v["op"] = json!(d.s.op(i));
             v["bbox"] = json!(i.shape.metrics().bbox);
             v
         })
@@ -424,7 +432,7 @@ fn summary(d: &Document) -> Value {
         "width": d.s.width, "height": d.s.height, "units": "mm",
         "file": d.path, "unsaved_changes": d.dirty,
         "notes": d.s.notes, "selection": d.selection,
-        "items": items, "images": images,
+        "layers": layers::layers(d), "items": items, "images": images,
         "machine": d.s.machine, "laser": d.s.laser, "material": d.s.material,
         "groups": d.s.groups,
     })
@@ -432,7 +440,7 @@ fn summary(d: &Document) -> Value {
 
 impl Server {
     pub fn new(doc: Shared, repaint: Arc<dyn Fn() + Send + Sync>) -> Self {
-        Self { doc, repaint, tool_router: Self::tool_router() + Self::constraint_router() + Self::laser_router() + Self::editing_router() }
+        Self { doc, repaint, tool_router: Self::tool_router() + Self::constraint_router() + Self::laser_router() + Self::editing_router() + Self::layers_router() }
     }
 
     /// Run `f` on the locked document, then repaint the GUI.
@@ -469,7 +477,7 @@ impl Server {
             if ids.is_empty() {
                 return fail("no ids given and nothing is selected");
             }
-            match d.resolve(&ids) {
+            match d.resolve_editable(&ids) {
                 Ok(ids) => {
                     d.checkpoint();
                     f(d, ids)
@@ -494,7 +502,7 @@ impl Server {
 
     #[tool(description = "Select items in the GUI (empty list clears the selection).")]
     fn select(&self, Parameters(p): Parameters<Ids>) -> ToolResult {
-        self.with(|d| match d.resolve(&p.ids) {
+        self.with(|d| match d.resolve_editable(&p.ids) {
             Ok(ids) => {
                 d.selection = ids;
                 d.rev += 1;
@@ -504,12 +512,15 @@ impl Server {
         })
     }
 
-    #[tool(description = "Add items (line, rect, circle, arc, polygon, polyline, path, text, dimension) and guide lines (xline, ray, centerline, centermark: construction lines for drawing, never lasered or exported). Returns their ids. One undo step. The old fill: true is still accepted and means op engrave.")]
+    #[tool(description = "Add items (line, rect, circle, arc, polygon, polyline, path, text, dimension) and guide lines (xline, ray, centerline, centermark: construction lines for drawing, never lasered or exported), each on a layer (by id, or by op: the first layer with it). Returns their ids. One undo step. The old fill: true is still accepted and means op engrave.")]
     fn add_items(&self, Parameters(p): Parameters<AddItems>) -> ToolResult {
         if let Some(e) = p.items.iter().find_map(|it| it.shape.font_error()) {
             return fail(e);
         }
         self.with(|d| {
+            if let Some(l) = p.items.iter().filter_map(|it| it.layer).find(|l| d.s.layer(*l).is_none()) {
+                return fail(format!("no layer with id {l}; see list_layers"));
+            }
             d.checkpoint();
             let (mut ids, mut own) = (Vec::new(), Vec::new());
             for it in p.items {
@@ -520,7 +531,8 @@ impl Server {
                     _ => Op::Cut,
                 };
                 let op = if it.fill == Some(true) { Op::Engrave } else { it.op.unwrap_or(default_op) };
-                let id = d.add(it.name.as_deref().unwrap_or(kind), op, shape);
+                let layer = it.layer.unwrap_or_else(|| d.layer_for(op));
+                let id = d.add_to(layer, it.name.as_deref().unwrap_or(kind), shape);
                 d.item_mut(id).unwrap().note = it.note.unwrap_or_default();
                 if kind == "polygon" {
                     own.push((Kind::Regular, vec![Ref::Item { item: id }]));
@@ -536,7 +548,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Change an item's name, op, note, geometry or (text only) font. The old fill: true is still accepted and means op engrave.")]
+    #[tool(description = "Change an item's name, layer (or op: moves it to the first layer with that op), note, geometry or (text only) font. The old fill: true is still accepted and means op engrave.")]
     fn update_item(&self, Parameters(p): Parameters<UpdateItem>) -> ToolResult {
         if let Some(e) = p.shape.as_ref().and_then(ShapeInput::font_error).or_else(|| p.font.as_deref().and_then(text::font_error)) {
             return fail(e);
@@ -546,15 +558,19 @@ impl Server {
             return fail("font only applies to text items");
         }
         self.edit_ids(&[p.id], |d, _| {
+            let op = if p.fill == Some(true) { Some(Op::Engrave) } else { p.op };
+            let layer = match (p.layer, op) {
+                (Some(l), _) if d.s.layer(l).is_none() => return fail(format!("no layer with id {l}; see list_layers")),
+                (Some(l), _) => Some(l),
+                (None, Some(op)) => Some(d.layer_for(op)),
+                (None, None) => None,
+            };
             let item = d.item_mut(p.id).unwrap();
             if let Some(n) = p.name {
                 item.name = n;
             }
-            if let Some(op) = p.op {
-                item.op = op;
-            }
-            if p.fill == Some(true) {
-                item.op = Op::Engrave;
+            if let Some(l) = layer {
+                item.layer = l;
             }
             if let Some(n) = p.note {
                 item.note = n;
@@ -633,17 +649,17 @@ impl Server {
             .map(|i| {
                 let m = i.shape.metrics();
                 // Open engrave paths are scored, so they count as score length.
-                let op = i.effective_op();
+                let op = d.s.effective_op(i);
                 if matches!(op, Op::Cut | Op::Score) && matches!(i.shape, Shape::Path { .. } | Shape::Text { .. }) {
                     let key = format!("{}_length", serde_json::to_value(op).unwrap().as_str().unwrap());
                     let t = totals.get(&key).and_then(Value::as_f64).unwrap_or(0.0);
                     totals.insert(key, json!(t + m.length));
                 }
-                if i.engraves_area() {
+                if d.s.engraves_area(i) {
                     let t = totals.get("engrave_area").and_then(Value::as_f64).unwrap_or(0.0);
                     totals.insert("engrave_area".into(), json!(t + m.area.unwrap_or(0.0)));
                 }
-                json!({"id": i.id, "name": i.name, "op": i.op, "metrics": m})
+                json!({"id": i.id, "name": i.name, "layer": i.layer, "op": d.s.op(i), "metrics": m})
             })
             .collect();
         let mut out = json!({"items": items, "bbox": d.bbox(&ids), "totals": totals});
@@ -697,7 +713,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Export the document as SVG in mm for laser software (red = cut, blue = score, black = engrave lines and filled areas).")]
+    #[tool(description = "Export the document as SVG in mm for laser software (red = cut, blue = score, black = engrave lines and filled areas), one group (Inkscape layer) per shown layer in laser order; hidden layers are left out.")]
     fn export_svg(&self, Parameters(p): Parameters<ExportSvg>) -> ToolResult {
         let svg = export::svg(&self.doc.lock().unwrap().s, p.include_annotations);
         match std::fs::write(&p.path, svg) {
@@ -854,7 +870,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Import an SVG file (path) or SVG text/base64 (data). Each path becomes an item (subpaths stay one compound path), curves become arcs, text becomes outlines and raster images greyscale images. Stroke colour sets the op: red = cut, blue = score, black/dark = engrave, grey or green = no_output, other colours = cut; a filled closed path becomes an engrave item, so a path with both a fill and a stroke becomes two items (engrave, then the stroke's op). Units in the file (mm, cm, in) are honoured; plain numbers are px at 96 per inch. The new items become the selection; returns their ids.")]
+    #[tool(description = "Import an SVG file (path) or SVG text/base64 (data). Each path becomes an item (subpaths stay one compound path), curves become arcs, text becomes outlines and raster images greyscale images. Stroke colour sets the op: red = cut, blue = score, black/dark = engrave, grey or green = no_output, other colours = cut; a filled closed path becomes an engrave item, so a path with both a fill and a stroke becomes two items (engrave, then the stroke's op). Each item goes on the current layer when that has its op, else on the first layer with it. Units in the file (mm, cm, in) are honoured; plain numbers are px at 96 per inch. The new items become the selection; returns their ids.")]
     fn import_svg(&self, Parameters(p): Parameters<ImportSvg>) -> ToolResult {
         let bytes = match (&p.path, &p.data) {
             (Some(path), _) => std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}")),

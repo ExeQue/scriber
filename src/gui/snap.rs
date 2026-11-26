@@ -470,10 +470,10 @@ pub fn paint_marker(painter: &egui::Painter, at: Pos2, kind: Kind) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Contour, Op};
+    use crate::model::Contour;
 
     fn item(id: u64, c: Contour) -> Item {
-        Item { id, name: String::new(), op: Op::Cut, shape: Shape::path(c), note: String::new() }
+        Item { id, name: String::new(), layer: 1, shape: Shape::path(c), note: String::new() }
     }
 
     fn snap_at(items: &[Item], p: Point) -> Snap {

@@ -2,14 +2,14 @@
 //! and painting the document. Selection and grip dragging live in select.rs.
 
 use super::App;
-use super::labels::op_color;
+use super::labels::{item_color, op_color, rgb};
 use super::snap::{self, Aid};
 use super::tracking;
 use crate::model::guides::guide_segments;
 
 use super::tools::Tool;
 use crate::model::geom::{distance, segment_distance};
-use crate::model::{Document, Img, Item, Op, Point, Shape};
+use crate::model::{Document, Img, Item, Op, Point, Shape, State};
 use eframe::egui::{self, Align2, Color32, FontId, Key, PointerButton, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use std::path::PathBuf;
 
@@ -171,18 +171,20 @@ impl App {
     }
 
     /// The shown guide lines, cut to a box three times the view (so the cut ends are off screen).
+    /// `items` are the ones snapping sees (see `snap_items`), so hidden layers are already left out.
     pub(super) fn guides_in_view(&self, items: &[Item]) -> Vec<[Point; 2]> {
         if !self.show_guides {
             return Vec::new();
         }
         let v = self.view_box();
-        guide_segments(items.iter().filter(|i| self.visible(i)), [v[0] - v[2], v[1] - v[3], 3.0 * v[2], 3.0 * v[3]])
+        let isolated = |i: &&Item| self.isolated.as_ref().is_none_or(|ids| ids.contains(&i.id));
+        guide_segments(items.iter().filter(isolated), [v[0] - v[2], v[1] - v[3], 3.0 * v[2], 3.0 * v[3]])
     }
 
     fn aim_at_doc(&mut self, raw: Point, from: Option<Point>) -> Point {
         let doc = self.doc.clone();
         let d = doc.lock().unwrap();
-        self.aim(&d.s.items, raw, from)
+        self.aim(&snap_items(&d.s), raw, from)
     }
 
     /// Show the whole material, once at start and after "Show whole material".
@@ -288,10 +290,11 @@ impl App {
     pub(super) fn hits(&self, d: &Document, p: Point) -> Vec<u64> {
         let tol = (PICKBOX / self.view.zoom) as f64;
         let (mut lines, mut inside) = (Vec::new(), Vec::new());
-        for item in d.s.items.iter().rev().filter(|i| self.visible(i)) {
+        // Locked layers are drawn but not picked.
+        for item in d.s.items.iter().rev().filter(|i| self.visible(&d.s, i) && d.s.editable(i)) {
             if item.shape.outline(0.05).iter().any(|line| line.windows(2).any(|s| segment_distance(p, s[0], s[1]) <= tol)) {
                 lines.push(item.id);
-            } else if picks_inside(item) && item.shape.contains(p) {
+            } else if picks_inside(&d.s, item) && item.shape.contains(p) {
                 inside.push((item.shape.metrics().area.unwrap_or(f64::MAX), item.id));
             }
         }
@@ -328,9 +331,9 @@ impl App {
         self.geometry.retain(&ids);
         // Filled things (engraved areas, text, images) first, so cut and score lines stay on top.
         let mut order: Vec<&Item> = state.items.iter().collect();
-        order.sort_by_key(|i| !picks_inside(i));
+        order.sort_by_key(|i| !picks_inside(&state, i));
         for item in order {
-            if !self.visible(item) {
+            if !self.visible(&state, item) {
                 continue;
             }
             let selected = selection.contains(&item.id);
@@ -338,13 +341,13 @@ impl App {
                 self.paint_guide(&painter, g, selected);
                 continue;
             }
-            self.paint_item(ui.ctx(), &painter, &state.images, item, selected, tol);
+            self.paint_item(ui.ctx(), &painter, &state, item, selected, tol);
         }
         self.paint_dimensions(&painter, &state);
         self.paint_bars(&painter, &state);
         self.paint_selection(&painter, &state.items, &selection, pointer);
         self.paint_hover(&painter, &state, pointer);
-        self.paint_hover_measure(&painter, &state.items, pointer);
+        self.paint_hover_measure(&painter, &snap_items(&state), pointer);
         self.paint_picked(&painter, tol);
         self.paint_draft(&painter, pointer, tol);
         self.paint_aids(&painter, rect, pointer);
@@ -392,12 +395,13 @@ impl App {
         }
     }
 
-    fn paint_item(&mut self, ctx: &egui::Context, painter: &egui::Painter, images: &std::collections::BTreeMap<u64, std::sync::Arc<Img>>, item: &Item, selected: bool, tol: f64) {
-        let op = item.effective_op();
-        let color = op_color(op);
+    fn paint_item(&mut self, ctx: &egui::Context, painter: &egui::Painter, s: &State, item: &Item, selected: bool, tol: f64) {
+        let images = &s.images;
+        let op = s.effective_op(item);
+        let color = item_color(s, item);
         let (offset, zoom) = (self.canvas_rect.min + self.view.offset, self.view.zoom);
         let to_screen = move |p: &Point| offset + vec2(p[0] as f32, p[1] as f32) * zoom;
-        let geometry = self.geometry.get(item, tol);
+        let geometry = self.geometry.get(item, s.engraves_area(item), tol);
         if selected {
             for line in &geometry.outline {
                 painter.add(egui::Shape::line(line.iter().map(to_screen).collect(), Stroke::new(6.0, SELECTED.gamma_multiply(0.45))));
@@ -481,8 +485,14 @@ impl App {
         let mut pts = self.draft.clone();
         pts.push(p);
         let Some((_, shape)) = self.draft_shape(&pts) else { return };
-        let op = if self.tool == Tool::Dimension { Op::NoOutput } else { self.new_op };
-        let stroke = Stroke::new(1.5, op_color(op).gamma_multiply(0.7));
+        let color = match self.tool {
+            Tool::Dimension => op_color(Op::NoOutput),
+            _ => {
+                let d = self.doc.lock().unwrap();
+                d.s.layer(d.current_layer()).map_or(op_color(Op::Cut), |l| rgb(l.rgb()))
+            }
+        };
+        let stroke = Stroke::new(1.5, color.gamma_multiply(0.7));
         for line in shape.outline(tol) {
             let pts: Vec<Pos2> = line.iter().map(|q| self.w2s(*q)).collect();
             painter.extend(egui::Shape::dashed_line(&pts, stroke, 6.0, 4.0));
@@ -531,6 +541,14 @@ pub(super) fn tooltip(painter: &egui::Painter, at: Pos2, text: &str) {
 
 /// Shapes that can be picked by clicking inside them: what is drawn filled (engraved areas, text,
 /// images). Plain outlines are picked on their line.
-fn picks_inside(item: &Item) -> bool {
-    matches!(item.shape, Shape::Text { .. } | Shape::Image { .. }) || item.engraves_area()
+fn picks_inside(s: &State, item: &Item) -> bool {
+    matches!(item.shape, Shape::Text { .. } | Shape::Image { .. }) || s.engraves_area(item)
+}
+
+/// The items object snaps and tracking can use: those on shown layers.
+pub(super) fn snap_items(s: &State) -> std::borrow::Cow<'_, [Item]> {
+    if s.layers.iter().all(|l| l.visible) {
+        return std::borrow::Cow::Borrowed(&s.items);
+    }
+    std::borrow::Cow::Owned(s.shown().cloned().collect())
 }

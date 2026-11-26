@@ -19,6 +19,7 @@ mod hover;
 mod icons;
 mod icons_ux;
 mod labels;
+mod layers;
 mod library_window;
 mod overrides;
 mod panels;
@@ -73,8 +74,6 @@ struct App {
     doc: Shared,
     mcp: Result<u16, String>,
     tool: Tool,
-    /// What new shapes become.
-    new_op: Op,
     sides: u32,
     snap: bool,
     /// GRID, ORTHO, OSNAP and POLAR (status bar).
@@ -105,6 +104,8 @@ struct App {
     geometry: geometry_cache::GeometryCache,
     /// The properties panel is in the middle of an edit (one undo step per edit).
     panel_editing: bool,
+    /// The same for the layers panel.
+    layers_editing: bool,
     message: String,
     show_agents: bool,
     /// Constraint bars on (CONSTRAINTBAR), and items whose bars are hidden.
@@ -215,7 +216,6 @@ impl App {
             doc,
             mcp,
             tool: Tool::Select,
-            new_op: Op::Cut,
             sides: 6,
             snap: true,
             aids: snap::Aids::default(),
@@ -235,6 +235,7 @@ impl App {
             textures: HashMap::new(),
             geometry: geometry_cache::GeometryCache::default(),
             panel_editing: false,
+            layers_editing: false,
             message: String::new(),
             show_agents: false,
             bars: true,
@@ -405,13 +406,15 @@ impl App {
 
     fn select_all(&mut self) {
         let mut d = self.doc.lock().unwrap();
-        d.selection = d.s.items.iter().map(|i| i.id).collect();
+        d.selection = d.s.items.iter().filter(|i| d.s.editable(i)).map(|i| i.id).collect();
     }
 
-    fn create(&mut self, name: &str, op: Op, shape: Shape) -> u64 {
+    /// Add a drawn shape on the current layer (or, with an `op`, a layer with that op; see `new_item_layer`).
+    fn create(&mut self, name: &str, op: Option<Op>, shape: Shape) -> u64 {
         let mut d = self.doc.lock().unwrap();
         d.checkpoint();
-        let id = d.add(name, op, shape);
+        let layer = d.new_item_layer(op);
+        let id = d.add_to(layer, name, shape);
         d.selection = vec![id];
         id
     }
@@ -531,7 +534,13 @@ impl eframe::App for App {
         if self.show_cmdline {
             egui::Panel::bottom("command").show(ui, |ui| self.command_line(ui));
         }
-        egui::Panel::right("props").default_size(290.0).show(ui, |ui| ui.add_enabled_ui(editing, |ui| self.properties(ui)));
+        egui::Panel::right("props").default_size(290.0).show(ui, |ui| {
+            ui.add_enabled_ui(editing, |ui| {
+                self.layers_panel(ui);
+                ui.separator();
+                self.properties(ui);
+            })
+        });
         egui::CentralPanel::no_frame().show(ui, |ui| self.canvas(ui));
         self.command_card(&ctx);
         self.dyn_cursor(&ctx);

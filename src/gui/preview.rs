@@ -83,7 +83,7 @@ impl App {
                 mesh.add_rect_with_uv(r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), rgb(p.sheet));
                 mesh.rotate(egui::emath::Rot2::from_angle(rotation.to_radians() as f32), r.center());
                 painter.add(mesh);
-            } else if let Some(fill) = self.geometry.get(item, tol).fill.clone() {
+            } else if let Some(fill) = self.geometry.get(item, true, tol).fill.clone() {
                 self.fill(painter, &fill, rgb(p.burn), 0.0);
             }
         }

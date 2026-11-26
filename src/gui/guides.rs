@@ -2,7 +2,7 @@
 //! the part of the drawing in view. Also which items are shown at all (guides on/off, ISOLATE).
 
 use super::App;
-use crate::model::{BBox, Guide, Item, Shape};
+use crate::model::{BBox, Guide, Item, Shape, State};
 use eframe::egui::{self, Color32, Stroke};
 
 /// Guide lines are drawn in this colour, which no laser operation uses.
@@ -11,8 +11,9 @@ const SELECTED: Color32 = Color32::from_rgb(255, 150, 0);
 
 impl App {
     /// Whether the item is drawn and pickable: guides can be hidden, and ISOLATE hides everything else.
-    pub(super) fn visible(&self, item: &Item) -> bool {
-        (self.show_guides || !matches!(item.shape, Shape::Guide(_))) && self.isolated.as_ref().is_none_or(|ids| ids.contains(&item.id))
+    /// Whether the canvas shows the item: its layer is shown, guides are on, it is not isolated away.
+    pub(super) fn visible(&self, s: &State, item: &Item) -> bool {
+        s.visible(item) && (self.show_guides || !matches!(item.shape, Shape::Guide(_))) && self.isolated.as_ref().is_none_or(|ids| ids.contains(&item.id))
     }
 
     /// The part of the material (mm) the canvas shows.

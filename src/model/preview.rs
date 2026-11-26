@@ -1,5 +1,5 @@
 //! What the laser makes of the document, for the Preview mode and the preview PNG: the same rules as
-//! the SVG export (`Item::effective_op`), sorted into what to paint. Painting lives in the GUI and export.
+//! the SVG export (`State::effective_op`), sorted into what to paint. Painting lives in the GUI and export.
 
 use super::{Contour, Item, Op, Shape, State};
 
@@ -35,13 +35,13 @@ pub struct Scene<'a> {
 
 pub fn scene(s: &State) -> Scene<'_> {
     let mut scene = Scene { pieces: Vec::new(), engraved: Vec::new(), lines: Vec::new() };
-    for item in &s.items {
-        let op = item.effective_op();
+    for item in s.shown() {
+        let op = s.effective_op(item);
         match &item.shape {
             // Like the export: an image is engraved unless it is set to no output.
-            Shape::Image { .. } if item.op != Op::NoOutput => scene.engraved.push(item),
+            Shape::Image { .. } if op != Op::NoOutput => scene.engraved.push(item),
             Shape::Path { .. } | Shape::Text { .. } if op != Op::NoOutput => {
-                if item.engraves_area() {
+                if s.engraves_area(item) {
                     scene.engraved.push(item);
                     continue;
                 }
@@ -83,6 +83,9 @@ mod tests {
         d.add("groove", Op::Engrave, Shape::path(Contour::line([0.0, 0.0], [5.0, 5.0])));
         d.add("note", Op::NoOutput, Shape::path(Contour::rect(0.0, 0.0, 5.0, 5.0, 0.0)));
         d.add("guide", Op::Cut, Shape::Guide(Guide::Xline { x: 0.0, y: 0.0, angle: 0.0 }));
+        let hidden = d.add_layer("Hidden", Op::Cut);
+        d.s.layer_mut(hidden).unwrap().visible = false;
+        d.add_to(hidden, "hidden", Shape::path(Contour::circle(80.0, 80.0, 5.0)));
         let s = scene(&d.s);
         let holes: Vec<bool> = s.pieces.iter().map(|p| p.1).collect();
         assert_eq!(holes, [false, true, false], "plate, its hole, a piece inside the hole");

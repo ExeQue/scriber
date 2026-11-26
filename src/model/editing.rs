@@ -132,11 +132,11 @@ impl Document {
         Ok(())
     }
 
-    /// MATCHPROP: give `targets` the laser operation of `source`, and its font when both are text.
+    /// MATCHPROP: give `targets` the layer of `source`, and its font when both are text.
     pub fn match_properties(&mut self, source: u64, targets: &[u64]) -> Result<(), String> {
         let src = self.item(source).ok_or(format!("no item with id {source}"))?.clone();
         for item in self.s.items.iter_mut().filter(|i| targets.contains(&i.id) && i.id != source) {
-            item.op = src.op;
+            item.layer = src.layer;
             if let (Shape::Text { font, bold, italic, .. }, Shape::Text { font: f, bold: b, italic: i, .. }) = (&src.shape, &mut item.shape) {
                 (*f, *b, *i) = (font.clone(), *bold, *italic);
             }
@@ -267,10 +267,10 @@ impl Document {
 
     // ---------- selecting by properties ----------
 
-    /// Select similar: every item with the same laser operation and kind of shape as one of `ids`.
+    /// Select similar: every editable item on the same layer and with the same kind of shape as one of `ids`.
     pub fn similar(&self, ids: &[u64]) -> Vec<u64> {
-        let keys: Vec<(Op, &str)> = self.s.items.iter().filter(|i| ids.contains(&i.id)).map(|i| (i.op, shape_kind(&i.shape))).collect();
-        self.s.items.iter().filter(|i| keys.contains(&(i.op, shape_kind(&i.shape)))).map(|i| i.id).collect()
+        let keys: Vec<(u64, &str)> = self.s.items.iter().filter(|i| ids.contains(&i.id)).map(|i| (i.layer, shape_kind(&i.shape))).collect();
+        self.s.items.iter().filter(|i| self.s.editable(i) && keys.contains(&(i.layer, shape_kind(&i.shape)))).map(|i| i.id).collect()
     }
 
     /// Quick select: the items with this operation, kind (see `KINDS`) and size (the longer side of the
@@ -282,7 +282,7 @@ impl Document {
             .filter(|i| {
                 let b = i.shape.metrics().bbox;
                 let size = b[2].max(b[3]);
-                op.is_none_or(|o| i.op == o) && kind.is_none_or(|k| shape_kind(&i.shape) == k) && min.is_none_or(|m| size >= m) && max.is_none_or(|m| size <= m)
+                self.s.editable(i) && op.is_none_or(|o| self.s.op(i) == o) && kind.is_none_or(|k| shape_kind(&i.shape) == k) && min.is_none_or(|m| size >= m) && max.is_none_or(|m| size <= m)
             })
             .map(|i| i.id)
             .collect()
@@ -317,7 +317,7 @@ mod tests {
         let r = d.add("r", Op::Score, Shape::path(Contour::rect(0.0, 0.0, 20.0, 10.0, 2.0)));
         let parts = d.explode(&[r]).unwrap();
         assert_eq!(parts.len(), 8);
-        assert!(d.s.items.iter().all(|i| i.op == Op::Score && shape_kind(&i.shape) != "closed shape"));
+        assert!(d.s.items.iter().all(|i| d.s.op(i) == Op::Score && shape_kind(&i.shape) != "closed shape"));
         let joined = d.join(&parts).unwrap();
         assert_eq!(joined.len(), 1);
         let c = &d.item(joined[0]).unwrap().shape.contours()[0];
@@ -379,7 +379,7 @@ mod tests {
 
         assert_eq!(d.similar(&[b]), vec![b, copies[0]], "open lines with the same operation");
         d.match_properties(c, &[b]).unwrap();
-        assert_eq!(d.item(b).unwrap().op, Op::Score);
+        assert_eq!(d.s.op(d.item(b).unwrap()), Op::Score);
         assert_eq!(d.quick_select(Some(Op::Score), Some("line"), Some(20.0), None), vec![b]);
         assert_eq!(d.quick_select(None, Some("circle"), None, None).len(), 2);
     }

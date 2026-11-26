@@ -1,0 +1,196 @@
+//! MCP tools for layers: each layer carries the laser op and the power/speed/passes of its items.
+
+use super::{Server, ToolResult, fail, ok};
+use crate::library;
+use crate::model::layer::op_operation;
+use crate::model::{Document, Op, Overrides};
+use rmcp::handler::server::wrapper::Parameters;
+use rmcp::schemars::{self, JsonSchema};
+use rmcp::{tool, tool_router};
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddLayer {
+    pub name: String,
+    pub op: Op,
+    /// Make it the layer new shapes drawn in the GUI go on.
+    #[serde(default)]
+    pub current: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateLayer {
+    pub id: u64,
+    pub name: Option<String>,
+    /// Changes what the laser does with every item on the layer.
+    pub op: Option<Op>,
+    /// Canvas colour as [r, g, b]; [] = the op's colour.
+    pub color: Option<Vec<u8>>,
+    /// Replaces the layer's own power (%), speed (mm/s) and passes; a missing one (or {}) uses the
+    /// material library's preset for the layer's op.
+    pub settings: Option<Overrides>,
+    /// Hidden layers are not drawn, lasered or exported.
+    pub visible: Option<bool>,
+    /// Items on a locked layer cannot be selected or edited.
+    pub locked: Option<bool>,
+    /// New position in the list (0 = first).
+    pub order: Option<usize>,
+    /// Make it the current layer (where shapes drawn in the GUI go).
+    pub current: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteLayer {
+    pub id: u64,
+    /// Layer to move the items to; without it a layer that has items is not deleted.
+    pub move_to: Option<u64>,
+}
+
+/// The layers with their item counts and the settings the laser uses for each.
+pub(super) fn layers(d: &Document) -> Value {
+    let lib = library::get();
+    let list: Vec<Value> = d
+        .s
+        .layers
+        .iter()
+        .map(|l| {
+            let mut v = serde_json::to_value(l).unwrap();
+            v["items"] = d.s.items.iter().filter(|i| i.layer == l.id).count().into();
+            v["current"] = (l.id == d.current_layer()).into();
+            v["laser_setting"] = json!(op_operation(l.op).and_then(|op| l.setting(&d.s, &lib, op)));
+            v
+        })
+        .collect();
+    json!(list)
+}
+
+#[tool_router(router = layers_router, vis = "pub(super)")]
+impl Server {
+    #[tool(description = "List the layers in order: id, name, op, colour, own settings (power/speed/passes that override the material library), visible, locked, number of items, whether it is current, and laser_setting: the power/speed/passes the laser uses (library preset for the op with the layer's own numbers on top; null when neither gives them).")]
+    fn list_layers(&self) -> ToolResult {
+        ok(layers(&self.doc.lock().unwrap()))
+    }
+
+    #[tool(description = "Add a layer at the end with a name and op (cut, score, engrave, no_output). A taken name gets a number. Returns the layers.")]
+    fn add_layer(&self, Parameters(p): Parameters<AddLayer>) -> ToolResult {
+        self.with(|d| {
+            d.checkpoint();
+            let id = d.add_layer(&p.name, p.op);
+            if p.current {
+                d.set_current_layer(id);
+            }
+            ok(json!({"id": id, "layers": layers(d)}))
+        })
+    }
+
+    #[tool(description = "Change a layer: name, op (changes what the laser does with all its items), color, settings (the layer's own power/speed/passes; missing = material library), visible, locked, order (position) and current. One undo step.")]
+    fn update_layer(&self, Parameters(p): Parameters<UpdateLayer>) -> ToolResult {
+        if let Some(e) = p.settings.as_ref().and_then(|o| o.check().err()) {
+            return fail(e);
+        }
+        let color = match p.color.as_deref() {
+            None => None,
+            Some([]) => Some(None),
+            Some(&[r, g, b]) => Some(Some([r, g, b])),
+            Some(_) => return fail("color is [r, g, b] or [] for the op's colour"),
+        };
+        self.with(|d| {
+            if d.s.layer(p.id).is_none() {
+                return fail(format!("no layer with id {}", p.id));
+            }
+            d.checkpoint();
+            let l = d.s.layer_mut(p.id).unwrap();
+            l.name = p.name.unwrap_or(l.name.clone());
+            l.op = p.op.unwrap_or(l.op);
+            l.color = color.unwrap_or(l.color);
+            l.settings = p.settings.unwrap_or(l.settings);
+            l.visible = p.visible.unwrap_or(l.visible);
+            l.locked = p.locked.unwrap_or(l.locked);
+            if let Some(k) = p.order {
+                d.move_layer(p.id, k).ok();
+            }
+            if p.current == Some(true) {
+                d.set_current_layer(p.id);
+            }
+            let s = d.s.clone();
+            d.selection.retain(|id| s.items.iter().any(|i| i.id == *id && s.editable(i)));
+            d.touch();
+            ok(layers(d))
+        })
+    }
+
+    #[tool(description = "Delete a layer. Its items move to move_to; without move_to a layer with items is refused. The last layer cannot be deleted.")]
+    fn delete_layer(&self, Parameters(p): Parameters<DeleteLayer>) -> ToolResult {
+        self.with(|d| {
+            let before = d.s.clone();
+            match d.delete_layer(p.id, p.move_to) {
+                Ok(()) => {
+                    d.push_undo(before);
+                    ok(layers(d))
+                }
+                Err(e) => fail(e),
+            }
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::tools::{AddItems, UpdateItem};
+    use rmcp::model::CallToolResult;
+    use std::sync::{Arc, Mutex};
+
+    fn text(r: ToolResult) -> Value {
+        let r: CallToolResult = r.unwrap();
+        let t = r.content[0].as_text().unwrap().text.clone();
+        assert_ne!(r.is_error, Some(true), "{t}");
+        serde_json::from_str(&t).unwrap()
+    }
+
+    fn args<T: serde::de::DeserializeOwned>(v: Value) -> Parameters<T> {
+        Parameters(serde_json::from_value(v).unwrap())
+    }
+
+    #[test]
+    fn layer_tools_round_trip() {
+        let doc = Arc::new(Mutex::new(Document::new(100.0, 100.0)));
+        let server = Server::new(doc.clone(), Arc::new(|| {}));
+        let deep = text(server.add_layer(args(json!({"name": "Deep cut", "op": "cut"}))))["id"].as_u64().unwrap();
+        // op maps to the first layer with it; layer wins over op.
+        let added: Parameters<AddItems> = args(json!({"items": [
+            {"shape": {"kind": "circle", "cx": 10, "cy": 10, "r": 5}, "op": "score"},
+            {"shape": {"kind": "circle", "cx": 30, "cy": 10, "r": 5}, "layer": deep, "op": "engrave"}
+        ]}));
+        let ids = text(server.add_items(added))["ids"].clone();
+        let (a, b) = (ids[0].as_u64().unwrap(), ids[1].as_u64().unwrap());
+        {
+            let d = doc.lock().unwrap();
+            assert_eq!(d.s.op(d.item(a).unwrap()), Op::Score);
+            assert_eq!(d.item(b).unwrap().layer, deep);
+        }
+        let set = json!({"id": deep, "op": "engrave", "settings": {"passes": 3}, "color": [1, 2, 3], "order": 0});
+        let list = text(server.update_layer(args(set)));
+        assert_eq!((list[0]["id"].as_u64(), list[0]["op"].as_str(), list[0]["settings"]["passes"].as_u64()), (Some(deep), Some("engrave"), Some(3)));
+        {
+            let d = doc.lock().unwrap();
+            assert!(d.s.engraves_area(d.item(b).unwrap()), "the layer's op change reaches its items");
+        }
+        // update_item moves an item by layer or by op.
+        let moved: Parameters<UpdateItem> = args(json!({"id": a, "op": "cut"}));
+        text(server.update_item(moved));
+        let cut = doc.lock().unwrap().layer_for(Op::Cut);
+        assert_eq!(doc.lock().unwrap().item(a).unwrap().layer, cut);
+        // A layer with items is only deleted with somewhere to move them; undo brings it back.
+        assert_eq!(server.delete_layer(args(json!({"id": deep}))).unwrap().is_error, Some(true));
+        text(server.delete_layer(args(json!({"id": deep, "move_to": cut}))));
+        assert_eq!(doc.lock().unwrap().item(b).unwrap().layer, cut);
+        assert!(doc.lock().unwrap().undo());
+        assert_eq!(doc.lock().unwrap().item(b).unwrap().layer, deep);
+        // Items on a locked layer cannot be edited.
+        text(server.update_layer(args(json!({"id": deep, "locked": true}))));
+        let edit: Parameters<UpdateItem> = args(json!({"id": b, "name": "x"}));
+        assert_eq!(server.update_item(edit).unwrap().is_error, Some(true));
+    }
+}

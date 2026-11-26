@@ -28,7 +28,7 @@ fn colours_become_laser_operations() {
         <line x1="0" y1="2" x2="20" y2="2" stroke="#009646"/>
     </svg>"##;
     let d = import(svg, &ImportOptions::default());
-    let ops: Vec<Op> = d.s.items.iter().map(|i| i.op).collect();
+    let ops: Vec<Op> = d.s.items.iter().map(|i| d.s.op(i)).collect();
     // The filled and stroked circle becomes two items: engrave the area, then cut it out.
     assert_eq!(ops, [Op::Cut, Op::Score, Op::Engrave, Op::Engrave, Op::Cut, Op::Engrave, Op::Cut, Op::NoOutput]);
     assert_eq!(d.selection.len(), 8);
@@ -50,7 +50,10 @@ fn colours_become_laser_operations() {
 fn scale_width_and_position() {
     // Plain numbers are px at 96 per inch: 96 px = 25.4 mm.
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect x="10" y="10" width="96" height="48" fill="none" stroke="red"/></svg>"#;
-    let b = |opts: ImportOptions| import(svg, &opts).bbox(&[1]).unwrap();
+    let b = |opts: ImportOptions| {
+        let d = import(svg, &opts);
+        d.bbox(&[d.s.items[0].id]).unwrap()
+    };
     let mm = 25.4 / 96.0;
     assert!(bbox_near(b(ImportOptions::default()), [10.0 * mm, 10.0 * mm, 25.4, 12.7], 1e-4));
     assert!(bbox_near(b(ImportOptions { scale: 96.0 / 72.0, ..Default::default() }), [10.0 / 72.0 * 25.4, 10.0 / 72.0 * 25.4, 96.0 / 72.0 * 25.4, 48.0 / 72.0 * 25.4], 1e-4));
@@ -84,7 +87,7 @@ fn our_own_svg_export_round_trips() {
     assert_eq!(back.s.items.len(), d.s.items.len(), "{:#?}", back.s.items);
     for item in &d.s.items {
         let m = item.shape.metrics();
-        let twin: Vec<&Item> = back.s.items.iter().filter(|i| i.op == item.effective_op() && bbox_near(i.shape.metrics().bbox, m.bbox, 1e-3)).collect();
+        let twin: Vec<&Item> = back.s.items.iter().filter(|i| back.s.op(i) == d.s.effective_op(item) && bbox_near(i.shape.metrics().bbox, m.bbox, 1e-3)).collect();
         assert_eq!(twin.len(), 1, "{} came back once with the same op and place", item.name);
         let twin = twin[0];
         if let (Shape::Image { x, y, w, h, rotation, .. }, Shape::Image { x: x2, y: y2, w: w2, h: h2, rotation: r2, .. }) = (&item.shape, &twin.shape) {
@@ -109,7 +112,7 @@ fn text_becomes_filled_outlines() {
     // No fonts on this machine: nothing to test.
     let Ok(ids) = d.import_svg(svg.as_bytes(), &ImportOptions::default()) else { return };
     let item = d.item(ids[0]).unwrap();
-    assert!(item.op == Op::Engrave && item.shape.contours().len() >= 2, "{item:?}");
+    assert!(d.s.op(item) == Op::Engrave && item.shape.contours().len() >= 2, "{item:?}");
     let [x, y, w, h] = item.shape.metrics().bbox;
     assert!(x >= 5.0 && y > 5.0 && x + w < 30.0 && y + h <= 20.5, "{:?}", [x, y, w, h]);
 }

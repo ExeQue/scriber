@@ -129,7 +129,7 @@ impl Server {
         self.edit_ids(&p.ids, |d, ids| reply!(d.align(&ids, (p.source1, p.source2), (p.dest1, p.dest2), p.scale), _x => json!({"ids": ids, "bbox": d.bbox(&ids)})))
     }
 
-    #[tool(description = "Match properties (AutoCAD MATCHPROP): give the targets (empty = the selection) the laser operation of the source item, and its font when both are text.")]
+    #[tool(description = "Match properties (AutoCAD MATCHPROP): give the targets (empty = the selection) the layer (and so the laser operation) of the source item, and its font when both are text.")]
     fn match_properties(&self, Parameters(p): Parameters<MatchProps>) -> ToolResult {
         self.edit_ids(&p.targets, |d, ids| reply!(d.match_properties(p.source, &ids), _x => json!({"ids": ids})))
     }
@@ -159,7 +159,7 @@ impl Server {
         self.edit_ids(&p.ids, |d, ids| reply!(d.ungroup(&ids), _x => json!({"groups": d.s.groups})))
     }
 
-    #[tool(description = "Select similar: select every item with the same laser operation and kind of shape as the given items (empty = the selection). Returns the new selection.")]
+    #[tool(description = "Select similar: select every item on the same layer and with the same kind of shape as the given items (empty = the selection). Returns the new selection.")]
     fn select_similar(&self, Parameters(p): Parameters<IdList>) -> ToolResult {
         self.with(|d| {
             let ids = if p.ids.is_empty() { d.selection.clone() } else { p.ids.clone() };
@@ -169,7 +169,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Quick select: select the items with the given laser operation, kind of shape and size (longer side of the bounding box, mm); missing filters match anything. Returns the new selection.")]
+    #[tool(description = "Quick select: select the items with the given laser operation (from their layer), kind of shape and size (longer side of the bounding box, mm); missing filters match anything. Returns the new selection.")]
     fn quick_select(&self, Parameters(p): Parameters<QuickSelect>) -> ToolResult {
         self.with(|d| {
             d.selection = d.quick_select(p.op, p.kind.as_deref(), p.min_size, p.max_size);

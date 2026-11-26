@@ -71,6 +71,10 @@ fn setup(s: &State) -> Value {
         "machine": machine, "laser": s.laser,
         "material": s.material.as_deref().and_then(|id| lib.material(id)).map(|m| json!({"id": m.id, "name": m.name, "thickness": m.thickness, "notes": m.notes})),
         "settings": settings,
+        "layers": s.layers.iter().map(|l| json!({
+            "id": l.id, "name": l.name, "op": l.op, "visible": l.visible,
+            "setting": crate::model::layer::op_operation(l.op).and_then(|op| l.setting(s, &lib, op)),
+        })).collect::<Vec<_>>(),
         "material_size": [s.width, s.height],
         "work_area": machine.map(|m| m.area(s.laser.as_deref())),
     })
@@ -104,7 +108,7 @@ impl Server {
         ok(json!({"count": warnings.len(), "warnings": warnings}))
     }
 
-    #[tool(description = "The document's machine, laser module and material, and the laser settings that apply to each operation (null where the library has none).")]
+    #[tool(description = "The document's machine, laser module and material, the material library's settings per operation (null where the library has none), and per layer the setting the laser uses: the preset for the layer's op with the layer's own power/speed/passes on top (null when neither gives them).")]
     fn get_laser_setup(&self) -> ToolResult {
         ok(setup(&self.doc.lock().unwrap().s))
     }

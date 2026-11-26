@@ -36,7 +36,7 @@ fn shape_word(item: &Item) -> &'static str {
 fn describe(item: &Item, s: &State) -> Vec<String> {
     let m = item.shape.metrics();
     let name = if item.name.is_empty() { shape_word(item).to_string() } else { format!("{} ({})", item.name, shape_word(item)) };
-    let mut lines = vec![name, format!("Laser: {}", op_label(item.effective_op())), format!("Size: {:.2} × {:.2} mm", m.bbox[2], m.bbox[3])];
+    let mut lines = vec![name, format!("Layer: {} ({})", s.layer(item.layer).map_or("?", |l| l.name.as_str()), op_label(s.effective_op(item))), format!("Size: {:.2} × {:.2} mm", m.bbox[2], m.bbox[3])];
     let mut measures = vec![format!("length {:.2} mm", m.length)];
     if let Some(a) = m.area {
         measures.push(format!("area {a:.2} mm²"));

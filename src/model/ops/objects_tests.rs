@@ -214,7 +214,7 @@ fn document_fillet_objects_ids_chains_and_errors() {
     let ids = d.fillet_objects((l, [5.0, 0.0]), (c, [20.0, 5.0]), 3.0).unwrap();
     assert_eq!(ids.len(), 2);
     assert_eq!(ids[0], l);
-    assert_eq!(d.item(ids[1]).unwrap().op, Op::Cut);
+    assert_eq!(d.s.op(d.item(ids[1]).unwrap()), Op::Cut);
     // An error changes nothing.
     let before = d.s.items.clone();
     assert!(d.fillet_objects((l, [5.0, 0.0]), (c, [20.0, 5.0]), 500.0).is_err());

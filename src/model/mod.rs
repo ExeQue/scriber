@@ -8,6 +8,7 @@ mod file;
 pub mod geom;
 pub mod guides;
 pub mod item;
+pub mod layer;
 pub mod ops;
 pub mod preflight;
 pub mod preview;
@@ -16,6 +17,7 @@ pub mod text;
 pub use geom::{BBox, Contour, Point, Transform};
 pub use guides::Guide;
 pub use item::{Item, Op, Shape};
+pub use layer::{Layer, Overrides};
 pub use constraints::{Constraint, Kind, Ref};
 pub use ops::BoolOp;
 
@@ -44,6 +46,9 @@ pub struct State {
     #[serde(default)]
     pub notes: String,
     pub items: Vec<Item>,
+    /// The layers, in the order the user sees them (see `layer`). Never empty.
+    #[serde(default)]
+    pub layers: Vec<Layer>,
     /// Stored as separate files in the .scrbr archive; Arc keeps undo snapshots cheap.
     #[serde(skip)]
     pub images: BTreeMap<u64, Arc<Img>>,
@@ -65,7 +70,7 @@ pub struct State {
 
 impl Default for State {
     fn default() -> Self {
-        Self { width: 300.0, height: 200.0, notes: String::new(), items: Vec::new(), images: BTreeMap::new(), next_id: 1, constraints: Vec::new(), machine: None, laser: None, material: None, groups: Vec::new() }
+        Self { width: 300.0, height: 200.0, notes: String::new(), items: Vec::new(), layers: layer::defaults(), images: BTreeMap::new(), next_id: layer::defaults().len() as u64 + 1, constraints: Vec::new(), machine: None, laser: None, material: None, groups: Vec::new() }
     }
 }
 
@@ -83,6 +88,8 @@ pub struct Document {
     solved: Option<State>,
     /// References the next `settle` should keep in place (the first object of a new constraint).
     hold: Vec<Ref>,
+    /// The layer new items go on (see `current_layer`); not part of undo or the file.
+    current_layer: u64,
 }
 
 impl Document {
@@ -154,6 +161,16 @@ impl Document {
         }
     }
 
+    /// `resolve`, refusing items on locked layers.
+    pub fn resolve_editable(&self, ids: &[u64]) -> Result<Vec<u64>, String> {
+        let ids = self.resolve(ids)?;
+        let locked = |id: &u64| self.item(*id).and_then(|i| self.s.layer(i.layer)).filter(|l| l.locked);
+        match ids.iter().find_map(|id| locked(id).map(|l| (id, l))) {
+            Some((id, l)) => Err(format!("item {id} is on the locked layer {}; unlock it with update_layer first", l.name)),
+            None => Ok(ids),
+        }
+    }
+
     /// Union of the items' bounding boxes.
     pub fn bbox(&self, ids: &[u64]) -> Option<BBox> {
         let boxes: Vec<BBox> = self.s.items.iter().filter(|i| ids.contains(&i.id)).map(|i| i.shape.metrics().bbox).collect();
@@ -162,14 +179,21 @@ impl Document {
 
     // ---------- commands (callers checkpoint first) ----------
 
+    /// Add an item on the first layer with `op` (made when there is none).
     pub fn add(&mut self, name: &str, op: Op, shape: Shape) -> u64 {
+        let layer = self.layer_for(op);
+        self.add_to(layer, name, shape)
+    }
+
+    /// Add an item on `layer`.
+    pub fn add_to(&mut self, layer: u64, name: &str, shape: Shape) -> u64 {
         let id = self.new_id();
-        self.s.items.push(Item { id, name: name.into(), op, shape, note: String::new() });
+        self.s.items.push(Item { id, name: name.into(), layer, shape, note: String::new() });
         self.touch();
         id
     }
 
-    fn new_id(&mut self) -> u64 {
+    pub(crate) fn new_id(&mut self) -> u64 {
         let id = self.s.next_id;
         self.s.next_id += 1;
         id
@@ -241,7 +265,7 @@ impl Document {
         }
         let mut new = Vec::new();
         for c in contours {
-            let nid = self.add(&item.name, item.op, Shape::path(c.clone()));
+            let nid = self.add_to(item.layer, &item.name, Shape::path(c.clone()));
             new.push(nid);
         }
         self.delete(&[id]);
@@ -369,7 +393,7 @@ impl Document {
             }
             results.push((item, contours));
         }
-        Ok(results.into_iter().map(|(i, contours)| self.add(&i.name, i.op, Shape::Path { contours })).collect())
+        Ok(results.into_iter().map(|(i, contours)| self.add_to(i.layer, &i.name, Shape::Path { contours })).collect())
     }
 
     /// Union, difference (the first item minus the others) or intersection of closed paths. The result
@@ -504,7 +528,7 @@ impl Document {
                     }
                 }
                 if let Some(c) = bridge {
-                    ids.push(self.add(name, ta.op, Shape::path(c)));
+                    ids.push(self.add_to(ta.layer, name, Shape::path(c)));
                 }
             }
         }
@@ -546,7 +570,7 @@ mod tests {
         assert_eq!(id, a);
         assert_eq!(d.s.items.len(), 1);
         let item = d.item(a).unwrap();
-        assert!(item.engraves_area() && item.op == Op::Engrave && item.shape.contours().len() == 2);
+        assert!(d.s.engraves_area(item) && item.shape.contours().len() == 2);
         let parts = d.break_apart(a).unwrap();
         assert_eq!(parts.len(), 2);
         assert!(d.item(a).is_none());

@@ -88,12 +88,16 @@ impl Map {
 
 impl Document {
     /// Add an SVG drawing: one item per path (one contour per subpath), one per raster image.
-    /// All or nothing; callers checkpoint first. The new items become the selection.
+    /// All or nothing; callers checkpoint first. The new items become the selection. A path goes on
+    /// the current layer when that has the op of its colour, else on the first layer with that op.
     pub fn import_svg(&mut self, svg: &[u8], opts: &ImportOptions) -> Result<Vec<u64>, String> {
         let mut ids = Vec::new();
         for piece in parse(svg, opts)? {
             ids.push(match piece {
-                Piece::Path { name, op, contours } => self.add(&name, op, Shape::Path { contours }),
+                Piece::Path { name, op, contours } => {
+                    let layer = self.new_item_layer(Some(op));
+                    self.add_to(layer, &name, Shape::Path { contours })
+                }
                 Piece::Image { name, img, x, y, w, h, rotation } => {
                     let id = self.place_image(img, [x, y], Some(w), &name);
                     if let Some(Shape::Image { h: ih, rotation: r, .. }) = self.item_mut(id).map(|i| &mut i.shape) {

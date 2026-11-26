@@ -1,12 +1,12 @@
 //! The `.scrbr` project file: a zip with `document.json` and the images as `images/<id>.png`.
 
-use super::{Document, Img, State};
+use super::{Document, Img, Layer, Op, State, layer};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 
 /// Bump when the JSON changes in a way older versions cannot read.
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 
 impl Document {
     pub fn save(&mut self, path: &Path) -> anyhow::Result<()> {
@@ -51,6 +51,7 @@ fn read_archive(path: &Path) -> anyhow::Result<State> {
     let format = value["format"].as_u64().unwrap_or(0);
     anyhow::ensure!(format <= FORMAT_VERSION as u64, "this file was made by a newer Scriber (format {format}); please update");
     migrate_fill(&mut value);
+    migrate_layers(&mut value);
     let mut s: State = serde_json::from_value(value)?;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i)?;
@@ -98,9 +99,63 @@ fn migrate_fill(doc: &mut serde_json::Value) {
     doc["next_id"] = next_id.into();
 }
 
+/// Files from before layers (format 1) have the op on each item. They get one layer per op used,
+/// in the usual order, and each item goes on the layer of its op. A file without items gets the
+/// default layers.
+fn migrate_layers(doc: &mut serde_json::Value) {
+    if doc.get("layers").is_some() {
+        return;
+    }
+    let mut next_id = doc["next_id"].as_u64().unwrap_or(1);
+    let mut items = doc.get_mut("items").and_then(|i| i.as_array_mut()).map(std::mem::take).unwrap_or_default();
+    let op_of = |item: &mut serde_json::Value| -> Op {
+        let op = item.as_object_mut().and_then(|o| o.remove("op")).unwrap_or_default();
+        serde_json::from_value(op).unwrap_or_default()
+    };
+    let ops: Vec<Op> = items.iter_mut().map(op_of).collect();
+    let used: Vec<Op> = Op::ALL.into_iter().filter(|op| ops.contains(op)).collect();
+    let layers: Vec<Layer> = if used.is_empty() {
+        let layers = layer::defaults();
+        next_id = next_id.max(layers.len() as u64 + 1);
+        layers
+    } else {
+        used.iter()
+            .map(|op| {
+                next_id += 1;
+                Layer::new(next_id - 1, op.label(), *op)
+            })
+            .collect()
+    };
+    for (item, op) in items.iter_mut().zip(ops) {
+        item["layer"] = layers.iter().find(|l| l.op == op).map_or(0, |l| l.id).into();
+    }
+    doc["items"] = items.into();
+    doc["layers"] = serde_json::to_value(layers).unwrap();
+    doc["next_id"] = next_id.into();
+}
+
 #[cfg(test)]
 mod tests {
     use crate::model::{Contour, Document, Op, Shape};
+
+    #[test]
+    fn old_files_get_one_layer_per_op() {
+        let mut v = serde_json::json!({"width": 10, "height": 10, "next_id": 5, "items": [
+            {"id": 1, "op": "score", "shape": {"kind": "path", "contours": []}},
+            {"id": 2, "op": "cut", "shape": {"kind": "path", "contours": []}},
+            {"id": 3, "op": "score", "shape": {"kind": "path", "contours": []}}
+        ]});
+        super::migrate_layers(&mut v);
+        let s: crate::model::State = serde_json::from_value(v).unwrap();
+        let layers: Vec<(u64, &str, Op)> = s.layers.iter().map(|l| (l.id, l.name.as_str(), l.op)).collect();
+        assert_eq!(layers, [(5, "Cut", Op::Cut), (6, "Score", Op::Score)]);
+        assert_eq!(s.items.iter().map(|i| i.layer).collect::<Vec<_>>(), [6, 5, 6]);
+        assert_eq!(s.next_id, 7);
+        let mut empty = serde_json::json!({"width": 10, "height": 10, "next_id": 1, "items": []});
+        super::migrate_layers(&mut empty);
+        let s: crate::model::State = serde_json::from_value(empty).unwrap();
+        assert_eq!((s.layers.len(), s.next_id), (4, 5));
+    }
 
     #[test]
     fn old_fill_becomes_engrave() {
@@ -112,11 +167,12 @@ mod tests {
             {"id": 6, "op": "score", "fill": false, "shape": {"kind": "path", "contours": []}}
         ]});
         super::migrate_fill(&mut v);
+        super::migrate_layers(&mut v);
         let s: crate::model::State = serde_json::from_value(v).unwrap();
-        let got: Vec<(u64, Op)> = s.items.iter().map(|i| (i.id, i.op)).collect();
+        let got: Vec<(u64, Op)> = s.items.iter().map(|i| (i.id, s.op(i))).collect();
         assert_eq!(got, [(7, Op::Engrave), (1, Op::Cut), (2, Op::Engrave), (3, Op::NoOutput), (4, Op::NoOutput), (6, Op::Score)]);
         assert_eq!(got[0].0, 7, "the copy gets a fresh id");
-        assert_eq!(s.next_id, 8);
+        assert_eq!(s.next_id, 12, "8 to 11 went to the four layers");
     }
 
     #[test]
@@ -132,6 +188,7 @@ mod tests {
         d.save(&path).unwrap();
         let e = Document::open(&path).unwrap();
         assert_eq!(e.s.items, d.s.items);
+        assert_eq!(e.s.layers, d.s.layers);
         assert_eq!(e.s.notes, "hej");
         assert_eq!(e.s.next_id, d.s.next_id);
         assert_eq!(e.s.images.values().next().unwrap().w, 3);
@@ -140,7 +197,9 @@ mod tests {
 
     #[test]
     fn old_files_load_without_machine_and_material() {
-        let s: crate::model::State = serde_json::from_str(r#"{"width": 10, "height": 20, "items": [], "next_id": 1}"#).unwrap();
+        let mut v = serde_json::json!({"width": 10, "height": 20, "items": [], "next_id": 1});
+        super::migrate_layers(&mut v);
+        let s: crate::model::State = serde_json::from_value(v).unwrap();
         assert_eq!((s.machine, s.laser, s.material), (None, None, None));
     }
 }

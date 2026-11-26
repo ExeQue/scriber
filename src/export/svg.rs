@@ -8,17 +8,15 @@ use std::fmt::Write;
 const HAIRLINE: f64 = 0.1; // laser software treats thin strokes as vector lines
 const BLACK: &str = "#000000";
 
-/// One group per laser step, in the order a job runs: images and engraving first, cut last.
-#[derive(Clone, Copy, PartialEq)]
-enum Layer {
-    Images,
-    Engrave,
-    Score,
-    Cut,
-    NoOutput,
+/// Laser order of the layer groups: engraving first, cut last, no output after everything.
+fn rank(op: Op) -> u8 {
+    match op {
+        Op::Engrave => 0,
+        Op::Score => 1,
+        Op::Cut => 2,
+        Op::NoOutput => 3,
+    }
 }
-
-const LAYERS: [(Layer, &str); 5] = [(Layer::Images, "images"), (Layer::Engrave, "engrave"), (Layer::Score, "score"), (Layer::Cut, "cut"), (Layer::NoOutput, "no_output")];
 
 /// The document as SVG. No-output items (notes, dimensions) are only included when asked for.
 pub fn svg(s: &State, annotations: bool) -> String {
@@ -26,37 +24,38 @@ pub fn svg(s: &State, annotations: bool) -> String {
 }
 
 /// Same, with lines `stroke` mm wide (PNG rendering needs them at least a pixel wide to be visible).
+/// One group per shown layer (an Inkscape layer with its name), in laser order; images first in each.
 pub(super) fn svg_with_stroke(s: &State, annotations: bool, stroke: f64) -> String {
     let (w, h) = (s.width, s.height);
     let mut out = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}mm\" height=\"{h}mm\" viewBox=\"0 0 {w} {h}\">\n"
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"{w}mm\" height=\"{h}mm\" viewBox=\"0 0 {w} {h}\">\n"
     );
-    for (layer, name) in LAYERS {
-        if layer == Layer::NoOutput && !annotations {
-            continue;
-        }
-        let body: String = s.items.iter().filter_map(|i| element(s, i, layer, stroke)).collect();
+    let mut layers: Vec<_> = s.layers.iter().filter(|l| l.visible && (annotations || l.op != Op::NoOutput)).collect();
+    layers.sort_by_key(|l| rank(l.op));
+    for layer in layers {
+        let on: Vec<&Item> = s.items.iter().filter(|i| i.layer == layer.id).collect();
+        let (images, rest): (Vec<&Item>, Vec<&Item>) = on.into_iter().partition(|i| matches!(i.shape, Shape::Image { .. }));
+        let body: String = images.into_iter().chain(rest).filter_map(|i| element(s, i, stroke)).collect();
         if !body.is_empty() {
-            writeln!(out, "<g id=\"{name}\">\n{body}</g>").unwrap();
+            let name = escape(&layer.name);
+            writeln!(out, "<g id=\"layer{}\" inkscape:groupmode=\"layer\" inkscape:label=\"{name}\">\n{body}</g>", layer.id).unwrap();
         }
     }
     out.push_str("</svg>\n");
     out
 }
 
-/// The item's part in `layer`, if it has one.
-fn element(s: &State, item: &Item, layer: Layer, stroke: f64) -> Option<String> {
+fn escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+/// The item as SVG, if it goes out at all.
+fn element(s: &State, item: &Item, stroke: f64) -> Option<String> {
     let id = item.id;
-    let op = item.effective_op();
-    let op_layer = match op {
-        Op::Cut => Layer::Cut,
-        Op::Score => Layer::Score,
-        Op::Engrave => Layer::Engrave,
-        Op::NoOutput => Layer::NoOutput,
-    };
+    let op = s.effective_op(item);
     match &item.shape {
         Shape::Image { image, x, y, w, h, rotation } => {
-            if layer != Layer::Images || item.op == Op::NoOutput {
+            if op == Op::NoOutput {
                 return None;
             }
             let img = s.images.get(image)?;
@@ -72,10 +71,7 @@ fn element(s: &State, item: &Item, layer: Layer, stroke: f64) -> Option<String> 
             if d.is_empty() {
                 return None;
             }
-            if layer != op_layer {
-                return None;
-            }
-            if item.engraves_area() {
+            if s.engraves_area(item) {
                 return Some(format!("<path id=\"i{id}\" d=\"{d}\" fill=\"{BLACK}\" fill-rule=\"evenodd\" stroke=\"none\"/>\n"));
             }
             Some(format!("<path id=\"i{id}\" d=\"{d}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{stroke}\"/>\n", op.hex()))
@@ -83,9 +79,6 @@ fn element(s: &State, item: &Item, layer: Layer, stroke: f64) -> Option<String> 
         // Guide lines are construction geometry for people: never in a laser file.
         Shape::Guide(_) => None,
         Shape::Dimension { .. } => {
-            if layer != op_layer {
-                return None;
-            }
             let g = item.shape.dimension()?;
             let color = op.hex();
             let mut angle = g.angle;
@@ -151,20 +144,24 @@ mod tests {
         assert!(s.contains("A10 10 0 1 1"), "270° arc needs the large-arc flag: {s}");
         // Text is exported as filled glyph outlines, never as <text>.
         assert!(!s.contains("<text") && !s.contains("A&"));
-        assert_eq!(s.contains("<path id=\"i3\" d=\"M"), has_font, "{s}");
+        assert_eq!(s.contains("<path id=\"i7\" d=\"M"), has_font, "{s}");
         // No-output items (dimension, helper line) only with annotations.
-        assert!(!s.contains("20.00 mm") && !s.contains("id=\"i8\"") && !s.contains("no_output"));
+        assert!(!s.contains("20.00 mm") && !s.contains("id=\"i12\"") && !s.contains("No output"));
         let all = svg(&d.s, true);
-        assert!(all.contains("20.00 mm") && all.contains("<path id=\"i8\" d=\"M5 8 L15 8\" fill=\"none\" stroke=\"#969696\""), "{all}");
+        assert!(all.contains("20.00 mm") && all.contains("<path id=\"i12\" d=\"M5 8 L15 8\" fill=\"none\" stroke=\"#969696\""), "{all}");
         // Engrave: a closed shape is a filled area (even-odd); an open line is scored (blue, score layer).
-        assert!(s.contains("<path id=\"i5\" d=\"M70 5") && s.contains("fill-rule=\"evenodd\""));
-        assert!(s.contains("<path id=\"i7\" d=\"M5 5 L15 5\" fill=\"none\" stroke=\"#0000ff\""), "{s}");
-        // Laser order: engrave, score, cut.
-        let at = |g: &str| s.find(&format!("<g id=\"{g}\"")).unwrap();
-        assert!(at("engrave") < at("score") && at("score") < at("cut"));
-        assert!(s.find("id=\"i5\"").unwrap() < at("score") && s.find("id=\"i6\"").unwrap() > at("cut"));
-        let i7 = s.find("id=\"i7\"").unwrap();
-        assert!(at("score") < i7 && i7 < at("cut"));
+        assert!(s.contains("<path id=\"i9\" d=\"M70 5") && s.contains("fill-rule=\"evenodd\""));
+        assert!(s.contains("<path id=\"i11\" d=\"M5 5 L15 5\" fill=\"none\" stroke=\"#0000ff\""), "{s}");
+        // One Inkscape layer per document layer, in laser order: engrave, score, cut.
+        let at = |name: &str| s.find(&format!("inkscape:label=\"{name}\"")).unwrap();
+        assert!(at("Engrave") < at("Score") && at("Score") < at("Cut"), "{s}");
+        assert!(s.find("id=\"i9\"").unwrap() < at("Score") && s.find("id=\"i10\"").unwrap() > at("Cut"));
+        let i11 = s.find("id=\"i11\"").unwrap();
+        assert!(at("Engrave") < i11 && i11 < at("Score"), "the open engrave line stays on its layer");
+        // Hidden layers are not exported.
+        let cut = d.layer_for(Op::Cut);
+        d.s.layer_mut(cut).unwrap().visible = false;
+        assert!(!svg(&d.s, false).contains("inkscape:label=\"Cut\""));
     }
 
     #[test]

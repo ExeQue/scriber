@@ -210,10 +210,9 @@ pub fn box_transform(b: BBox, grip: Grip, at: Point, p: Point, shift: bool, alt:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Op;
 
     fn item(shape: Shape) -> Item {
-        Item { id: 7, name: String::new(), op: Op::Cut, shape, note: String::new() }
+        Item { id: 7, name: String::new(), layer: 1, shape, note: String::new() }
     }
 
     #[test]

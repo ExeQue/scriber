@@ -2,7 +2,8 @@
 
 use super::App;
 use super::snap::Aid;
-use super::labels::{OPEN_SCORED, op_color, op_help, op_label};
+use super::labels::{OPEN_SCORED, op_help, op_label};
+use super::layers::layer_combo;
 use crate::model::{BBox, Op, Shape, State, Transform};
 use eframe::egui::{self, Color32, RichText};
 
@@ -97,26 +98,24 @@ impl App {
                 }
                 [id] => {
                     let metrics = d.item(*id).map(|i| i.shape.metrics());
+                    let state = d.s.clone();
                     let item = d.item_mut(*id).unwrap();
                     ui.heading(if item.name.is_empty() { "Shape" } else { &item.name });
                     egui::Grid::new("item").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                         ui.label("Name");
                         changed |= ui.text_edit_singleline(&mut item.name).changed();
                         ui.end_row();
-                        if !matches!(item.shape, Shape::Image { .. }) {
-                            ui.label("Laser");
-                            egui::ComboBox::from_id_salt("op").selected_text(op_label(item.op)).show_ui(ui, |ui| {
-                                for op in Op::ALL {
-                                    changed |= ui.selectable_value(&mut item.op, op, op_label(op)).on_hover_text(op_help(op)).changed();
-                                }
-                            });
-                            ui.end_row();
-                            if item.op == Op::Engrave && !item.shape.has_area() {
-                                ui.label("");
-                                ui.label(RichText::new(OPEN_SCORED).weak().small());
-                                ui.end_row();
-                            }
+                        ui.label("Layer");
+                        if let Some(l) = layer_combo(ui, "item-layer", &state, Some(item.layer)) {
+                            item.layer = l;
+                            changed = true;
                         }
+                        ui.end_row();
+                        let op = state.layer(item.layer).map_or(Op::Cut, |l| l.op);
+                        ui.label("");
+                        let what = if op == Op::Engrave && !item.shape.has_area() { OPEN_SCORED.to_string() } else { format!("Laser: {}", op_label(op)) };
+                        ui.label(RichText::new(what).weak().small()).on_hover_text(op_help(op));
+                        ui.end_row();
                     });
                     ui.separator();
                     changed |= shape_editor(ui, &mut item.shape);
@@ -131,12 +130,14 @@ impl App {
                 }
                 many => {
                     ui.heading(format!("{} {}", many.len(), "shapes selected"));
-                    ui.horizontal_wrapped(|ui| {
-                        for op in Op::ALL {
-                            if ui.button(RichText::new(op_label(op)).color(op_color(op))).on_hover_text(op_help(op)).clicked() {
-                                d.s.items.iter_mut().filter(|i| sel.contains(&i.id)).for_each(|i| i.op = op);
-                                changed = true;
-                            }
+                    let layers: Vec<u64> = d.s.items.iter().filter(|i| sel.contains(&i.id)).map(|i| i.layer).collect();
+                    let shared = layers.first().copied().filter(|l| layers.iter().all(|m| m == l));
+                    ui.horizontal(|ui| {
+                        ui.label("Move to layer");
+                        let state = d.s.clone();
+                        if let Some(l) = layer_combo(ui, "sel-layer", &state, shared) {
+                            d.s.items.iter_mut().filter(|i| sel.contains(&i.id)).for_each(|i| i.layer = l);
+                            changed = true;
                         }
                     });
                     let len: f64 = d.s.items.iter().filter(|i| sel.contains(&i.id)).map(|i| i.shape.metrics().length).sum();
@@ -280,11 +281,11 @@ fn laser_totals(s: &State) -> String {
     let mut parts: Vec<String> = [Op::Cut, Op::Score]
         .iter()
         .filter_map(|op| {
-            let len: f64 = s.items.iter().filter(|i| i.effective_op() == *op && matches!(i.shape, Shape::Path { .. } | Shape::Text { .. })).map(|i| i.shape.metrics().length).sum();
+            let len: f64 = s.shown().filter(|i| s.effective_op(i) == *op && matches!(i.shape, Shape::Path { .. } | Shape::Text { .. })).map(|i| i.shape.metrics().length).sum();
             (len > 0.0).then(|| format!("{}: {:.0} mm", op_label(*op), len))
         })
         .collect();
-    let area: f64 = s.items.iter().filter(|i| i.engraves_area()).filter_map(|i| i.shape.metrics().area).sum();
+    let area: f64 = s.shown().filter(|i| s.engraves_area(i)).filter_map(|i| i.shape.metrics().area).sum();
     if area > 0.0 {
         parts.push(format!("{}: {:.1} cm²", op_label(Op::Engrave), area / 100.0));
     }

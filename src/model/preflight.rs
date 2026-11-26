@@ -60,21 +60,21 @@ fn shapes(n: usize) -> String {
 
 /// Every warning for the document, errors first.
 pub fn check(s: &State, lib: &Library) -> Vec<Warning> {
-    // Only what reaches the laser; guides and no-output items are never sent.
-    let lasered: Vec<&Item> = s.items.iter().filter(|i| i.effective_op() != Op::NoOutput && !matches!(i.shape, Shape::Guide(_) | Shape::Dimension { .. })).collect();
+    // Only what reaches the laser; guides, no-output items and hidden layers are never sent.
+    let lasered: Vec<&Item> = s.shown().filter(|i| s.op(i) != Op::NoOutput && !matches!(i.shape, Shape::Guide(_) | Shape::Dimension { .. })).collect();
     let mut out = no_settings(s, lib, &lasered);
     out.extend(outside_work_area(s, lib, &lasered));
     out.extend(outside_material(s, &lasered));
-    out.extend(double_lines(&lasered));
-    out.extend(open_cuts(&lasered));
+    out.extend(double_lines(s, &lasered));
+    out.extend(open_cuts(s, &lasered));
     out.extend(too_small(&lasered));
     out.extend(small_text(&lasered));
     out.sort_by_key(|w| w.severity != Severity::Error);
     out
 }
 
-fn open_cuts(items: &[&Item]) -> Option<Warning> {
-    let cuts: Vec<&Item> = items.iter().copied().filter(|i| i.effective_op() == Op::Cut).collect();
+fn open_cuts(s: &State, items: &[&Item]) -> Option<Warning> {
+    let cuts: Vec<&Item> = items.iter().copied().filter(|i| s.effective_op(i) == Op::Cut).collect();
     // Ends of every open cut line; a chain of lines that closes (four lines as a rectangle) has none left over.
     let ends: Vec<(u64, Point)> = cuts
         .iter()
@@ -99,10 +99,10 @@ struct Seg {
 }
 
 /// Lines (cut or scored) on top of each other: the laser goes over them twice and burns the edge.
-fn double_lines(items: &[&Item]) -> Vec<Warning> {
+fn double_lines(s: &State, items: &[&Item]) -> Vec<Warning> {
     let mut segs: Vec<Seg> = items
         .iter()
-        .filter(|i| matches!(i.effective_op(), Op::Cut | Op::Score))
+        .filter(|i| matches!(s.effective_op(i), Op::Cut | Op::Score))
         .flat_map(|i| i.shape.laser_contours().iter().map(|c| c.flatten(DOUBLE_LINE_TOL / 4.0)).collect::<Vec<_>>().into_iter().map(move |p| (i.id, p)))
         .flat_map(|(item, p)| p.windows(2).map(|w| Seg { item, a: w[0], b: w[1] }).collect::<Vec<_>>())
         .filter(|s| distance(s.a, s.b) > 0.0)
@@ -192,20 +192,22 @@ fn no_settings(s: &State, lib: &Library, items: &[&Item]) -> Vec<Warning> {
     let names = |id: &str, found: Option<&String>| found.cloned().unwrap_or_else(|| id.to_string());
     let machine_name = names(machine, lib.machine(machine).map(|m| &m.name));
     let material_name = names(material, lib.material(material).map(|m| &m.name));
-    Operation::ALL
-        .into_iter()
-        .filter(|op| lib.setting(machine, s.laser.as_deref(), material, *op).is_none())
-        .filter_map(|op| {
-            let ids: Vec<u64> = items.iter().filter(|i| operation(i) == op).map(|i| i.id).collect();
-            let text = format!("No {} setting for {material_name} on the {machine_name} in the material library.", op.label().to_lowercase());
+    s.layers
+        .iter()
+        .flat_map(|layer| Operation::ALL.into_iter().map(move |op| (layer, op)))
+        .filter(|(layer, op)| layer.setting(s, lib, *op).is_none())
+        .filter_map(|(layer, op)| {
+            let ids: Vec<u64> = items.iter().filter(|i| i.layer == layer.id && operation(s, i) == op).map(|i| i.id).collect();
+            let op = op.label().to_lowercase();
+            let text = format!("Layer \u{201c}{}\u{201d}: no {op} setting for {material_name} on the {machine_name}, in the material library or on the layer.", layer.name);
             warn(Severity::Error, Kind::NoSetting, text, ids)
         })
         .collect()
 }
 
 /// The library operation an item needs; images are engraved.
-fn operation(i: &Item) -> Operation {
-    match (i.effective_op(), &i.shape) {
+pub fn operation(s: &State, i: &Item) -> Operation {
+    match (s.effective_op(i), &i.shape) {
         (_, Shape::Image { .. }) | (Op::Engrave, _) => Operation::Engrave,
         (Op::Score, _) => Operation::Score,
         _ => Operation::Cut,

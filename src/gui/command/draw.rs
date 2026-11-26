@@ -130,8 +130,9 @@ impl App {
         if !text.is_empty()
             && let Some(at) = self.draft.first().copied()
         {
-            // Text is engraved unless another op than the default (cut) was picked.
-            let op = if self.new_op == Op::Cut { Op::Engrave } else { self.new_op };
+            // Text is engraved unless the current layer does something else than cut.
+            let current = { let d = self.doc.lock().unwrap(); d.s.layer(d.current_layer()).map(|l| l.op) };
+            let op = (current == Some(Op::Cut)).then_some(Op::Engrave);
             let shape = Shape::Text { x: at[0], y: at[1], size: self.cmdline.text_height, text, rotation: 0.0, font: self.cmdline.text_font.clone(), bold: false, italic: false };
             self.create("text", op, shape);
         }
@@ -167,7 +168,7 @@ impl App {
         {
             return self.end();
         }
-        let op = if self.tool == Tool::Dimension { Op::NoOutput } else { self.new_op };
+        let op = (self.tool == Tool::Dimension).then_some(Op::NoOutput);
         let id = self.create(name, op, shape);
         self.infer_drawn(id, &pts);
         match self.tool {

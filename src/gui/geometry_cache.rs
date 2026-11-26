@@ -28,20 +28,21 @@ fn bucket(tol: f64) -> f64 {
 }
 
 impl GeometryCache {
-    /// The geometry for `item` at tolerance `tol` (mm), rebuilt only when needed.
-    pub fn get(&mut self, item: &Item, tol: f64) -> &Geometry {
+    /// The geometry for `item` at tolerance `tol` (mm), rebuilt only when needed; `fill` when it
+    /// engraves an area.
+    pub fn get(&mut self, item: &Item, fill: bool, tol: f64) -> &Geometry {
         let tol = bucket(tol);
         let fresh = self.items.get(&item.id).is_some_and(|g| g.tol == tol && g.shape == item.shape);
         if !fresh {
             let outline = item.shape.outline(tol);
-            let fill = item.engraves_area().then(|| tessellate(&outline)).flatten();
+            let fill = fill.then(|| tessellate(&outline)).flatten();
             self.items.insert(item.id, Geometry { shape: item.shape.clone(), tol, outline, fill });
         }
         let g = self.items.get_mut(&item.id).unwrap();
         // The op can change without the shape changing.
-        if item.engraves_area() && g.fill.is_none() {
+        if fill && g.fill.is_none() {
             g.fill = tessellate(&g.outline);
-        } else if !item.engraves_area() {
+        } else if !fill {
             g.fill = None;
         }
         g
@@ -75,14 +76,14 @@ pub(super) fn tessellate(polys: &[Vec<Point>]) -> Option<(Vec<[f32; 2]>, Vec<u32
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Contour, Op};
+    use crate::model::Contour;
 
     #[test]
     fn fill_keeps_holes_and_cache_is_reused() {
         let shape = Shape::Path { contours: vec![Contour::rect(0.0, 0.0, 10.0, 10.0, 0.0), Contour::rect(3.0, 3.0, 4.0, 4.0, 0.0)] };
-        let item = Item { id: 1, name: String::new(), op: Op::Engrave, shape, note: String::new() };
+        let item = Item { id: 1, name: String::new(), layer: 1, shape, note: String::new() };
         let mut cache = GeometryCache::default();
-        let (verts, idx) = cache.get(&item, 0.1).fill.clone().unwrap();
+        let (verts, idx) = cache.get(&item, true, 0.1).fill.clone().unwrap();
         // Area of the triangles = outer square minus the hole.
         let area: f32 = idx
             .chunks(3)
@@ -92,7 +93,7 @@ mod tests {
             })
             .sum();
         assert!((area - 84.0).abs() < 1e-3, "{area}");
-        let first = cache.get(&item, 0.1).outline.as_ptr();
-        assert_eq!(cache.get(&item, 0.11).outline.as_ptr(), first, "same bucket reuses the cache");
+        let first = cache.get(&item, true, 0.1).outline.as_ptr();
+        assert_eq!(cache.get(&item, true, 0.11).outline.as_ptr(), first, "same bucket reuses the cache");
     }
 }

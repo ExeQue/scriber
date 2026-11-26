@@ -264,7 +264,7 @@ impl App {
             .s
             .items
             .iter()
-            .filter(|i| self.visible(i))
+            .filter(|i| self.visible(&d.s, i) && d.s.editable(i))
             .filter(|i| contains_box(area, i.shape.metrics().bbox) || (crossing && touches(area, &i.shape.outline(0.1))))
             .map(|i| i.id)
             .collect();

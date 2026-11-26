@@ -33,7 +33,7 @@ impl App {
         let to_screen = |p: &Point| offset + egui::vec2(p[0] as f32, p[1] as f32) * zoom;
         for (n, pick) in self.picked.iter().enumerate() {
             if let Some(item) = d.item(pick.item) {
-                for line in &self.geometry.get(item, tol).outline {
+                for line in &self.geometry.get(item, false, tol).outline {
                     painter.add(egui::Shape::line(line.iter().map(to_screen).collect(), Stroke::new(5.0, PICKED.gamma_multiply(0.55))));
                 }
             }

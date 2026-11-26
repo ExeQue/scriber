@@ -39,6 +39,20 @@ impl Op {
         }
     }
 
+    pub fn label(self) -> &'static str {
+        match self {
+            Op::Cut => "Cut",
+            Op::Score => "Score",
+            Op::Engrave => "Engrave",
+            Op::NoOutput => "No output",
+        }
+    }
+
+    /// What the laser really does with this op on `shape`: Engrave on an open shape (no area) is scored.
+    pub fn on(self, shape: &Shape) -> Op {
+        if self == Op::Engrave && !shape.has_area() { Op::Score } else { self }
+    }
+
     pub fn hex(self) -> String {
         let [r, g, b] = self.rgb();
         format!("#{r:02x}{g:02x}{b:02x}")
@@ -103,24 +117,11 @@ pub struct Item {
     pub id: u64,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
-    /// What the laser does with it.
-    pub op: Op,
+    /// The layer it is on (see `layer`); the layer gives the laser op.
+    pub layer: u64,
     pub shape: Shape,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
-}
-
-impl Item {
-    /// Whether the laser engraves an area: Engrave on a shape that has one (closed path, text, image).
-    pub fn engraves_area(&self) -> bool {
-        self.op == Op::Engrave && self.shape.has_area()
-    }
-
-    /// What the laser really does: Engrave on an open shape (no area) is scored. The stored op stays
-    /// as the user set it; export, canvas and totals use this.
-    pub fn effective_op(&self) -> Op {
-        if self.op == Op::Engrave && !self.shape.has_area() { Op::Score } else { self.op }
-    }
 }
 
 #[derive(Clone, Debug, Serialize, JsonSchema)]
@@ -347,12 +348,9 @@ mod tests {
 
     #[test]
     fn engrave_fills_closed_shapes_and_scores_open_ones() {
-        let item = |op, c| Item { id: 1, name: String::new(), op, shape: Shape::path(c), note: String::new() };
-        let (closed, open) = (item(Op::Engrave, Contour::circle(0.0, 0.0, 5.0)), item(Op::Engrave, Contour::line([0.0, 0.0], [5.0, 0.0])));
-        assert!(closed.engraves_area() && closed.effective_op() == Op::Engrave);
-        assert!(!open.engraves_area() && open.effective_op() == Op::Score && open.op == Op::Engrave);
-        assert!(!item(Op::Cut, Contour::circle(0.0, 0.0, 5.0)).engraves_area());
-        assert_eq!(item(Op::NoOutput, Contour::line([0.0, 0.0], [5.0, 0.0])).effective_op(), Op::NoOutput);
+        let (closed, open) = (Shape::path(Contour::circle(0.0, 0.0, 5.0)), Shape::path(Contour::line([0.0, 0.0], [5.0, 0.0])));
+        assert_eq!((Op::Engrave.on(&closed), Op::Engrave.on(&open)), (Op::Engrave, Op::Score));
+        assert_eq!(Op::NoOutput.on(&open), Op::NoOutput);
         assert_eq!(serde_json::from_str::<Op>("\"annotate\"").unwrap(), Op::NoOutput);
         assert_eq!(serde_json::to_string(&Op::NoOutput).unwrap(), "\"no_output\"");
     }
