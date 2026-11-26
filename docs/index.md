@@ -22,7 +22,9 @@ features:
   - title: Step in any time
     details: Pin review comments on the canvas and the agent picks them up. Edit by hand, undo any change, or take over entirely.
   - title: Precise CAD
-    details: Dimensions that lock a length, radius or angle, named parameters and formulas, object snaps, grips and a command line for people who know AutoCAD.
+    details: Dimensions that lock a length, radius or angle, named parameters and formulas, object snaps and grips.
+  - title: Feels familiar if you know AutoCAD or DraftSight
+    details: The ribbon, an optional command line (View tab), OSNAP, OTRACK, POLAR and ORTHO, dynamic input, grips, constraints and DIM work the way you expect. See [Coming from AutoCAD or DraftSight](/guide/the-screen#coming-from-autocad-or-draftsight).
   - title: Ready for the laser
     details: Every shape sits on a layer that says what the laser does with it - cut, score, engrave or nothing. Preview and Check catch open cut lines, double lines and missing settings before you burn.
   - title: xTool import and export

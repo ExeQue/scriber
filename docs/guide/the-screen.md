@@ -100,6 +100,33 @@ aliases (`LINE`/`L`, `CIRCLE`/`C`, `RECTANG`/`REC`, `FILLET`/`F`, `TRIM`/`TR`, �
 `x,y`, `@dx,dy` or `@distance<angle`. While it is shown, letters go to the command line instead of
 the one-key shortcuts below.
 
+## Coming from AutoCAD or DraftSight
+
+If you have used AutoCAD or DraftSight, most of this screen will feel familiar.
+
+| You know | In Scriber |
+|---|---|
+| Ribbon tabs | The ribbon above: Home, Annotate, Parametric, Arrange, Laser, View |
+| Command line | View → **Command line**, hidden by default. Aliases such as `L`, `C`, `REC`, `PL`, `TR`, `F`, `O`, `CO`, `RO`; points as `x,y`, `@dx,dy`, `@distance<angle` |
+| Command shortcuts | Single keys (<kbd>L</kbd> line, <kbd>M</kbd> move, <kbd>D</kbd> dimension, ...), not typed aliases; see the table below |
+| OSNAP, OTRACK, POLAR, ORTHO | The same names in the status bar, with F3, F11, F10 and F8 |
+| Dynamic input | The box next to the cursor: type a number, <kbd>Tab</kbd> to the next field, <kbd>Enter</kbd> |
+| Grips | Drag the blue grips of a selected shape; see [Editing](./editing#grips) |
+| Geometric constraints | `GC...` commands (`GCPARALLEL`, `GCTANGENT`, ...) and right-click → *Add constraint ▸* |
+| Dimensional constraints, DIM | `DIM` (or <kbd>D</kbd>) locks a length, radius or angle; `DCLINEAR`, `DCRADIUS` etc. also work |
+| Parameters manager | `PARAMETERS` / `PAR`, or Parametric → **Parameters** |
+| Window / crossing selection | Drag left to right / right to left |
+| Right-click, Enter or Space repeats | Same |
+
+Some things differ:
+
+- There is no model and paper space: one document is one sheet of material.
+- Units are millimetres only.
+- A layer carries the laser operation (cut, score, engrave or nothing) instead of a colour and
+  linetype only; see [Layers and laser operations](./layers).
+
+AutoCAD and DraftSight are trademarks of their owners; Scriber is not affiliated with them.
+
 ## Keyboard shortcuts
 
 Single keys start tools while you are not typing and the command line is hidden. Help → Keyboard
