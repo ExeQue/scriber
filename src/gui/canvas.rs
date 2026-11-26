@@ -367,6 +367,14 @@ impl App {
             measure_overlay(painter, self.w2s(a), self.w2s(b), a, b);
         }
         let Some(p) = pointer else { return };
+        // FILLET/CHAMFER: what a click here would do.
+        let preview = Stroke::new(2.0, Color32::from_rgb(255, 150, 0));
+        for shape in self.op_preview(p) {
+            for line in shape.outline(tol) {
+                let pts: Vec<Pos2> = line.iter().map(|q| self.w2s(*q)).collect();
+                painter.extend(egui::Shape::dashed_line(&pts, preview, 6.0, 3.0));
+            }
+        }
         if self.tool == Tool::Select {
             return;
         }

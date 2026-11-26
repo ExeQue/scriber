@@ -179,7 +179,11 @@ impl App {
                     return Ok(());
                 }
                 // A click where two separate lines meet: use both.
-                if let Some(other) = self.other_end_at(id, p) {
+                let other = {
+                    let d = self.doc.lock().unwrap();
+                    self.other_end_at(&d, id, p)
+                };
+                if let Some(other) = other {
                     return self.apply_to(&[id, other], |d, ids| corner(d, ids, None));
                 }
                 self.cmdline.modify.target = Some(id);
@@ -269,9 +273,8 @@ impl App {
     }
 
     /// Another open item with an end point within a few pixels of `p` (where two lines meet).
-    fn other_end_at(&self, id: u64, p: Point) -> Option<u64> {
+    pub(super) fn other_end_at(&self, d: &Document, id: u64, p: Point) -> Option<u64> {
         let tol = 8.0 / self.view.zoom as f64;
-        let d = self.doc.lock().unwrap();
         d.s.items.iter().filter(|i| i.id != id).find_map(|i| {
             let ends = i.shape.contours().iter().filter(|c| !c.closed).flat_map(|c| [c.vertices.first(), c.vertices.last()]).flatten();
             ends.into_iter().any(|v| crate::model::geom::distance([v.x, v.y], p) <= tol).then_some(i.id)

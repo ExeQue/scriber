@@ -7,6 +7,7 @@ mod draw;
 mod edit;
 mod modify;
 mod parse;
+mod preview;
 
 use super::App;
 use super::tools::Tool;
