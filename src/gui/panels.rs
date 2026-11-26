@@ -86,6 +86,8 @@ impl App {
         let sel = d.selection.clone();
         let mut changed = false;
         let mut action = None;
+        let mut param_change = None;
+        let param_edit = &mut self.param_edit;
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             match sel.as_slice() {
@@ -116,6 +118,13 @@ impl App {
                     });
                     ui.separator();
                     changed |= shape_editor(ui, &mut item.shape);
+                    if d.s.constraints.iter().any(|c| c.kind.is_dimension() && c.refs.iter().any(|r| r.item() == *id)) {
+                        ui.separator();
+                        ui.label(RichText::new("Locked sizes").strong()).on_hover_text("Dimensional constraints: change a value and the shape follows.");
+                        let state = d.s.clone();
+                        param_change = super::parameters::parameter_rows(ui, param_edit, &state, Some(*id));
+                    }
+                    let item = d.item_mut(*id).unwrap();
                     ui.separator();
                     ui.label("Note");
                     changed |= ui.add(egui::TextEdit::multiline(&mut item.note).desired_rows(2).desired_width(f32::INFINITY)).changed();
@@ -201,6 +210,9 @@ impl App {
         }
         drop(d);
 
+        if let Some(c) = param_change {
+            self.apply_param_change(c);
+        }
         match action {
             Some(Action::Transform(t)) => self.transform_selection(t),
             Some(Action::Duplicate) => self.duplicate_selection(),

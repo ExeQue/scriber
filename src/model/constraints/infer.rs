@@ -60,9 +60,8 @@ pub fn infer(s: &State, items: &[u64], tol: f64, angle_tol: f64) -> Vec<(Kind, V
                 points.push((Ref::Point { item: item.id, contour: ci, vertex: k }, p(k), (item.id, ci)));
             }
             let segments = if c.closed { n } else { n.saturating_sub(1) };
-            for k in 0..segments {
+            for (k, bulge) in c.vertices.iter().map(|v| v.bulge).enumerate().take(segments) {
                 let r = Ref::Segment { item: item.id, contour: ci, segment: k };
-                let bulge = c.vertices[k].bulge;
                 if bulge.abs() < 1e-12 {
                     if distance(p(k), p(k + 1)) > tol {
                         lines.push(Line { r, a: p(k), b: p(k + 1) });

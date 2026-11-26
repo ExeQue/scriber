@@ -4,9 +4,13 @@
 mod agents_window;
 mod canvas;
 mod command;
+mod constraint_bars;
+mod dimensions;
+mod glyphs;
 mod grips;
 mod labels;
 mod panels;
+mod parameters;
 mod select;
 mod snap;
 mod svg_import;
@@ -68,6 +72,15 @@ struct App {
     panel_editing: bool,
     message: String,
     show_agents: bool,
+    /// Constraint bars on (CONSTRAINTBAR), and items whose bars are hidden.
+    bars: bool,
+    hidden_bars: Vec<u64>,
+    /// The parameters window (PARAMETERS) is open.
+    show_parameters: bool,
+    /// A parameter name or expression being typed in the parameters window or properties.
+    param_edit: parameters::ParamEdit,
+    /// Where each dimensional constraint's label was drawn last frame (for double-click editing).
+    dim_labels: Vec<(u64, Rect)>,
     agents: Arc<Mutex<Option<Vec<agents::Target>>>>,
     confirm_close: bool,
     allow_close: bool,
@@ -137,6 +150,11 @@ impl App {
             panel_editing: false,
             message: String::new(),
             show_agents: false,
+            bars: true,
+            hidden_bars: Vec::new(),
+            show_parameters: false,
+            param_edit: None,
+            dim_labels: Vec::new(),
             agents: Arc::new(Mutex::new(None)),
             confirm_close: false,
             allow_close: false,
@@ -392,6 +410,9 @@ impl eframe::App for App {
         egui::CentralPanel::no_frame().show(ui, |ui| self.canvas(ui));
         self.command_card(&ctx);
 
+        if self.show_parameters {
+            self.parameters_window(&ctx);
+        }
         if self.show_agents {
             self.agents_window(&ctx);
         }

@@ -162,6 +162,12 @@ impl App {
             self.draft = pts[..pts.len() - 1].to_vec();
             return;
         }
+        // A dimension snapped onto two points of the drawing drives them; otherwise it is a note.
+        if let (Tool::Dimension, [a, b, ..]) = (self.tool, &pts[..])
+            && self.associative_dimension(*a, *b)
+        {
+            return self.end();
+        }
         let (op, fill) = if self.tool == Tool::Dimension { (Op::Annotate, false) } else { (self.new_op, self.new_fill) };
         self.create(name, op, fill, shape);
         match self.tool {

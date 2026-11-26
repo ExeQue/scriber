@@ -160,12 +160,14 @@ impl Document {
     /// Solve after a change (see the module doc). On failure the change is undone and the error returned;
     /// `explain` names the conflicting constraints (slower; off while dragging).
     pub fn settle(&mut self, explain: bool) -> Result<(), String> {
-        let fresh = self.solved.is_none();
-        let prev = self.solved.take().unwrap_or_else(|| self.s.clone());
-        if self.s.constraints.is_empty() && prev.constraints.is_empty() {
-            self.solved = Some(self.s.clone());
+        // Nothing to keep: no copy needed (the next constraint starts from the drawing as it is then).
+        if self.s.constraints.is_empty() {
+            self.solved = None;
+            self.hold.clear();
             return Ok(());
         }
+        let fresh = self.solved.is_none();
+        let prev = self.solved.take().unwrap_or_else(|| self.s.clone());
         if !fresh && self.s.items == prev.items && self.s.constraints == prev.constraints && self.hold.is_empty() {
             self.solved = Some(prev);
             return Ok(());

@@ -154,8 +154,11 @@ impl App {
         let mut d = self.doc.lock().unwrap();
         let ids = d.selection.clone();
         if let Some(id) = grip.id() {
+            // Path grips set a point, so they apply to the shape as the solver left it last frame:
+            // only the dragged point counts as the user's edit.
+            let from_now = matches!(grip, Grip::Vertex { .. } | Grip::Radius { .. } | Grip::Centre { .. });
             if let (Some(b), Some(item)) = (base.iter().find(|i| i.id == id), d.item_mut(id)) {
-                item.shape = grips::drag_item(&b.shape, grip, at, p);
+                item.shape = grips::drag_item(if from_now { &item.shape } else { &b.shape }, grip, at, p);
             }
             d.touch();
         } else if let Some(t) = grips::box_transform(bbox, grip, at, p, shift) {
@@ -243,6 +246,33 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grip_drags_keep_constraints() {
+        use crate::model::{Contour, Document, Kind, Op, Ref, Shape};
+        let doc = std::sync::Arc::new(std::sync::Mutex::new(Document::new(200.0, 200.0)));
+        let mut app = App::new(doc.clone(), Err(String::new()));
+        let id = {
+            let mut d = doc.lock().unwrap();
+            let id = d.add("", Op::Cut, false, Shape::path(Contour::rect(10.0, 10.0, 40.0, 20.0, 0.0)));
+            for (k, kind) in [(0, Kind::Horizontal), (1, Kind::Vertical), (2, Kind::Horizontal), (3, Kind::Vertical)] {
+                d.add_constraint(kind, vec![Ref::Segment { item: id, contour: 0, segment: k }]).unwrap();
+            }
+            d.settle(true).unwrap();
+            d.selection = vec![id];
+            id
+        };
+        let base = doc.lock().unwrap().s.items.clone();
+        let grip = Grip::Vertex { id, contour: 0, vertex: 2 };
+        app.drag = Some(Drag::Box { start: [0.0, 0.0] });
+        // Two frames of the drag, each settled as the canvas does.
+        for p in [[55.0, 35.0], [70.0, 50.0]] {
+            app.apply_grip(grip, [50.0, 30.0], &base, [10.0, 10.0, 40.0, 20.0], p, false);
+            app.settle();
+        }
+        let pts: Vec<Point> = doc.lock().unwrap().item(id).unwrap().shape.contours()[0].vertices.iter().map(|v| [v.x, v.y]).collect();
+        assert_eq!(pts, vec![[10.0, 10.0], [70.0, 10.0], [70.0, 50.0], [10.0, 50.0]]);
+    }
 
     #[test]
     fn crossing_touches() {

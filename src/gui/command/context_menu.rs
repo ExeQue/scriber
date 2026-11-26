@@ -5,6 +5,7 @@
 use super::card::{next_label, title};
 use super::parse::Entry;
 use super::{App, Cmd, Step};
+use crate::model::Kind;
 use eframe::egui;
 
 impl App {
@@ -66,6 +67,8 @@ impl App {
             }
         }
         ui.separator();
+        self.constraint_menu(ui);
+        ui.separator();
         if ui.button("Undo").clicked() {
             self.doc.lock().unwrap().undo();
         }
@@ -75,8 +78,34 @@ impl App {
         if ui.button("Select all").clicked() {
             self.select_all();
         }
+        if ui.button(title(Cmd::Parameters)).on_hover_text("PARAMETERS").clicked() {
+            self.start(Cmd::Parameters);
+        }
         if ui.button("Show whole material").clicked() {
             self.view.zoom_extents();
+        }
+    }
+
+    /// "Add constraint" and the constraint commands that work on the selection.
+    fn constraint_menu(&mut self, ui: &mut egui::Ui) {
+        ui.menu_button("Add constraint", |ui| {
+            for kind in Kind::GEOMETRIC {
+                let cmd = Cmd::Constrain(kind);
+                if ui.button(title(cmd)).on_hover_text(cmd.name()).clicked() {
+                    self.start(cmd);
+                }
+            }
+            ui.separator();
+            for cmd in [Cmd::DcLinear, Cmd::Constrain(Kind::DimAligned), Cmd::Constrain(Kind::DimAngular), Cmd::Constrain(Kind::DimRadial), Cmd::Constrain(Kind::DimDiameter)] {
+                if ui.button(title(cmd)).on_hover_text(cmd.name()).clicked() {
+                    self.start(cmd);
+                }
+            }
+        });
+        for cmd in [Cmd::AutoConstrain, Cmd::DelConstraint, Cmd::ConstraintBar] {
+            if ui.button(title(cmd)).on_hover_text(cmd.name()).clicked() {
+                self.start(cmd);
+            }
         }
     }
 }

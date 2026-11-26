@@ -1,8 +1,9 @@
 //! Finding references on the drawing: the vertex or segment nearest a click, and where a
 //! reference is (for constraint bars, highlights and dimensions).
 
-use super::Ref;
-use super::geo::path_contours;
+use super::geo::{System, path_contours};
+use super::residual::{corner_rays, intersection};
+use super::{Kind, Ref};
 use crate::model::geom::{arc_params, distance, segment_distance};
 use crate::model::{Contour, Point, State};
 
@@ -94,6 +95,60 @@ pub fn anchor(s: &State, r: &Ref) -> Option<Point> {
         (Ref::Item { .. }, _) => pts.first().copied(),
         (_, [a, b]) => Some([(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0]),
         _ => pts.get(pts.len() / 2).copied(),
+    }
+}
+
+/// Where a dimensional constraint's geometry is, for drawing it and placing its label.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DimPlace {
+    /// The two measured points.
+    Linear(Point, Point),
+    /// The lines' intersection and the unit directions of the measured corner.
+    Angle(Point, Point, Point),
+    /// Centre and radius.
+    Circle(Point, f64),
+}
+
+pub fn dim_place(s: &State, kind: Kind, refs: &[Ref]) -> Option<DimPlace> {
+    let mut sys = System::default();
+    let g: Vec<_> = refs.iter().map(|r| sys.resolve(s, r)).collect::<Result<_, _>>().ok()?;
+    let x = &sys.x;
+    match (kind, g.as_slice()) {
+        (Kind::DimRadial | Kind::DimDiameter, [a]) => a.circle(x).map(|(c, r)| DimPlace::Circle(c, r)),
+        (Kind::DimAngular, [a, b]) => {
+            let (la, lb) = (a.line(x)?, b.line(x)?);
+            let (u, v) = corner_rays(la, lb);
+            Some(DimPlace::Angle(intersection(la, lb).unwrap_or(la.1), u, v))
+        }
+        (_, [a]) => a.line(x).map(|(p, q)| DimPlace::Linear(p, q)),
+        (_, [a, b]) => match (a.point(x), b.point(x), b.line(x)) {
+            (Some(p), Some(q), _) => Some(DimPlace::Linear(p, q)),
+            // A point and a line: to the foot of the perpendicular.
+            (Some(p), None, Some((l0, l1))) => {
+                let (dx, dy) = (l1[0] - l0[0], l1[1] - l0[1]);
+                let t = ((p[0] - l0[0]) * dx + (p[1] - l0[1]) * dy) / (dx * dx + dy * dy).max(1e-12);
+                Some(DimPlace::Linear(p, [l0[0] + dx * t, l0[1] + dy * t]))
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The `offset` that puts a dimension's line (or arc, or leader) through `at`.
+pub fn offset_through(place: DimPlace, kind: Kind, at: Point) -> f64 {
+    match place {
+        DimPlace::Linear(p, q) => match kind {
+            Kind::DimHorizontal => at[1] - p[1],
+            Kind::DimVertical => at[0] - p[0],
+            _ => {
+                let len = distance(p, q).max(1e-12);
+                let (ux, uy) = ((q[0] - p[0]) / len, (q[1] - p[1]) / len);
+                (at[0] - p[0]) * uy - (at[1] - p[1]) * ux
+            }
+        },
+        DimPlace::Angle(i, ..) => distance(i, at),
+        DimPlace::Circle(c, _) => (at[1] - c[1]).atan2(at[0] - c[0]).to_degrees(),
     }
 }
 

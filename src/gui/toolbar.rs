@@ -4,17 +4,51 @@
 use super::App;
 use super::command::Cmd;
 use super::labels::{fill_help, op_color, op_help, op_label};
-use crate::model::Op;
+use super::glyphs;
+use crate::model::{Kind, Op};
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, RichText, Sense, Stroke, Vec2, pos2, vec2};
 
 const BUTTON: f32 = 34.0;
 const ACCENT: Color32 = Color32::from_rgb(0, 110, 160);
 
 /// The toolbar groups; `None` is the Select button.
-const GROUPS: [(&str, &[Option<Cmd>]); 3] = [
+const GROUPS: [(&str, &[Option<Cmd>]); 5] = [
     ("Draw", &[None, Some(Cmd::Line), Some(Cmd::Pline), Some(Cmd::Rectang), Some(Cmd::Circle), Some(Cmd::Arc), Some(Cmd::Polygon), Some(Cmd::Text), Some(Cmd::DimLinear), Some(Cmd::Dist)]),
     ("Modify", &[Some(Cmd::Move), Some(Cmd::Copy), Some(Cmd::Rotate), Some(Cmd::Scale), Some(Cmd::Mirror), Some(Cmd::Erase), Some(Cmd::Fillet), Some(Cmd::Chamfer), Some(Cmd::Offset), Some(Cmd::Trim), Some(Cmd::Array)]),
     ("Combine", &[Some(Cmd::Union), Some(Cmd::Subtract), Some(Cmd::Intersect)]),
+    (
+        "Constrain",
+        &[
+            Some(Cmd::Constrain(Kind::Coincident)),
+            Some(Cmd::Constrain(Kind::Collinear)),
+            Some(Cmd::Constrain(Kind::Concentric)),
+            Some(Cmd::Constrain(Kind::Fix)),
+            Some(Cmd::Constrain(Kind::Parallel)),
+            Some(Cmd::Constrain(Kind::Perpendicular)),
+            Some(Cmd::Constrain(Kind::Horizontal)),
+            Some(Cmd::Constrain(Kind::Vertical)),
+            Some(Cmd::Constrain(Kind::Tangent)),
+            Some(Cmd::Constrain(Kind::Smooth)),
+            Some(Cmd::Constrain(Kind::Symmetric)),
+            Some(Cmd::Constrain(Kind::Equal)),
+            Some(Cmd::AutoConstrain),
+            Some(Cmd::DelConstraint),
+            Some(Cmd::ConstraintBar),
+        ],
+    ),
+    (
+        "Lock sizes",
+        &[
+            Some(Cmd::DcLinear),
+            Some(Cmd::Constrain(Kind::DimHorizontal)),
+            Some(Cmd::Constrain(Kind::DimVertical)),
+            Some(Cmd::Constrain(Kind::DimAligned)),
+            Some(Cmd::Constrain(Kind::DimAngular)),
+            Some(Cmd::Constrain(Kind::DimRadial)),
+            Some(Cmd::Constrain(Kind::DimDiameter)),
+            Some(Cmd::Parameters),
+        ],
+    ),
 ];
 
 fn help(cmd: Option<Cmd>) -> &'static str {
@@ -44,6 +78,35 @@ fn help(cmd: Option<Cmd>) -> &'static str {
         Cmd::Subtract => "Cut the other selected shapes out of the first one.",
         Cmd::Intersect => "Keep only where the selected shapes overlap.",
         Cmd::Undo | Cmd::Redo => "",
+        Cmd::Constrain(k) => constraint_help(k),
+        Cmd::DcLinear => "Lock the horizontal or vertical distance between two points; drag it to change.",
+        Cmd::AutoConstrain => "Add the constraints the selection already nearly meets (joined ends, level lines, right angles, …).",
+        Cmd::DelConstraint => "Remove every constraint from the selected shapes. They stay where they are.",
+        Cmd::ConstraintBar => "Show or hide the constraint icons (for the selection, or all).",
+        Cmd::Parameters => "List the locked sizes (d1, d2, …) to change their values or link them with formulas.",
+    }
+}
+
+fn constraint_help(k: Kind) -> &'static str {
+    match k {
+        Kind::Coincident => "Join a point to another point, or put it on a line or circle.",
+        Kind::Collinear => "Put two lines on one straight line.",
+        Kind::Concentric => "Give two circles or arcs the same centre.",
+        Kind::Fix => "Lock a point or a line where it is.",
+        Kind::Parallel => "Make the second line parallel to the first.",
+        Kind::Perpendicular => "Make the second line square (90°) to the first.",
+        Kind::Horizontal => "Make a line (or two points) level.",
+        Kind::Vertical => "Make a line (or two points) plumb.",
+        Kind::Tangent => "Let a line or circle touch a circle or arc without crossing it.",
+        Kind::Smooth => "Join two curves end to end without a kink.",
+        Kind::Symmetric => "Mirror two points or shapes over a line.",
+        Kind::Equal => "Give two lines the same length, or two circles the same size.",
+        Kind::DimHorizontal => "Lock the horizontal distance between two points.",
+        Kind::DimVertical => "Lock the vertical distance between two points.",
+        Kind::DimAligned => "Lock a length or the distance between two points.",
+        Kind::DimAngular => "Lock the angle between two lines.",
+        Kind::DimRadial => "Lock the radius of a circle or arc.",
+        Kind::DimDiameter => "Lock the diameter of a circle or arc.",
     }
 }
 
@@ -60,7 +123,11 @@ impl App {
                         None => active.is_none(),
                         Some(c) => active == Some(c),
                     };
-                    let name = cmd.map_or("Select (Esc)".to_string(), |c| format!("{} ({})", title_case(c.name()), c.alias()));
+                    let name = match cmd {
+                        None => "Select (Esc)".to_string(),
+                        Some(c) if c.is_constraint() => format!("{} ({})", c.title(), c.name()),
+                        Some(c) => format!("{} ({})", title_case(c.name()), c.alias()),
+                    };
                     let response = icon_button(ui, on, |p, r, c| paint_icon(p, r, c, cmd)).on_hover_text(format!("{name}\n{}", help(cmd)));
                     if response.clicked() {
                         match cmd {
@@ -318,6 +385,33 @@ fn paint_icon(p: &egui::Painter, r: Rect, c: Color32, cmd: Option<Cmd>) {
             }
         }
         Cmd::Undo | Cmd::Redo => {}
+        Cmd::Constrain(k) => glyphs::paint(p, r, c, k),
+        Cmd::DcLinear => {
+            glyphs::paint(p, r, c, Kind::DimHorizontal);
+            p.text(at(0.5, 0.15), egui::Align2::CENTER_CENTER, "d", egui::FontId::proportional(r.height() * 0.45), c);
+        }
+        Cmd::AutoConstrain => {
+            glyphs::paint(p, Rect::from_min_max(at(0.0, 0.3), at(0.7, 1.0)), c, Kind::Perpendicular);
+            line(&[(0.82, 0.0), (0.82, 0.36)]);
+            line(&[(0.64, 0.18), (1.0, 0.18)]);
+        }
+        Cmd::DelConstraint => {
+            glyphs::paint(p, Rect::from_min_max(at(0.0, 0.0), at(0.7, 0.7)), c, Kind::Parallel);
+            line(&[(0.6, 0.6), (1.0, 1.0)]);
+            line(&[(1.0, 0.6), (0.6, 1.0)]);
+        }
+        Cmd::ConstraintBar => {
+            for x in [0.0, 0.36, 0.72] {
+                p.rect_stroke(Rect::from_min_size(at(x, 0.32), vec2(0.28, 0.36) * r.width()), 1.0, s, egui::StrokeKind::Middle);
+            }
+        }
+        Cmd::Parameters => {
+            p.rect_stroke(Rect::from_min_max(at(0.0, 0.1), at(1.0, 0.9)), 1.0, s, egui::StrokeKind::Middle);
+            for y in [0.37, 0.63] {
+                line(&[(0.0, y), (1.0, y)]);
+            }
+            line(&[(0.4, 0.1), (0.4, 0.9)]);
+        }
     }
 }
 

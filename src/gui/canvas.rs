@@ -46,6 +46,8 @@ impl App {
         };
         self.pointer_mm = pointer;
         self.dropped_files(&ctx, pointer);
+        self.dimension_input(&response);
+        self.settle();
         self.paint(ui, rect, pointer);
     }
 
@@ -252,6 +254,8 @@ impl App {
             let selected = selection.contains(&item.id);
             self.paint_item(ui.ctx(), &painter, &state.images, item, selected, tol);
         }
+        self.paint_dimensions(&painter, &state);
+        self.paint_bars(&painter, &state);
         self.paint_selection(&painter, &state.items, &selection, pointer);
         self.paint_draft(&painter, pointer, tol);
         self.paint_aids(&painter, rect, pointer);
@@ -453,7 +457,7 @@ fn measure_overlay(painter: &egui::Painter, a: Pos2, b: Pos2, wa: Point, wb: Poi
     painter.galley(pos, galley, Color32::WHITE);
 }
 
-fn arrow_head(painter: &egui::Painter, tip: Pos2, from: Pos2, color: Color32) {
+pub(super) fn arrow_head(painter: &egui::Painter, tip: Pos2, from: Pos2, color: Color32) {
     let dir = (tip - from).normalized() * 7.0;
     let side = vec2(-dir.y, dir.x) * 0.4;
     painter.add(egui::Shape::convex_polygon(vec![tip, tip - dir + side, tip - dir - side], color, Stroke::NONE));

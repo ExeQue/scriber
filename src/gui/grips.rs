@@ -101,8 +101,11 @@ pub fn drag_item(shape: &Shape, grip: Grip, at: Point, p: Point) -> Shape {
             }
         }
         (Shape::Path { contours }, Grip::Centre { contour, .. }) => {
-            if let Some(c) = contours.get_mut(contour) {
-                *c = c.transformed(&Transform::translate(dx, dy), [0.0, 0.0]);
+            // To `p` (not by p - at), so it also works on a shape the solver has moved since.
+            if let Some(c) = contours.get_mut(contour)
+                && let Some((m, _)) = circle(c)
+            {
+                *c = c.transformed(&Transform::translate(p[0] - m[0], p[1] - m[1]), [0.0, 0.0]);
             }
         }
         (_, Grip::Move { .. }) => s = s.transformed(&Transform::translate(dx, dy), [0.0, 0.0]),

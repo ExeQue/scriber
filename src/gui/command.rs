@@ -3,6 +3,7 @@
 //! `place_point`), Enter/Space, the right-click menu and the toolbar buttons.
 
 mod card;
+mod constrain;
 mod curves;
 mod dynamic;
 mod context_menu;
@@ -14,7 +15,7 @@ mod preview;
 
 use super::App;
 use super::tools::Tool;
-use crate::model::Point;
+use crate::model::{Kind, Point};
 use eframe::egui::{self, RichText, TextEdit, TextStyle};
 use parse::Entry;
 
@@ -45,10 +46,17 @@ pub enum Cmd {
     Union,
     Subtract,
     Intersect,
+    /// GC* and DC* (DCLINEAR is `DcLinear`): add one constraint.
+    Constrain(Kind),
+    DcLinear,
+    AutoConstrain,
+    DelConstraint,
+    ConstraintBar,
+    Parameters,
 }
 
 /// Name, alias and the canvas tool used while the command asks for points.
-const COMMANDS: [(Cmd, &str, &str, Tool); 25] = [
+const COMMANDS: [(Cmd, &str, &str, Tool); 48] = [
     (Cmd::Line, "LINE", "L", Tool::Line),
     (Cmd::Circle, "CIRCLE", "C", Tool::Circle),
     (Cmd::Arc, "ARC", "A", Tool::Arc),
@@ -74,6 +82,29 @@ const COMMANDS: [(Cmd, &str, &str, Tool); 25] = [
     (Cmd::Union, "UNION", "UNI", Tool::Select),
     (Cmd::Subtract, "SUBTRACT", "SU", Tool::Select),
     (Cmd::Intersect, "INTERSECT", "IN", Tool::Select),
+    (Cmd::Constrain(Kind::Coincident), "GCCOINCIDENT", "GCCOINCIDENT", Tool::Pick),
+    (Cmd::Constrain(Kind::Collinear), "GCCOLLINEAR", "GCCOLLINEAR", Tool::Pick),
+    (Cmd::Constrain(Kind::Concentric), "GCCONCENTRIC", "GCCONCENTRIC", Tool::Pick),
+    (Cmd::Constrain(Kind::Fix), "GCFIX", "GCFIX", Tool::Pick),
+    (Cmd::Constrain(Kind::Parallel), "GCPARALLEL", "GCPARALLEL", Tool::Pick),
+    (Cmd::Constrain(Kind::Perpendicular), "GCPERPENDICULAR", "GCPERPENDICULAR", Tool::Pick),
+    (Cmd::Constrain(Kind::Horizontal), "GCHORIZONTAL", "GCHORIZONTAL", Tool::Pick),
+    (Cmd::Constrain(Kind::Vertical), "GCVERTICAL", "GCVERTICAL", Tool::Pick),
+    (Cmd::Constrain(Kind::Tangent), "GCTANGENT", "GCTANGENT", Tool::Pick),
+    (Cmd::Constrain(Kind::Smooth), "GCSMOOTH", "GCSMOOTH", Tool::Pick),
+    (Cmd::Constrain(Kind::Symmetric), "GCSYMMETRIC", "GCSYMMETRIC", Tool::Pick),
+    (Cmd::Constrain(Kind::Equal), "GCEQUAL", "GCEQUAL", Tool::Pick),
+    (Cmd::DcLinear, "DCLINEAR", "DCLINEAR", Tool::Pick),
+    (Cmd::Constrain(Kind::DimHorizontal), "DCHORIZONTAL", "DCHORIZONTAL", Tool::Pick),
+    (Cmd::Constrain(Kind::DimVertical), "DCVERTICAL", "DCVERTICAL", Tool::Pick),
+    (Cmd::Constrain(Kind::DimAligned), "DCALIGNED", "DCALIGNED", Tool::Pick),
+    (Cmd::Constrain(Kind::DimAngular), "DCANGULAR", "DCANGULAR", Tool::Pick),
+    (Cmd::Constrain(Kind::DimRadial), "DCRADIUS", "DCRADIUS", Tool::Pick),
+    (Cmd::Constrain(Kind::DimDiameter), "DCDIAMETER", "DCDIAMETER", Tool::Pick),
+    (Cmd::AutoConstrain, "AUTOCONSTRAIN", "AUTOCONSTRAIN", Tool::Select),
+    (Cmd::DelConstraint, "DELCONSTRAINT", "DELCON", Tool::Select),
+    (Cmd::ConstraintBar, "CONSTRAINTBAR", "CBAR", Tool::Select),
+    (Cmd::Parameters, "PARAMETERS", "PAR", Tool::Select),
 ];
 
 impl Cmd {
@@ -94,6 +125,16 @@ impl Cmd {
 
     pub fn name(self) -> &'static str {
         self.row().1
+    }
+
+    /// Plain-language name for buttons and menus.
+    pub fn title(self) -> &'static str {
+        card::title(self)
+    }
+
+    /// For constraint commands: a constraint command (its tooltip names the AutoCAD command).
+    pub fn is_constraint(self) -> bool {
+        self.constrains()
     }
 
     pub fn alias(self) -> &'static str {
@@ -133,6 +174,10 @@ enum Step {
     Side,
     /// Selecting the objects for ARRAY or a boolean.
     Choose,
+    /// Constraints: clicking the geometry, then where a dimension goes, then its value (free text).
+    Constrain,
+    Location,
+    Expr,
 }
 
 pub struct CommandLine {
@@ -153,6 +198,7 @@ pub struct CommandLine {
     /// Measurements on the command card (radius, length and angle, …).
     dynamic: dynamic::DynInput,
     circle_mode: curves::CircleMode,
+    constrain: constrain::ConstrainState,
     /// ROTATE angle and SCALE factor as set on the command card.
     card_angle: f64,
     card_factor: f64,
@@ -173,12 +219,13 @@ impl CommandLine {
             arc_mode: curves::ArcMode::default(),
             dynamic: dynamic::DynInput::default(),
             circle_mode: curves::CircleMode::default(),
+            constrain: constrain::ConstrainState::default(),
             card_angle: 90.0,
             card_factor: 2.0,
         }
     }
 
-    fn log(&mut self, line: impl Into<String>) {
+    pub(in crate::gui) fn log(&mut self, line: impl Into<String>) {
         self.history.push(line.into());
         if self.history.len() > 200 {
             self.history.remove(0);
@@ -217,6 +264,7 @@ impl App {
             }
             c if c.edits() => self.start_edit(c),
             c if c.modifies() => self.start_modify(c),
+            c if c.constrains() => self.start_constrain(c),
             Cmd::Polygon => self.begin(cmd, Step::Sides),
             _ => self.begin(cmd, Step::Draw),
         }
@@ -266,7 +314,7 @@ impl App {
 
     /// The prompt asks for free text, so Space types a space instead of acting as Enter.
     pub(super) fn takes_text(&self) -> bool {
-        matches!(self.cmdline.active, Some((_, Step::Content)))
+        matches!(self.cmdline.active, Some((_, Step::Content | Step::Expr)))
     }
 
     fn last_point(&self) -> Option<Point> {
@@ -290,7 +338,10 @@ impl App {
         }
         self.cmdline.log(format!("{} {text}", self.prompt()).trim_end());
         if self.takes_text() {
-            return self.enter_text(text);
+            return match self.cmdline.active {
+                Some((_, Step::Expr)) => self.enter_value(&text),
+                _ => self.enter_text(text),
+            };
         }
         match parse::parse(&text, self.last_point()) {
             Ok(entry) => self.answer(entry, pointer),
@@ -322,6 +373,7 @@ impl App {
         let result = match step {
             Step::Select | Step::Base | Step::Second | Step::EraseSource => self.edit_step(cmd, step, entry, pointer),
             Step::Value | Step::Pick | Step::Side | Step::Choose => self.modify_step(cmd, step, entry, pointer),
+            Step::Constrain | Step::Location | Step::Expr => self.constrain_step(cmd, step, entry),
             _ => self.draw_step(cmd, step, entry, pointer),
         };
         if let Err(e) = result {
@@ -333,6 +385,9 @@ impl App {
         let Some((cmd, step)) = self.cmdline.active else { return "Command:".into() };
         if cmd.modifies() {
             return self.modify_prompt(cmd, step);
+        }
+        if cmd.constrains() {
+            return self.constrain_prompt(cmd, step);
         }
         let n = self.draft.len();
         let text = match (step, cmd) {
@@ -351,7 +406,7 @@ impl App {
             (Step::Second, _) => "Specify second point:",
             (Step::EraseSource, _) => "Erase source objects? [Yes/No] <No>:",
             (Step::Draw, _) => self.curve_prompt(cmd, n).unwrap_or_else(|| draw::prompt(cmd, n)),
-            (Step::Value | Step::Pick | Step::Side | Step::Choose, _) => "",
+            (Step::Value | Step::Pick | Step::Side | Step::Choose | Step::Constrain | Step::Location | Step::Expr, _) => "",
         };
         text.into()
     }
@@ -379,6 +434,8 @@ mod tests {
         assert_eq!(Cmd::find("rec"), Some(Cmd::Rectang));
         assert_eq!(Cmd::find("Line"), Some(Cmd::Line));
         assert_eq!(Cmd::find("DLI"), Some(Cmd::DimLinear));
+        assert_eq!(Cmd::find("gcparallel"), Some(Cmd::Constrain(Kind::Parallel)));
+        assert_eq!(Cmd::find("PAR"), Some(Cmd::Parameters));
         assert_eq!(Cmd::find("nope"), None);
         assert_eq!(Cmd::for_tool(Tool::Polyline), Some(Cmd::Pline));
         assert_eq!(Cmd::for_tool(Tool::Select), None);

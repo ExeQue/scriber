@@ -19,7 +19,6 @@ mod solve;
 #[cfg(test)]
 mod tests;
 
-pub use doc::ConstraintInfo;
 pub(crate) use doc::freeze_orphans;
 pub use solve::parameter_values;
 

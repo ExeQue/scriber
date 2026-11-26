@@ -145,6 +145,7 @@ impl App {
                 });
             }
             (Cmd::Array, Step::Value) => self.array_fields(ui),
+            (c, _) if c.constrains() => self.constrain_fields(ui, c, step),
             _ => {}
         }
     }
@@ -249,6 +250,7 @@ pub(super) fn title(cmd: Cmd) -> &'static str {
         Cmd::Union => "Merge shapes",
         Cmd::Subtract => "Cut out",
         Cmd::Intersect => "Keep the overlap",
+        c => super::constrain::constrain_title(c),
     }
 }
 
@@ -258,6 +260,7 @@ pub(super) fn next_label(cmd: Cmd, step: Step) -> &'static str {
         Step::Select | Step::Choose => "Done selecting",
         Step::Value | Step::Sides | Step::Fillet | Step::Height => "Next",
         Step::Content => "Place text",
+        Step::Expr => "Apply",
         Step::EraseSource => "Keep the original",
         _ if matches!(cmd, Cmd::Line | Cmd::Pline | Cmd::Copy | Cmd::Fillet | Cmd::Chamfer | Cmd::Offset | Cmd::Trim) => "Done",
         _ => "Finish",
