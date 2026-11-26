@@ -28,7 +28,8 @@ gets the file's name; rename it afterwards.
 - Cut (xTool "vector cutting"), score ("vector engraving") and engrave ("fill engraving", with its
   density as lines per cm). Image (bitmap) engraving settings are skipped.
 - One setting per laser module and operation; when xTool has several variants, its default one.
-- Only machines Scriber has a profile for (now: xTool M2). Others are listed but cannot be imported yet.
+- Only machines in your library with an xTool device code (all built-in xTool machines). Others are
+  listed but cannot be imported.
 - The material's `source` says where it came from and when. Importing the same xTool material again
   adds a copy, unless you tick "Replace materials imported … before" (agents: `overwrite: true`).
 
