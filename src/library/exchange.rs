@@ -18,6 +18,9 @@ pub struct Bundle {
     pub machines: Vec<Machine>,
     #[serde(default)]
     pub materials: Vec<Material>,
+    /// Files of a library zip that could not be read (not in `.scrlib` files).
+    #[serde(skip)]
+    pub invalid: Vec<String>,
 }
 
 /// What to do when an imported machine or material has the id of a different one already in the library.
@@ -39,6 +42,8 @@ pub struct Report {
     pub unchanged: Vec<String>,
     /// Machines that settings refer to but neither the file nor the library has; those settings are kept.
     pub missing_machines: Vec<String>,
+    /// Files of a library zip that were skipped, and why.
+    pub invalid: Vec<String>,
 }
 
 /// The chosen machines and materials (both None: everything), plus the machines the materials' settings use.
@@ -58,14 +63,19 @@ pub fn bundle(lib: &Library, machines: Option<&[String]>, materials: Option<&[St
         }
     }
     let machines = ids.iter().map(|id| lib.machine(id).cloned().ok_or(format!("no machine with id {id}"))).collect::<Result<_, _>>()?;
-    Ok(Bundle { format: FORMAT.into(), version: VERSION, machines, materials: mats })
+    Ok(Bundle { format: FORMAT.into(), version: VERSION, machines, materials: mats, invalid: Vec::new() })
 }
 
 pub fn write(b: &Bundle, path: &Path) -> Result<(), String> {
     std::fs::write(path, serde_json::to_string_pretty(b).unwrap()).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// A `.scrlib` file, or a library zip (`.zip`: the library repository layout).
 pub fn read(path: &Path) -> Result<Bundle, String> {
+    if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
+        let repo = super::sources::read_zip(path)?;
+        return Ok(Bundle { format: FORMAT.into(), version: VERSION, machines: repo.machines, materials: repo.materials, invalid: repo.problems });
+    }
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let b: Bundle = serde_json::from_str(&text).map_err(|e| format!("{} is not a Scriber library file: {e}", path.display()))?;
     if b.format != FORMAT {
@@ -84,7 +94,7 @@ pub fn conflicts(lib: &Library, b: &Bundle) -> usize {
 
 /// Merge the bundle into the library. Machines go first, so a renamed machine's materials follow it.
 pub fn import(lib: &mut Library, b: Bundle, on: OnConflict) -> Report {
-    let mut r = Report::default();
+    let mut r = Report { invalid: b.invalid, ..Report::default() };
     let mut renamed: HashMap<String, String> = HashMap::new();
     for mut m in b.machines {
         match lib.machine(&m.id) {
@@ -153,6 +163,9 @@ impl Report {
             parts.push("nothing to import".into());
         }
         let mut s = parts.join(", ");
+        if !self.invalid.is_empty() {
+            s += &format!("; {} invalid file(s) skipped: {}", self.invalid.len(), self.invalid.join("; "));
+        }
         if !self.missing_machines.is_empty() {
             s += &format!("; settings kept for machines you do not have: {}", self.missing_machines.join(", "));
         }
@@ -211,7 +224,7 @@ mod tests {
         let mut mat = lib.materials[0].clone();
         mat.id = "new-one".into();
         mat.settings.iter_mut().for_each(|s| s.machine = "k40".into());
-        let b = Bundle { format: FORMAT.into(), version: VERSION, machines: vec![], materials: vec![mat.clone()] };
+        let b = Bundle { format: FORMAT.into(), version: VERSION, machines: vec![], materials: vec![mat.clone()], invalid: Vec::new() };
         let r = import(&mut lib, b, OnConflict::Skip);
         assert_eq!(r.missing_machines, ["k40"]);
         assert_eq!(lib.material("new-one").unwrap().settings, mat.settings);

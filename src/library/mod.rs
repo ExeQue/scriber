@@ -5,6 +5,7 @@
 mod machines;
 mod materials;
 pub mod exchange;
+pub mod sources;
 pub mod store;
 pub mod xtool;
 
@@ -25,6 +26,52 @@ pub struct Library {
     /// Built-in machines and materials the user deleted (so they do not come back).
     pub removed_machines: Vec<String>,
     pub removed_materials: Vec<String>,
+    /// What the user's library sits on: built-ins and subscribed sources. Never saved.
+    pub base: Base,
+}
+
+/// Where a machine or material comes from. Not saved: worked out from the base on every load.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Origin {
+    /// The user's own, or their edit of a built-in.
+    #[default]
+    User,
+    Builtin,
+    /// A subscribed library repository (read-only; duplicate it to change it).
+    Source { id: String, name: String },
+}
+
+impl Origin {
+    pub fn is_source(&self) -> bool {
+        matches!(self, Origin::Source { .. })
+    }
+
+    /// "from <source name>" for people; empty for the user's own and built-ins.
+    pub fn label(&self) -> String {
+        match self {
+            Origin::Source { name, .. } => format!("from {name}"),
+            _ => String::new(),
+        }
+    }
+}
+
+/// Built-in machines and materials with the enabled sources' on top, each with its origin.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Base {
+    pub machines: Vec<(Origin, Machine)>,
+    pub materials: Vec<(Origin, Material)>,
+    /// Id clashes between sources and files that could not be read, for people.
+    pub problems: Vec<String>,
+}
+
+impl Base {
+    pub fn builtin() -> Self {
+        Base {
+            machines: builtin_machines().into_iter().map(|m| (Origin::Builtin, m)).collect(),
+            materials: builtin_materials().into_iter().map(|m| (Origin::Builtin, m)).collect(),
+            problems: Vec::new(),
+        }
+    }
 }
 
 fn parse_all<T: serde::de::DeserializeOwned>(files: &[(&str, &str)]) -> Vec<T> {
@@ -81,16 +128,25 @@ impl Library {
 
     pub fn remove_machine(&mut self, id: &str) {
         self.machines.retain(|m| m.id != id);
-        if builtin_machines().iter().any(|m| m.id == id) {
+        if self.base.machines.iter().any(|(_, m)| m.id == id) {
             self.removed_machines.push(id.into());
         }
     }
 
     pub fn remove_material(&mut self, id: &str) {
         self.materials.retain(|m| m.id != id);
-        if builtin_materials().iter().any(|m| m.id == id) {
+        if self.base.materials.iter().any(|(_, m)| m.id == id) {
             self.removed_materials.push(id.into());
         }
+    }
+
+    /// Where the machine comes from: the base's origin while it is unchanged, else the user's.
+    pub fn machine_origin(&self, id: &str) -> Origin {
+        origin(&self.base.machines, self.machine(id))
+    }
+
+    pub fn material_origin(&self, id: &str) -> Origin {
+        origin(&self.base.materials, self.material(id))
     }
 
     pub fn check(&self) -> Result<(), String> {
@@ -105,6 +161,10 @@ impl Library {
         let taken = |id: &str| self.machine(id).is_some() || self.material(id).is_some();
         (1..).map(|n| if n == 1 { base.clone() } else { format!("{base}-{n}") }).find(|id| !taken(id)).unwrap()
     }
+}
+
+fn origin<T: PartialEq>(base: &[(Origin, T)], item: Option<&T>) -> Origin {
+    item.and_then(|i| base.iter().find(|(_, b)| b == i)).map(|(o, _)| o.clone()).unwrap_or_default()
 }
 
 fn put<T>(list: &mut Vec<T>, item: T, id: fn(&T) -> &String) {
@@ -131,6 +191,13 @@ pub fn update<T>(f: impl FnOnce(&mut Library) -> Result<T, String>) -> Result<T,
     store::save(&lib, &store::path()).map_err(|e| format!("could not save the library: {e}"))?;
     *get() = lib;
     Ok(out)
+}
+
+/// Read the subscribed sources again (after a sync, subscribe, unsubscribe or toggle); the user's part stays.
+pub fn reload_sources() {
+    let base = sources::base();
+    let mut lib = get();
+    *lib = store::rebase(&lib, base);
 }
 
 /// The settings to use for an operation, for exporters (e.g. a future xTool `.xs` export).

@@ -24,6 +24,7 @@ tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "io-util", "
 toml_edit = "0.25.21"
 skrifa = "0.49.0"
 tower-service = "0.3"
+ureq = { version = "=3.5.2", default-features = false, features = ["rustls"] }
 uuid = { version = "1.29.3", features = ["v4"] }
 zip = "9.8.2"
 

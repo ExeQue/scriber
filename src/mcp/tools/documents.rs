@@ -36,6 +36,12 @@ const GLOBAL: &[&str] = &[
     "import_xtool_project",
     "export_library",
     "import_library",
+    "list_library_sources",
+    "subscribe_library",
+    "sync_library_sources",
+    "set_library_source",
+    "unsubscribe_library",
+    "export_library_repository",
 ];
 
 const DOCUMENT_HELP: &str = "The open document to work on (id from list_documents); missing = the active tab, the one the person sees.";

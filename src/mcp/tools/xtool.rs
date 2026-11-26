@@ -46,7 +46,7 @@ pub struct ImportXs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ExportLibrary {
-    /// Where to write the library file (.scrlib).
+    /// Where to write the library file: .scrlib, or .zip for a library zip (your own items only).
     pub path: PathBuf,
     /// Machine ids; with both lists missing everything is exported.
     pub machines: Option<Vec<String>>,
@@ -56,6 +56,7 @@ pub struct ExportLibrary {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ImportLibrary {
+    /// A .scrlib file or a library zip (.zip).
     pub path: PathBuf,
     /// For a machine or material whose id is taken by a different one.
     pub on_conflict: exchange::OnConflict,
@@ -148,8 +149,14 @@ impl Server {
         }
     }
 
-    #[tool(description = "Save machines and materials to a Scriber library file (.scrlib) to share with other Scriber users. Both lists missing = the whole library; the machines the materials' settings use are included.")]
+    #[tool(description = "Save machines and materials to a Scriber library file to share with other Scriber users. A path ending in .scrlib: one JSON file; both lists missing = the whole library, and the machines the materials' settings use are included. A path ending in .zip: a library zip (.scriber.json and .scriber/machines|materials/<id>.json, the layout of a library repository) with only the user's own machines and materials (never built-ins or sources' items; both lists missing = all of them).")]
     fn export_library(&self, Parameters(p): Parameters<ExportLibrary>) -> ToolResult {
+        if p.path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
+            return match library::sources::export_zip(&library::get(), &p.path, p.machines.as_deref(), p.materials.as_deref()) {
+                Ok((machines, materials)) => ok(json!({"path": p.path, "machines": machines, "materials": materials})),
+                Err(e) => fail(e),
+            };
+        }
         let b = match exchange::bundle(&library::get(), p.machines.as_deref(), p.materials.as_deref()) {
             Ok(b) => b,
             Err(e) => return fail(e),
@@ -160,7 +167,7 @@ impl Server {
         }
     }
 
-    #[tool(description = "Merge a Scriber library file (.scrlib) into the user's library. on_conflict (replace / keep_both / skip) decides for ids taken by a different machine or material; keep_both gives the import a new id. Reports added, replaced, skipped and machines the settings need that the user does not have.")]
+    #[tool(description = "Merge a Scriber library file (.scrlib, or a library zip .zip with .scriber.json and .scriber/machines|materials/ at its root or in one top folder; invalid files in it are skipped and reported) into the user's library. on_conflict (replace / keep_both / skip) decides for ids taken by a different machine or material; keep_both gives the import a new id. Reports added, replaced, skipped and machines the settings need that the user does not have.")]
     fn import_library(&self, Parameters(p): Parameters<ImportLibrary>) -> ToolResult {
         let b = match exchange::read(&p.path) {
             Ok(b) => b,

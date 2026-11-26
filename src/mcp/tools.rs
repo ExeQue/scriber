@@ -19,6 +19,7 @@ mod editing;
 mod items_file;
 mod laser;
 mod layers;
+mod library_sources;
 mod reply;
 mod xtool;
 
@@ -36,6 +37,7 @@ Start with get_document; it includes the user's current selection, and tools tha
 Mirrored copy: transform_items with mirror_x/mirror_y and copy: true. boolean keeps the first item's layer (and so its op). import_svg maps colours to ops (shapes with neither fill nor stroke, or a grey or green fill, come in as no_output, useful as boolean cutters) and says which SVG element (svg_id, element index) each item came from.
 Laser settings: list_machines and list_materials show the user's machines and material library; set_laser_setup picks the document's machine, laser module and material, and get_laser_setup returns the power/speed/passes to use per operation and per layer. Before the user lasers, run preflight_check and look at export_png with preview: true.
 Import and share: search_xtool_materials and import_xtool_materials copy settings from xTool Studio's local material cache (only materials the user opened there), import_xtool_project from an .xs project; export_library and import_library write and merge .scrlib files for other Scriber users.
+Library sources: people can subscribe to machine and material libraries published in public GitHub repositories (subscribe_library with owner/repo or a URL, and optionally a track: a branch, a tag, the latest release or a fixed commit). Their machines and materials are read-only in the library (saving one with the same id makes the user's own copy, which wins). The editor syncs them at start at most once a day; sync_library_sources syncs now and says what changed. list_library_sources, set_library_source (track, enabled) and unsubscribe_library (ask first) manage them; export_library_repository writes the user's own items as a repository folder to publish.
 Review comments: the person can pin comments on the canvas (on a spot or on shapes) to tell you what to change. To follow a review, loop: wait_for_annotations (pass the revision from its last reply) blocks until the person comments, replies or reopens one, then act on each comment, and answer with reply_annotation (resolve: true when it is done, saying what you changed; ask in a reply when unsure). list_annotations shows them all (status: open for the open ones); add_annotation leaves a note for the person. Comments are not lasered, exported or undone with undo.";
 
 // ---------- parameters ----------
@@ -498,7 +500,7 @@ pub(super) fn fail(msg: impl std::fmt::Display) -> ToolResult {
 impl Server {
     pub fn new(ws: Workspace, repaint: Arc<dyn Fn() + Send + Sync>) -> Self {
         let (id, doc) = ws.active();
-        Self { doc, id, ws, repaint, tool_router: Self::tool_router() + Self::constraint_router() + Self::laser_router() + Self::editing_router() + Self::layers_router() + Self::xtool_router() + Self::annotations_router() + Self::documents_router() }
+        Self { doc, id, ws, repaint, tool_router: Self::tool_router() + Self::constraint_router() + Self::laser_router() + Self::editing_router() + Self::layers_router() + Self::xtool_router() + Self::sources_router() + Self::annotations_router() + Self::documents_router() }
     }
 
     /// Run `f` on the locked document, then repaint the GUI.

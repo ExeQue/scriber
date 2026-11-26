@@ -1,7 +1,7 @@
 //! The library file: `<config>/scriber/library.json` (or `$SCRIBER_LIBRARY`). It holds only what the user
 //! added or changed; unchanged built-ins always come fresh from the app, so fixes to them reach the user.
 
-use super::{Library, Machine, Material, builtin_machines, builtin_materials};
+use super::{Base, Library, Machine, Material, builtin_machines};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -25,34 +25,47 @@ pub struct LibraryFile {
 pub fn path() -> PathBuf {
     match std::env::var_os("SCRIBER_LIBRARY") {
         Some(p) => p.into(),
-        None => dirs::config_dir().unwrap_or_default().join("scriber").join("library.json"),
+        None => super::sources::config_dir().join("library.json"),
     }
 }
 
 /// Built-ins (minus the deleted ones) with the user's machines and materials on top; the user's win.
 pub fn merged(file: LibraryFile) -> Library {
-    fn layer<T>(builtin: Vec<T>, user: Vec<T>, removed: &[String], id: fn(&T) -> &String) -> Vec<T> {
-        let mut out: Vec<T> = builtin.into_iter().filter(|b| !removed.contains(id(b))).collect();
+    merged_with(file, Base::builtin())
+}
+
+/// The base (built-ins < sources) minus the deleted ones, with the user's machines and materials on top.
+pub fn merged_with(file: LibraryFile, base: Base) -> Library {
+    fn layer<T: Clone>(base: &[(super::Origin, T)], user: Vec<T>, removed: &[String], id: fn(&T) -> &String) -> Vec<T> {
+        let mut out: Vec<T> = base.iter().map(|(_, b)| b).filter(|b| !removed.contains(id(b))).cloned().collect();
         for u in user {
             super::put(&mut out, u, id);
         }
         out
     }
     Library {
-        machines: layer(builtin_machines(), file.machines, &file.removed_machines, |m| &m.id),
-        materials: layer(builtin_materials(), file.materials, &file.removed_materials, |m| &m.id),
+        machines: layer(&base.machines, file.machines, &file.removed_machines, |m| &m.id),
+        materials: layer(&base.materials, file.materials, &file.removed_materials, |m| &m.id),
         removed_machines: file.removed_machines,
         removed_materials: file.removed_materials,
+        base,
     }
 }
 
-/// What goes into the file: everything that is not an unchanged built-in.
-fn user_part(lib: &Library) -> LibraryFile {
-    let (machines, materials) = (builtin_machines(), builtin_materials());
+/// The same user part on a new base (sources changed).
+pub fn rebase(lib: &Library, base: Base) -> Library {
+    merged_with(user_part(lib), base)
+}
+
+/// What goes into the file: everything that is not an unchanged built-in or source item.
+pub fn user_part(lib: &Library) -> LibraryFile {
+    fn unchanged<T: PartialEq>(base: &[(super::Origin, T)], x: &T) -> bool {
+        base.iter().any(|(_, b)| b == x)
+    }
     LibraryFile {
         version: VERSION,
-        machines: lib.machines.iter().filter(|m| !machines.contains(m)).cloned().collect(),
-        materials: lib.materials.iter().filter(|m| !materials.contains(m)).cloned().collect(),
+        machines: lib.machines.iter().filter(|m| !unchanged(&lib.base.machines, *m)).cloned().collect(),
+        materials: lib.materials.iter().filter(|m| !unchanged(&lib.base.materials, *m)).cloned().collect(),
         removed_machines: lib.removed_machines.clone(),
         removed_materials: lib.removed_materials.clone(),
     }
@@ -68,7 +81,7 @@ pub fn load(path: &Path) -> anyhow::Result<Library> {
     anyhow::ensure!(file.version <= VERSION, "the library was saved by a newer Scriber (version {}); please update", file.version);
     migrate_engrave(&mut file);
     fill_xtool_ids(&mut file);
-    Ok(merged(file))
+    Ok(merged_with(file, super::sources::base()))
 }
 
 /// Edited built-in machines saved before the xTool ids existed get them from the built-in.
