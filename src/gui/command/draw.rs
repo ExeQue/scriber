@@ -117,6 +117,7 @@ impl App {
             self.finish_draft(true);
             return;
         }
+        self.note_snap(p);
         self.draft.push(p);
         let needed = self.active_cmd().and_then(|c| self.curve_points(c)).unwrap_or(self.tool.points());
         if needed > 0 && self.draft.len() >= needed {
@@ -169,9 +170,10 @@ impl App {
             return self.end();
         }
         let (op, fill) = if self.tool == Tool::Dimension { (Op::Annotate, false) } else { (self.new_op, self.new_fill) };
-        self.create(name, op, fill, shape);
+        let id = self.create(name, op, fill, shape);
+        self.infer_drawn(id, &pts);
         match self.tool {
-            Tool::Line => self.draft = vec![pts[pts.len() - 1]],
+            Tool::Line => self.chain_from(id, pts[pts.len() - 1]),
             _ => self.end(),
         }
     }

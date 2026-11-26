@@ -1,5 +1,5 @@
-//! The parameters window (AutoCAD's PARAMETERS) and the same rows in the properties panel: each
-//! dimensional constraint's name, expression and value, editable. A change drives the geometry.
+//! The parameters window (AutoCAD's PARAMETERS): each dimensional constraint's name, expression
+//! and value, editable. A change drives the geometry.
 
 use super::App;
 use crate::model::constraints::expr::fmt_num;
@@ -17,7 +17,7 @@ pub enum ParamChange {
 }
 
 /// One editable field; returns the new text when an edit is finished (Enter or leaving the field).
-fn field(ui: &mut egui::Ui, edit: &mut ParamEdit, id: u64, name: bool, current: &str, width: f32) -> Option<String> {
+pub(super) fn field(ui: &mut egui::Ui, edit: &mut ParamEdit, id: u64, name: bool, current: &str, width: f32) -> Option<String> {
     let mut text = match edit {
         Some((i, f, t)) if *i == id && *f == name => t.clone(),
         _ => current.to_string(),
@@ -33,12 +33,12 @@ fn field(ui: &mut egui::Ui, edit: &mut ParamEdit, id: u64, name: bool, current: 
     None
 }
 
-/// Rows for the dimensional constraints (on `item` only, when given). Returns a finished change.
-pub fn parameter_rows(ui: &mut egui::Ui, edit: &mut ParamEdit, s: &State, item: Option<u64>) -> Option<ParamChange> {
+/// Rows for the dimensional constraints. Returns a finished change.
+pub fn parameter_rows(ui: &mut egui::Ui, edit: &mut ParamEdit, s: &State) -> Option<ParamChange> {
     let values = parameter_values(s).unwrap_or_default();
     let mut change = None;
-    let dims = s.constraints.iter().filter(|c| c.kind.is_dimension() && item.is_none_or(|i| c.refs.iter().any(|r| r.item() == i)));
-    egui::Grid::new(("params", item)).num_columns(4).spacing([6.0, 4.0]).show(ui, |ui| {
+    let dims = s.constraints.iter().filter(|c| c.kind.is_dimension());
+    egui::Grid::new("params").num_columns(4).spacing([6.0, 4.0]).show(ui, |ui| {
         ui.label(RichText::new("Name").weak());
         ui.label(RichText::new("Expression").weak());
         ui.label(RichText::new("Value").weak());
@@ -70,7 +70,7 @@ impl App {
                 ui.label("No locked sizes yet. Use the Lock sizes buttons (DCLINEAR, DCRADIUS, …) to add some.");
                 return;
             }
-            change = parameter_rows(ui, &mut self.param_edit, &s, None);
+            change = parameter_rows(ui, &mut self.param_edit, &s);
             ui.label(RichText::new("Values are mm (degrees for angles). An expression can use other names: d1 / 2 + 3.").small().weak());
         });
         self.show_parameters = open;

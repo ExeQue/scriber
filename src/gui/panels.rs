@@ -89,6 +89,8 @@ impl App {
         let mut action = None;
         let mut param_change = None;
         let param_edit = &mut self.param_edit;
+        let hot = &mut self.hot_constraint;
+        *hot = None;
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             match sel.as_slice() {
@@ -119,12 +121,6 @@ impl App {
                     });
                     ui.separator();
                     changed |= shape_editor(ui, &mut item.shape);
-                    if d.s.constraints.iter().any(|c| c.kind.is_dimension() && c.refs.iter().any(|r| r.item() == *id)) {
-                        ui.separator();
-                        ui.label(RichText::new("Locked sizes").strong()).on_hover_text("Dimensional constraints: change a value and the shape follows.");
-                        let state = d.s.clone();
-                        param_change = super::parameters::parameter_rows(ui, param_edit, &state, Some(*id));
-                    }
                     let item = d.item_mut(*id).unwrap();
                     ui.separator();
                     ui.label("Note");
@@ -160,6 +156,11 @@ impl App {
                         metrics_ui(ui, b, len, None);
                     }
                 }
+            }
+            if !sel.is_empty() && d.s.constraints.iter().any(|c| c.refs.iter().any(|r| sel.contains(&r.item()))) {
+                ui.separator();
+                let state = d.s.clone();
+                param_change = super::constraint_list::constraint_rows(ui, param_edit, &state, &sel, hot);
             }
             if !sel.is_empty() {
                 ui.separator();

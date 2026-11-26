@@ -13,7 +13,29 @@ impl App {
         ui.set_min_width(190.0);
         match self.cmdline.active {
             Some((cmd, step)) => self.command_menu(ui, cmd, step),
-            None => self.idle_menu(ui),
+            None => match self.menu_constraint {
+                Some(id) => self.constraint_menu_for(ui, id),
+                None => self.idle_menu(ui),
+            },
+        }
+    }
+
+    /// A right-click on a badge or dimension label opens its menu; on a shape (with no command
+    /// running) it selects that shape, so "Add constraint" applies to it. With one other shape
+    /// selected, both stay selected.
+    pub(in crate::gui) fn right_click(&mut self, at: egui::Pos2) {
+        self.menu_constraint = self.constraint_at(at);
+        if self.menu_constraint.is_some() || self.cmdline.active.is_some() {
+            return;
+        }
+        let mut d = self.doc.lock().unwrap();
+        let Some(id) = self.hit(&d, self.s2w(at)) else { return };
+        if !d.selection.contains(&id) {
+            if d.selection.len() == 1 {
+                d.selection.push(id);
+            } else {
+                d.selection = vec![id];
+            }
         }
     }
 

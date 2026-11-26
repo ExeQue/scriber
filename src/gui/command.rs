@@ -9,6 +9,7 @@ mod dynamic;
 mod context_menu;
 mod draw;
 mod edit;
+mod infer;
 mod modify;
 mod parse;
 mod preview;
@@ -277,6 +278,7 @@ impl App {
         self.cmdline.active = Some((cmd, step));
         self.tool = cmd.tool();
         self.draft.clear();
+        self.draft_links.clear();
     }
 
     fn set_step(&mut self, step: Step) {
@@ -290,6 +292,7 @@ impl App {
         self.cmdline.active = None;
         self.tool = Tool::Select;
         self.draft.clear();
+        self.draft_links.clear();
     }
 
     pub(super) fn cancel(&mut self) {

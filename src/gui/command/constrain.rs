@@ -107,7 +107,10 @@ impl App {
                     self.answer(Entry::Empty, None);
                 }
             }
-            _ => self.begin(cmd, Step::Constrain),
+            _ => {
+                self.begin(cmd, Step::Constrain);
+                self.constrain_selection(cmd);
+            }
         }
     }
 
@@ -325,5 +328,6 @@ impl App {
     }
 }
 
+mod selected;
 #[cfg(test)]
 mod tests;

@@ -1,6 +1,7 @@
 //! The MCP tools: one per document command, mirroring what the GUI can do.
 
 use crate::export;
+use crate::model::constraints::attach;
 use crate::model::{BoolOp, Contour, Document, Op, Shape, Shared, Transform, text};
 use base64::Engine;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
@@ -109,6 +110,10 @@ pub struct AddItems {
     pub items: Vec<NewItem>,
     /// Select the new items in the GUI (default true).
     pub select: Option<bool>,
+    /// Join the new items to what they touch, as drawing in the GUI does (INFER): coincident on
+    /// ends and centres within 1e-6 mm of another item's, concentric for shared arc centres.
+    /// Default false.
+    pub infer: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -480,7 +485,12 @@ impl Server {
             if p.select.unwrap_or(true) {
                 d.selection = ids.clone();
             }
-            ok(json!({"ids": ids}))
+            let mut inferred = 0;
+            if p.infer.unwrap_or(false) {
+                let found: Vec<_> = ids.iter().flat_map(|id| attach::link_constraints(&d.s, *id, &attach::touching(&d.s, *id))).collect();
+                inferred = d.infer_new(found);
+            }
+            ok(json!({"ids": ids, "inferred_constraints": inferred}))
         })
     }
 

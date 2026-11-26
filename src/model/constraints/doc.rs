@@ -157,6 +157,24 @@ impl Document {
         ids
     }
 
+    /// Add constraints inferred for new geometry (INFER) and settle. When they cannot all hold
+    /// together they are all dropped and the geometry stays as drawn. Returns how many were added.
+    pub fn infer_new(&mut self, found: Vec<(Kind, Vec<Ref>)>) -> usize {
+        if found.is_empty() || self.settle(false).is_err() {
+            return 0;
+        }
+        let before = self.s.clone();
+        let n = found.into_iter().filter(|(kind, refs)| self.add_constraint(*kind, refs.clone()).is_ok()).count();
+        if n > 0 && self.settle(true).is_err() {
+            self.s = before;
+            self.solved = None;
+            self.hold.clear();
+            self.touch();
+            return 0;
+        }
+        n
+    }
+
     /// Solve after a change (see the module doc). On failure the change is undone and the error returned;
     /// `explain` names the conflicting constraints (slower; off while dragging).
     pub fn settle(&mut self, explain: bool) -> Result<(), String> {

@@ -2,7 +2,7 @@
 //! POLAR tracking, the status-bar toggles, and the AutoCAD-style snap markers.
 
 use crate::model::geom::{arc_params, distance};
-use crate::model::{Item, Point, Shape};
+use crate::model::{Item, Kind as Constraint, Point, Ref, Shape};
 use eframe::egui::{self, Color32, Key, Pos2, Stroke, pos2, vec2};
 use std::f64::consts::{FRAC_PI_2, TAU};
 
@@ -12,6 +12,8 @@ pub struct Aids {
     pub ortho: bool,
     pub osnap: bool,
     pub polar: bool,
+    /// INFER: constraints from the snaps used while drawing.
+    pub infer: bool,
     /// The object snap the pointer locked to.
     pub hit: Option<Snap>,
     /// POLAR tracking: the ray from the last point and the point on it.
@@ -20,7 +22,7 @@ pub struct Aids {
 
 impl Default for Aids {
     fn default() -> Self {
-        Self { grid: true, ortho: false, osnap: true, polar: false, hit: None, tracking: None }
+        Self { grid: true, ortho: false, osnap: true, polar: false, infer: true, hit: None, tracking: None }
     }
 }
 
@@ -31,10 +33,11 @@ pub enum Aid {
     Ortho,
     Osnap,
     Polar,
+    Infer,
 }
 
 impl Aid {
-    pub const ALL: [Aid; 5] = [Aid::Grid, Aid::Snap, Aid::Ortho, Aid::Polar, Aid::Osnap];
+    pub const ALL: [Aid; 6] = [Aid::Grid, Aid::Snap, Aid::Ortho, Aid::Polar, Aid::Osnap, Aid::Infer];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -43,17 +46,19 @@ impl Aid {
             Aid::Ortho => "ORTHO",
             Aid::Osnap => "OSNAP",
             Aid::Polar => "POLAR",
+            Aid::Infer => "INFER",
         }
     }
 
-    pub fn key(self) -> Key {
-        match self {
+    pub fn key(self) -> Option<Key> {
+        Some(match self {
             Aid::Grid => Key::F7,
             Aid::Snap => Key::F9,
             Aid::Ortho => Key::F8,
             Aid::Osnap => Key::F3,
             Aid::Polar => Key::F10,
-        }
+            Aid::Infer => return None,
+        })
     }
 
     pub fn help(self) -> &'static str {
@@ -63,6 +68,7 @@ impl Aid {
             Aid::Ortho => "Only horizontal and vertical lines from the last point (F8).",
             Aid::Osnap => "Lock onto ends, middles, centres and crossings of shapes (F3).",
             Aid::Polar => "Track angles in 15° steps from the last point (F10).",
+            Aid::Infer => "Automatically connect what you draw to the points you snap to",
         }
     }
 }
@@ -76,6 +82,7 @@ pub enum Kind {
     Center,
     Midpoint,
     Perpendicular,
+    Tangent,
     Nearest,
 }
 
@@ -88,6 +95,7 @@ impl Kind {
             Kind::Quadrant => "Quadrant",
             Kind::Intersection => "Intersection",
             Kind::Perpendicular => "Perpendicular",
+            Kind::Tangent => "Tangent",
             Kind::Nearest => "Nearest",
         }
     }
@@ -97,6 +105,51 @@ impl Kind {
 pub struct Snap {
     pub p: Point,
     pub kind: Kind,
+    /// What it snapped to, in a path item (None for crossings and other shapes): a vertex for an
+    /// end, the arc's centre, else the segment.
+    pub target: Option<Ref>,
+}
+
+impl Snap {
+    /// The constraint drawing from this snap infers (INFER): with `target` it binds to.
+    pub fn infer(&self) -> Option<(Constraint, Ref)> {
+        let kind = match self.kind {
+            Kind::Endpoint | Kind::Center | Kind::Nearest => Constraint::Coincident,
+            Kind::Perpendicular => Constraint::Perpendicular,
+            Kind::Tangent => Constraint::Tangent,
+            Kind::Intersection | Kind::Quadrant | Kind::Midpoint => return None,
+        };
+        Some((kind, self.target?))
+    }
+}
+
+/// Where a piece of an outline sits in its path item: segment `segment` of `contour`, from vertex
+/// `segment` to vertex `next`. A circle's halves are both its segment 0.
+#[derive(Clone, Copy, Debug)]
+struct On {
+    item: u64,
+    contour: usize,
+    segment: usize,
+    next: usize,
+    circle: bool,
+}
+
+impl On {
+    fn segment(self) -> Ref {
+        Ref::Segment { item: self.item, contour: self.contour, segment: if self.circle { 0 } else { self.segment } }
+    }
+
+    fn centre(self) -> Ref {
+        Ref::Centre { item: self.item, contour: self.contour, segment: if self.circle { 0 } else { self.segment } }
+    }
+
+    /// End 0 or 1 of the piece (a circle has no ends: a point on it).
+    fn end(self, k: usize) -> Ref {
+        if self.circle {
+            return self.segment();
+        }
+        Ref::Point { item: self.item, contour: self.contour, vertex: if k == 0 { self.segment } else { self.next } }
+    }
 }
 
 /// A straight or arc piece of an outline. Arcs run from `start` by `sweep` radians around `c`.
@@ -134,6 +187,17 @@ impl Seg {
                 }
             }
         }
+    }
+
+    /// Where lines from `from` touch this arc.
+    fn tangents(self, from: Point) -> Vec<Point> {
+        let Seg::Arc { c, r, start, sweep, .. } = self else { return Vec::new() };
+        let d = distance(from, c);
+        if d <= r + 1e-9 {
+            return Vec::new();
+        }
+        let (base, half) = ((from[1] - c[1]).atan2(from[0] - c[0]), (r / d).acos());
+        [base - half, base + half].into_iter().filter(|a| on_arc(start, sweep, *a)).map(|a| polar_point(c, r, a)).collect()
     }
 
     /// The point where a line from `from` meets this piece at a right angle.
@@ -226,23 +290,24 @@ fn intersections(s: Seg, t: Seg) -> Vec<Point> {
     pts.into_iter().filter(|p| on(s, *p) && on(t, *p)).collect()
 }
 
-/// The pieces of a shape's outline: real arcs for paths, straight lines for the rest.
-fn segments(shape: &Shape) -> Vec<Seg> {
-    let Shape::Path { contours } = shape else {
-        return shape.outline(0.1).iter().flat_map(|l| l.windows(2).map(|w| Seg::Line(w[0], w[1])).collect::<Vec<_>>()).collect();
+/// The pieces of an item's outline: real arcs for paths, straight lines for the rest.
+fn segments(item: &Item) -> Vec<(Seg, Option<On>)> {
+    let Shape::Path { contours } = &item.shape else {
+        return item.shape.outline(0.1).iter().flat_map(|l| l.windows(2).map(|w| (Seg::Line(w[0], w[1]), None)).collect::<Vec<_>>()).collect();
     };
     let mut out = Vec::new();
-    for c in contours {
+    for (ci, c) in contours.iter().enumerate() {
         let (v, n) = (&c.vertices, c.vertices.len());
+        let on = |segment: usize| Some(On { item: item.id, contour: ci, segment, next: (segment + 1) % n, circle: c.as_circle().is_some() });
         let count = if c.closed { n } else { n.saturating_sub(1) };
         for i in 0..count {
             let (a, b) = (v[i], v[(i + 1) % n]);
             let (pa, pb) = ([a.x, a.y], [b.x, b.y]);
             if a.bulge.abs() > 1e-9 {
                 let (c, r, start, sweep) = arc_params(pa, pb, a.bulge);
-                out.push(Seg::Arc { a: pa, b: pb, c, r, start, sweep });
+                out.push((Seg::Arc { a: pa, b: pb, c, r, start, sweep }, on(i)));
             } else if pa != pb {
-                out.push(Seg::Line(pa, pb));
+                out.push((Seg::Line(pa, pb), on(i)));
             }
         }
     }
@@ -250,32 +315,36 @@ fn segments(shape: &Shape) -> Vec<Seg> {
 }
 
 /// The object snap for pointer `p`: the closest snap point within `tol` mm, else the nearest
-/// point on a shape. `from` is the last placed point (for perpendicular).
+/// point on a shape. `from` is the last placed point (for perpendicular and tangent).
 pub fn find(items: &[Item], p: Point, tol: f64, from: Option<Point>) -> Option<Snap> {
-    let segs: Vec<Seg> = items
+    let segs: Vec<(Seg, Option<On>)> = items
         .iter()
-        .flat_map(|i| segments(&i.shape))
-        .filter(|s| distance(p, s.nearest(p)) <= tol || matches!(s, Seg::Arc { c, .. } if distance(p, *c) <= tol))
+        .flat_map(segments)
+        .filter(|(s, _)| distance(p, s.nearest(p)) <= tol || matches!(s, Seg::Arc { c, .. } if distance(p, *c) <= tol))
         .collect();
     let mut cands = Vec::new();
-    let mut add = |kind, q: Point| cands.push(Snap { p: q, kind });
-    for (i, s) in segs.iter().enumerate() {
-        s.ends().into_iter().for_each(|q| add(Kind::Endpoint, q));
-        add(Kind::Midpoint, s.mid());
-        if let Seg::Arc { c, r, start, sweep, .. } = *s {
-            add(Kind::Center, c);
+    let mut add = |kind, q: Point, target: Option<Ref>| cands.push(Snap { p: q, kind, target });
+    for (i, &(s, on)) in segs.iter().enumerate() {
+        let target = |f: fn(On) -> Ref| on.map(f);
+        for (k, q) in s.ends().into_iter().enumerate() {
+            add(Kind::Endpoint, q, on.map(|o| o.end(k)));
+        }
+        add(Kind::Midpoint, s.mid(), target(On::segment));
+        if let Seg::Arc { c, r, start, sweep, .. } = s {
+            add(Kind::Center, c, target(On::centre));
             for k in 0..4 {
                 let ang = k as f64 * FRAC_PI_2;
                 if on_arc(start, sweep, ang) {
-                    add(Kind::Quadrant, polar_point(c, r, ang));
+                    add(Kind::Quadrant, polar_point(c, r, ang), target(On::segment));
                 }
             }
         }
-        for t in &segs[i + 1..] {
-            intersections(*s, *t).into_iter().for_each(|q| add(Kind::Intersection, q));
+        for (t, _) in &segs[i + 1..] {
+            intersections(s, *t).into_iter().for_each(|q| add(Kind::Intersection, q, None));
         }
-        if let Some(q) = from.and_then(|f| s.perpendicular(f)) {
-            add(Kind::Perpendicular, q);
+        if let Some(f) = from {
+            s.perpendicular(f).into_iter().for_each(|q| add(Kind::Perpendicular, q, target(On::segment)));
+            s.tangents(f).into_iter().for_each(|q| add(Kind::Tangent, q, target(On::segment)));
         }
     }
     // Closest wins; on the same spot the kind listed first wins (e.g. a quadrant beats an arc's midpoint).
@@ -285,9 +354,9 @@ pub fn find(items: &[Item], p: Point, tol: f64, from: Option<Point>) -> Option<S
         .min_by_key(|s| ((distance(s.p, p) * 1e6).round() as i64, s.kind));
     best.or_else(|| {
         segs.iter()
-            .map(|s| s.nearest(p))
-            .min_by(|a, b| distance(*a, p).total_cmp(&distance(*b, p)))
-            .map(|q| Snap { p: q, kind: Kind::Nearest })
+            .map(|(s, on)| (s.nearest(p), on.map(On::segment)))
+            .min_by(|a, b| distance(a.0, p).total_cmp(&distance(b.0, p)))
+            .map(|(q, target)| Snap { p: q, kind: Kind::Nearest, target })
     })
 }
 
@@ -331,6 +400,10 @@ pub fn paint_marker(painter: &egui::Painter, at: Pos2, kind: Kind) {
             line(bl, tl);
             line(pos2(at.x - s, at.y), at);
             line(at, pos2(at.x, at.y + s));
+        }
+        Kind::Tangent => {
+            painter.circle_stroke(at + vec2(0.0, s / 3.0), s * 2.0 / 3.0, stroke);
+            line(tl, tr);
         }
         Kind::Nearest => _ = painter.add(egui::Shape::closed_line(vec![tl, tr, bl, br], stroke)),
     }
@@ -395,6 +468,27 @@ mod tests {
         assert!(s.kind == Kind::Midpoint && close(s.p, [m, m]), "{s:?}");
         // No quadrant at 180°, which is not on the arc.
         assert!(find(&items, [-10.0, 0.0], 1.0, None).is_none());
+    }
+
+    #[test]
+    fn snaps_say_what_they_hit() {
+        let items = [item(1, Contour::line([0.0, 0.0], [10.0, 0.0])), item(2, Contour::circle(30.0, 0.0, 5.0))];
+        let at = |p: Point| snap_at(&items, p).target;
+        assert_eq!(at([9.8, 0.1]), Some(Ref::Point { item: 1, contour: 0, vertex: 1 }));
+        assert_eq!(at([3.0, 0.5]), Some(Ref::Segment { item: 1, contour: 0, segment: 0 }));
+        assert_eq!(at([30.2, 0.3]), Some(Ref::Centre { item: 2, contour: 0, segment: 0 }));
+        // A circle's "ends" are just points on it.
+        assert_eq!(at([25.1, 0.2]), Some(Ref::Segment { item: 2, contour: 0, segment: 0 }));
+        assert_eq!(snap_at(&items, [9.8, 0.1]).infer().map(|i| i.0), Some(Constraint::Coincident));
+    }
+
+    #[test]
+    fn tangent_snap() {
+        // From (30, -10) to the circle around (30, 0) radius 5: touches at ±60° from straight up.
+        let items = [item(2, Contour::circle(30.0, 0.0, 5.0))];
+        let (sx, sy) = (5.0 * 60f64.to_radians().sin(), -5.0 * 60f64.to_radians().cos());
+        let s = find(&items, [30.0 + sx + 0.2, sy], 1.0, Some([30.0, -10.0])).unwrap();
+        assert!(s.kind == Kind::Tangent && close(s.p, [30.0 + sx, sy]), "{s:?}");
     }
 
     #[test]

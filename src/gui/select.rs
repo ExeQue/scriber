@@ -127,10 +127,15 @@ impl App {
             }
         }
         if response.drag_stopped_by(PointerButton::Primary) {
-            if let (Some(Drag::Box { start }), Some(p)) = (&self.drag, raw) {
-                self.finish_box(*start, p, shift);
+            match (self.drag.take(), raw) {
+                (Some(Drag::Box { start }), Some(p)) => self.finish_box(start, p, shift),
+                // Let go on a snap: INFER joins the grip's point to it.
+                (Some(Drag::Grip { grip, at, base, .. }), Some(r)) => {
+                    self.aim(&base, r, Some(at));
+                    self.infer_grip(grip, self.aids.hit);
+                }
+                _ => {}
             }
-            self.drag = None;
         }
 
         if response.clicked_by(PointerButton::Primary)

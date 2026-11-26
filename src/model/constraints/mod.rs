@@ -7,17 +7,22 @@
 //! - `residual`: how far each constraint is from satisfied, and what dimensions measure;
 //! - `solve`: the damped Gauss–Newton solver;
 //! - `infer`: AUTOCONSTRAIN;
+//! - `attach`: constraints inferred while drawing (INFER);
 //! - `doc`: the `Document` commands, and `settle`, which runs the solver after every change.
 
+pub mod attach;
 mod doc;
 pub mod expr;
 mod geo;
 mod infer;
 pub mod pick;
 mod residual;
+pub mod selection;
 mod solve;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod attach_tests;
 
 pub(crate) use doc::freeze_orphans;
 pub use solve::parameter_values;

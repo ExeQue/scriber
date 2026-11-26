@@ -27,7 +27,11 @@ impl App {
     }
 
     /// Draw the badges, grouped per piece of geometry, and highlight what the hovered one binds.
-    pub(super) fn paint_bars(&self, painter: &egui::Painter, s: &State) {
+    pub(super) fn paint_bars(&mut self, painter: &egui::Painter, s: &State) {
+        self.bar_badges.clear();
+        if let Some(c) = self.hot_constraint.and_then(|id| s.constraints.iter().find(|c| c.id == id)) {
+            self.highlight(painter, s, &c.refs);
+        }
         if !self.bars {
             return;
         }
@@ -60,20 +64,26 @@ impl App {
                 if over {
                     hot = Some((*k, r));
                 }
+                self.bar_badges.push((s.constraints[*k].id, r));
             }
         }
         let Some((k, r)) = hot else { return };
         let c = &s.constraints[k];
-        for g in &c.refs {
+        self.highlight(painter, s, &c.refs);
+        let galley = painter.layout_no_wrap(c.label(), FontId::proportional(12.0), Color32::WHITE);
+        let pos = r.right_bottom() + vec2(6.0, 2.0);
+        painter.rect_filled(Rect::from_min_size(pos, galley.size()).expand(3.0), 3.0, Color32::from_black_alpha(200));
+        painter.galley(pos, galley, Color32::WHITE);
+    }
+
+    /// Show the geometry a constraint binds.
+    fn highlight(&self, painter: &egui::Painter, s: &State, refs: &[Ref]) {
+        for g in refs {
             let pts: Vec<Pos2> = outline(s, g).iter().map(|p| self.w2s(*p)).collect();
             match pts.as_slice() {
                 [p] => _ = painter.circle_stroke(*p, 6.0, Stroke::new(2.5, HIGHLIGHT)),
                 _ => _ = painter.add(egui::Shape::line(pts, Stroke::new(4.0, HIGHLIGHT.gamma_multiply(0.7)))),
             }
         }
-        let galley = painter.layout_no_wrap(c.label(), FontId::proportional(12.0), Color32::WHITE);
-        let pos = r.right_bottom() + vec2(6.0, 2.0);
-        painter.rect_filled(Rect::from_min_size(pos, galley.size()).expand(3.0), 3.0, Color32::from_black_alpha(200));
-        painter.galley(pos, galley, Color32::WHITE);
     }
 }

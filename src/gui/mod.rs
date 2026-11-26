@@ -5,6 +5,7 @@ mod agents_window;
 mod canvas;
 mod command;
 mod constraint_bars;
+mod constraint_list;
 mod dimensions;
 mod fonts;
 mod geometry_cache;
@@ -61,6 +62,8 @@ struct App {
     aids: snap::Aids,
     /// Points placed so far with the current tool.
     draft: Vec<Point>,
+    /// The snaps the draft's points were placed with (INFER), by point.
+    draft_links: Vec<crate::model::constraints::attach::Link>,
     drag: Option<Drag>,
     cmdline: command::CommandLine,
     /// The AutoCAD-style command line; hidden unless the user turns it on (View menu).
@@ -86,6 +89,12 @@ struct App {
     param_edit: parameters::ParamEdit,
     /// Where each dimensional constraint's label was drawn last frame (for double-click editing).
     dim_labels: Vec<(u64, Rect)>,
+    /// Where each constraint badge was drawn last frame (for the right-click menu).
+    bar_badges: Vec<(u64, Rect)>,
+    /// The constraint the open right-click menu is for.
+    menu_constraint: Option<u64>,
+    /// The constraint pointed at in the properties list, highlighted on the canvas.
+    hot_constraint: Option<u64>,
     agents: Arc<Mutex<Option<Vec<agents::Target>>>>,
     confirm_close: bool,
     allow_close: bool,
@@ -146,6 +155,7 @@ impl App {
             snap: true,
             aids: snap::Aids::default(),
             draft: Vec::new(),
+            draft_links: Vec::new(),
             drag: None,
             cmdline: command::CommandLine::new(),
             show_cmdline: false,
@@ -163,6 +173,9 @@ impl App {
             show_parameters: false,
             param_edit: None,
             dim_labels: Vec::new(),
+            bar_badges: Vec::new(),
+            menu_constraint: None,
+            hot_constraint: None,
             agents: Arc::new(Mutex::new(None)),
             confirm_close: false,
             allow_close: false,
@@ -306,11 +319,12 @@ impl App {
         d.selection = d.s.items.iter().map(|i| i.id).collect();
     }
 
-    fn create(&mut self, name: &str, op: Op, fill: bool, shape: Shape) {
+    fn create(&mut self, name: &str, op: Op, fill: bool, shape: Shape) -> u64 {
         let mut d = self.doc.lock().unwrap();
         d.checkpoint();
         let id = d.add(name, op, fill, shape);
         d.selection = vec![id];
+        id
     }
 
     // ---------- keyboard ----------

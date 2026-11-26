@@ -24,6 +24,11 @@ impl App {
         self.canvas_rect = rect;
         let ctx = ui.ctx().clone();
         self.zoom_extents_on_wheel_double_click(&response);
+        if response.secondary_clicked()
+            && let Some(at) = response.interact_pointer_pos()
+        {
+            self.right_click(at);
+        }
         response.context_menu(|ui| self.canvas_menu(ui));
         self.fit_if_needed(rect);
         self.pan_and_zoom(ui, &response);
@@ -60,6 +65,7 @@ impl App {
             Aid::Ortho => self.aids.ortho,
             Aid::Osnap => self.aids.osnap,
             Aid::Polar => self.aids.polar,
+            Aid::Infer => self.aids.infer,
         }
     }
 
@@ -70,6 +76,7 @@ impl App {
             Aid::Grid => self.aids.grid = on,
             Aid::Snap => self.snap = on,
             Aid::Osnap => self.aids.osnap = on,
+            Aid::Infer => self.aids.infer = on,
             Aid::Ortho => {
                 self.aids.ortho = on;
                 self.aids.polar &= !on;
@@ -86,7 +93,9 @@ impl App {
     /// Runs before `App::keys`, which consumes Esc.
     pub(super) fn aid_keys(&mut self, ctx: &egui::Context) {
         for a in Aid::ALL {
-            if ctx.input(|i| i.key_pressed(a.key())) {
+            if let Some(k) = a.key()
+                && ctx.input(|i| i.key_pressed(k))
+            {
                 self.toggle(a);
             }
         }
@@ -174,6 +183,7 @@ impl App {
                 && let Some(o) = ui.input(|i| i.pointer.press_origin())
             {
                 let start = self.aim_at_doc(self.s2w(o), None);
+                self.note_snap(start);
                 self.draft.push(start);
             }
             if response.drag_stopped_by(PointerButton::Primary) && self.draft.len() == 1 && self.px(distance(self.draft[0], p)) > 4.0 {

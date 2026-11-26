@@ -81,3 +81,59 @@ fn a_dimension_snapped_to_two_points_drives_them() {
     app.submit(None);
     assert!((doc.lock().unwrap().item(l).unwrap().shape.metrics().length - 100.0).abs() < 1e-6);
 }
+
+#[test]
+fn a_line_chain_stays_connected_and_snaps_join() {
+    let (mut app, doc) = app();
+    let other = add(&doc, Contour::line([0.0, 100.0], [30.0, 100.0]));
+    app.start(Cmd::Line);
+    app.aids.hit = Some(crate::gui::snap::Snap { p: [30.0, 100.0], kind: crate::gui::snap::Kind::Endpoint, target: Some(Ref::Point { item: other, contour: 0, vertex: 1 }) });
+    app.place_point([30.0, 100.0]);
+    app.aids.hit = None;
+    app.place_point([50.0, 100.0]);
+    app.place_point([50.0, 140.0]);
+    app.cancel();
+    let mut d = doc.lock().unwrap();
+    assert_eq!(d.s.constraints.len(), 2, "{:?}", d.s.constraints);
+    // Dragging the first line's start drags the chain along.
+    let first = d.s.items[1].id;
+    d.transform(&[other], &crate::model::Transform::translate(0.0, -10.0));
+    d.settle(true).unwrap();
+    let v = |d: &Document, id: u64, k: usize| {
+        let v = d.item(id).unwrap().shape.contours()[0].vertices[k];
+        [v.x, v.y]
+    };
+    let second = d.s.items[2].id;
+    assert_eq!(v(&d, first, 0), [30.0, 90.0]);
+    assert_eq!(v(&d, second, 0), v(&d, first, 1));
+}
+
+#[test]
+fn selected_lines_are_made_parallel_in_one_step() {
+    let (mut app, doc) = app();
+    let a = add(&doc, Contour::line([0.0, 0.0], [100.0, 0.0]));
+    let b = add(&doc, Contour::line([0.0, 20.0], [100.0, 40.0]));
+    doc.lock().unwrap().selection = vec![a, b];
+    app.start(Cmd::find("GCPARALLEL").unwrap());
+    assert!(app.cmdline.active.is_none(), "no picks asked");
+    let mut d = doc.lock().unwrap();
+    assert_eq!(d.s.constraints.len(), 1);
+    let v = &d.item(b).unwrap().shape.contours()[0].vertices;
+    assert!((v[1].y - v[0].y).abs() < 1e-6);
+    d.undo();
+    assert!(d.s.constraints.is_empty());
+    assert_eq!(d.item(b).unwrap().shape.contours()[0].vertices[1].y, 40.0);
+}
+
+#[test]
+fn right_click_add_constraint_uses_that_shape() {
+    let (mut app, doc) = app();
+    let a = add(&doc, Contour::line([0.0, 0.0], [100.0, 0.0]));
+    let b = add(&doc, Contour::line([0.0, 20.0], [100.0, 40.0]));
+    doc.lock().unwrap().selection = vec![a];
+    app.canvas_rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+    app.right_click(app.w2s([50.0, 30.0]));
+    assert_eq!(doc.lock().unwrap().selection, vec![a, b]);
+    app.start(Cmd::Constrain(Kind::Parallel));
+    assert_eq!(doc.lock().unwrap().s.constraints.len(), 1);
+}
