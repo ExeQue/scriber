@@ -17,11 +17,22 @@ enum Base {
 /// Shape of the entry inside a JSON config.
 #[derive(Clone, Copy, Debug)]
 enum Shape {
+    /// Claude Desktop: its config file only takes stdio servers (remote ones go through Settings > Connectors).
+    Desktop,
     Plain,
-    Stdio,
+    VsCode,
+    Windsurf,
+    Gemini,
     OpenCode,
     Copilot,
     Zed,
+}
+
+/// What an entry points at: the editor's URL, or the `scriber mcp` relay.
+#[derive(Clone, Debug, PartialEq)]
+enum Conn {
+    Url(String),
+    Exe(String),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -48,11 +59,11 @@ const fn agent(id: &'static str, name: &'static str, base: Base, file: &'static 
 use {Base::*, Kind::*, Shape::*};
 const AGENTS: &[Agent] = &[
     agent("claude-code", "Claude Code", Home, ".claude.json", ClaudeCli),
-    agent("claude-desktop", "Claude Desktop", Config, "Claude/claude_desktop_config.json", Json("mcpServers", Plain)),
+    agent("claude-desktop", "Claude Desktop", Config, "Claude/claude_desktop_config.json", Json("mcpServers", Desktop)),
     agent("cursor", "Cursor", Home, ".cursor/mcp.json", Json("mcpServers", Plain)),
-    agent("vscode", "VS Code", Config, "Code/User/mcp.json", Json("servers", Stdio)),
-    agent("windsurf", "Windsurf", Home, ".codeium/windsurf/mcp_config.json", Json("mcpServers", Plain)),
-    agent("gemini", "Gemini CLI", Home, ".gemini/settings.json", Json("mcpServers", Plain)),
+    agent("vscode", "VS Code", Config, "Code/User/mcp.json", Json("servers", VsCode)),
+    agent("windsurf", "Windsurf", Home, ".codeium/windsurf/mcp_config.json", Json("mcpServers", Windsurf)),
+    agent("gemini", "Gemini CLI", Home, ".gemini/settings.json", Json("mcpServers", Gemini)),
     agent("codex", "Codex", Home, ".codex/config.toml", Toml),
     agent("opencode", "opencode", Home, ".config/opencode/opencode.json", Json("mcp", OpenCode)),
     agent("copilot", "GitHub Copilot CLI", Home, ".copilot/mcp-config.json", Json("mcpServers", Copilot)),
@@ -60,12 +71,13 @@ const AGENTS: &[Agent] = &[
     agent("lmstudio", "LM Studio", Home, ".lmstudio/mcp.json", Json("mcpServers", Plain)),
 ];
 
-/// Where one host (native or a WSL distro) keeps its configs, and the command to write.
+/// Where one host (native or a WSL distro) keeps its configs, and what to write.
 #[derive(Clone, Debug)]
 struct Env {
     home: PathBuf,
     config: PathBuf,
     exe: String,
+    port: u16,
     distro: Option<String>,
     claude: Option<PathBuf>,
 }
@@ -96,7 +108,7 @@ pub fn detect() -> Vec<Target> {
     let mut out = Vec::new();
     if let (Some(home), Some(config)) = (dirs::home_dir(), dirs::config_dir()) {
         let claude = which("claude");
-        out.extend(detect_in(&Env { home, config, exe: exe.clone(), distro: None, claude }));
+        out.extend(detect_in(&Env { home, config, exe: exe.clone(), port: crate::mcp::port(), distro: None, claude }));
     }
     #[cfg(windows)]
     for e in wsl_envs(&exe) {
@@ -105,24 +117,48 @@ pub fn detect() -> Vec<Target> {
     out
 }
 
-pub fn install(t: &Target) -> Result<()> {
-    match t.agent.kind {
-        ClaudeCli => {
+/// Add or update the entry; says how the agent connects ("over HTTP" or "through the stdio relay").
+pub fn install(t: &Target) -> Result<&'static str> {
+    let conn = conn(t);
+    match (t.agent.kind, &conn) {
+        (ClaudeCli, conn) => {
             if current(t.agent.kind, &t.path)?.is_some() {
                 claude(t, &["mcp", "remove", "-s", "user", NAME])?;
             }
-            claude(t, &["mcp", "add", "-s", "user", NAME, "--", &t.env.exe, "mcp"])
+            match conn {
+                Conn::Url(u) => claude(t, &["mcp", "add", "--transport", "http", "-s", "user", NAME, u])?,
+                Conn::Exe(e) => claude(t, &["mcp", "add", "-s", "user", NAME, "--", e, "mcp"])?,
+            }
         }
-        _ => edit(t, true),
+        (_, conn) => edit(t, Some(conn))?,
     }
+    Ok(if matches!(conn, Conn::Url(_)) { "over HTTP" } else { "through the stdio relay" })
 }
 
 pub fn remove(t: &Target) -> Result<()> {
     match t.agent.kind {
         ClaudeCli if current(t.agent.kind, &t.path)?.is_none() => Ok(()),
         ClaudeCli => claude(t, &["mcp", "remove", "-s", "user", NAME]),
-        _ => edit(t, false),
+        _ => edit(t, None),
     }
+}
+
+/// HTTP when the agent takes a URL and (in WSL) reaches the editor's port; the stdio relay otherwise.
+fn conn(t: &Target) -> Conn {
+    let reachable = || t.env.distro.as_deref().is_none_or(|d| wsl_reaches(d, t.env.port));
+    if http(t.agent.kind) && reachable() { Conn::Url(crate::mcp::url(t.env.port)) } else { Conn::Exe(t.env.exe.clone()) }
+}
+
+fn http(kind: Kind) -> bool {
+    !matches!(kind, Json(_, Desktop))
+}
+
+/// Whether the distro reaches 127.0.0.1:port of this machine (WSL mirrored networking does, NAT does not).
+fn wsl_reaches(distro: &str, port: u16) -> bool {
+    // When the editor is not running, stand in for it so the probe still has something to reach.
+    let _stand_in = std::net::TcpListener::bind(("127.0.0.1", port));
+    let probe = format!("exec 3<>/dev/tcp/127.0.0.1/{port}");
+    wsl(distro, &["timeout", "5", "bash", "-c", &probe]).status().is_ok_and(|s| s.success())
 }
 
 /// `scriber agents [list | add [ids..] | remove [ids..]]`
@@ -156,8 +192,9 @@ pub fn cli(args: &[String]) -> Result<()> {
             }
             let mut failed = 0;
             for t in targets.iter().filter(|t| ids.is_empty() || ids.contains(&t.id)) {
-                match if op == "add" { install(t) } else { remove(t) } {
-                    Ok(()) => println!("{}: {}", t.id, if op == "add" { "added" } else { "removed" }),
+                let done = if op == "add" { install(t).map(|how| format!("added {how}")) } else { remove(t).map(|()| "removed".to_owned()) };
+                match done {
+                    Ok(done) => println!("{}: {done}", t.id),
                     Err(e) => {
                         failed += 1;
                         eprintln!("{}: {e:#}", t.id);
@@ -202,7 +239,7 @@ fn detect_in(env: &Env) -> Vec<Target> {
                 config: path.display().to_string(),
                 status: match current(a.kind, &path) {
                     Ok(None) => Status::NotInstalled,
-                    Ok(Some(c)) if c == env.exe => Status::Installed,
+                    Ok(Some(c)) if ours(&c, a.kind, env) => Status::Installed,
                     Ok(Some(_)) => Status::Outdated,
                     Err(e) => Status::Error(format!("{e:#}")),
                 },
@@ -214,22 +251,37 @@ fn detect_in(env: &Env) -> Vec<Target> {
         .collect()
 }
 
-/// The command of the existing `scriber` entry, if any.
-fn current(kind: Kind, path: &Path) -> Result<Option<String>> {
+/// An entry is up to date when it points at this Scriber in the form `install` writes: the URL, or the
+/// relay for stdio-only agents. In WSL either form counts, since the relay is the fallback there.
+fn ours(c: &Conn, kind: Kind, env: &Env) -> bool {
+    match c {
+        Conn::Url(u) => http(kind) && *u == crate::mcp::url(env.port),
+        Conn::Exe(e) => *e == env.exe && (!http(kind) || env.distro.is_some()),
+    }
+}
+
+/// What the existing `scriber` entry points at, if there is one.
+fn current(kind: Kind, path: &Path) -> Result<Option<Conn>> {
     let Some(text) = read(path)? else { return Ok(None) };
     let found = match kind {
         Toml => {
             let doc: toml_edit::DocumentMut = text.parse().with_context(|| format!("{} is not valid TOML", path.display()))?;
             let entry = doc.get("mcp_servers").and_then(|s| s.get(NAME));
-            entry.map(|e| e.get("command").and_then(|c| c.as_str()).unwrap_or_default().to_owned())
+            entry.map(|e| match e.get("url").and_then(|u| u.as_str()) {
+                Some(u) => Conn::Url(u.to_owned()),
+                None => Conn::Exe(e.get("command").and_then(|c| c.as_str()).unwrap_or_default().to_owned()),
+            })
         }
         Json(..) | ClaudeCli if !text.trim().is_empty() => {
             let key = if let Json(key, _) = kind { key } else { "mcpServers" };
             let v: Value = serde_json::from_str(&text).with_context(|| format!("{} is not plain JSON", path.display()))?;
             v.get(key).and_then(|s| s.get(NAME)).map(|e| {
+                if let Some(u) = ["url", "serverUrl", "httpUrl"].iter().find_map(|k| e.get(k)?.as_str()) {
+                    return Conn::Url(u.to_owned());
+                }
                 let c = e.get("command");
                 // opencode keeps the command and its args in one array.
-                c.and_then(|c| c.as_str().or_else(|| c.get(0)?.as_str())).unwrap_or_default().to_owned()
+                Conn::Exe(c.and_then(|c| c.as_str().or_else(|| c.get(0)?.as_str())).unwrap_or_default().to_owned())
             })
         }
         _ => None,
@@ -245,37 +297,51 @@ fn read(path: &Path) -> Result<Option<String>> {
     }
 }
 
-fn entry(shape: Shape, exe: &str) -> Value {
-    match shape {
-        Plain => json!({ "command": exe, "args": ["mcp"] }),
-        Stdio => json!({ "type": "stdio", "command": exe, "args": ["mcp"] }),
-        OpenCode => json!({ "type": "local", "command": [exe, "mcp"], "enabled": true }),
-        Copilot => json!({ "type": "local", "command": exe, "args": ["mcp"], "tools": ["*"] }),
-        Zed => json!({ "source": "custom", "command": exe, "args": ["mcp"] }),
+fn entry(shape: Shape, conn: &Conn) -> Value {
+    use Conn::{Exe, Url};
+    match (shape, conn) {
+        (Desktop | Plain | Windsurf | Gemini, Exe(exe)) => json!({ "command": exe, "args": ["mcp"] }),
+        (Desktop, Url(_)) => unreachable!("Claude Desktop only takes stdio servers"),
+        (Plain, Url(u)) => json!({ "url": u }),
+        (Windsurf, Url(u)) => json!({ "serverUrl": u }),
+        (Gemini, Url(u)) => json!({ "httpUrl": u }),
+        (VsCode, Exe(exe)) => json!({ "type": "stdio", "command": exe, "args": ["mcp"] }),
+        (VsCode, Url(u)) => json!({ "type": "http", "url": u }),
+        (OpenCode, Exe(exe)) => json!({ "type": "local", "command": [exe, "mcp"], "enabled": true }),
+        (OpenCode, Url(u)) => json!({ "type": "remote", "url": u, "enabled": true }),
+        (Copilot, Exe(exe)) => json!({ "type": "local", "command": exe, "args": ["mcp"], "tools": ["*"] }),
+        (Copilot, Url(u)) => json!({ "type": "http", "url": u, "tools": ["*"] }),
+        (Zed, Exe(exe)) => json!({ "source": "custom", "command": exe, "args": ["mcp"] }),
+        // Remote servers in Zed are `{ "url": … }` (https://zed.dev/docs/ai/mcp).
+        (Zed, Url(u)) => json!({ "url": u }),
     }
 }
 
 /// What to paste by hand when we cannot edit the file.
-fn snippet(kind: Kind, exe: &str) -> String {
-    match kind {
-        Json(key, shape) => {
-            let v = json!({ key: { NAME: entry(shape, exe) } });
+fn snippet(kind: Kind, conn: &Conn) -> String {
+    match (kind, conn) {
+        (Json(key, shape), _) => {
+            let v = json!({ key: { NAME: entry(shape, conn) } });
             serde_json::to_string_pretty(&v).unwrap()
         }
-        _ => format!("[mcp_servers.{NAME}]\ncommand = {}\nargs = [\"mcp\"]", toml_edit::Value::from(exe)),
+        (_, Conn::Url(u)) => format!("[mcp_servers.{NAME}]\nurl = {}", toml_edit::Value::from(u.as_str())),
+        (_, Conn::Exe(e)) => format!("[mcp_servers.{NAME}]\ncommand = {}\nargs = [\"mcp\"]", toml_edit::Value::from(e.as_str())),
     }
 }
 
-fn edit(t: &Target, add: bool) -> Result<()> {
-    let (kind, path, exe) = (t.agent.kind, &t.path, t.env.exe.as_str());
+fn edit(t: &Target, conn: Option<&Conn>) -> Result<()> {
+    let (kind, path) = (t.agent.kind, &t.path);
     let new = (|| {
         let text = read(path)?;
         match kind {
-            Json(key, shape) => edit_json(text.as_deref(), key, add.then(|| entry(shape, exe))),
-            _ => edit_toml(text.as_deref(), add.then_some(exe)),
+            Json(key, shape) => edit_json(text.as_deref(), key, conn.map(|c| entry(shape, c))),
+            _ => edit_toml(text.as_deref(), conn),
         }
     })()
-    .with_context(|| format!("{} was left unchanged; add this by hand:\n{}", path.display(), snippet(kind, exe)))?;
+    .with_context(|| {
+        let paste = snippet(kind, conn.unwrap_or(&Conn::Exe(t.env.exe.clone())));
+        format!("{} was left unchanged; add this by hand:\n{paste}", path.display())
+    })?;
     let Some(new) = new else { return Ok(()) };
     if path.exists() {
         let bak = PathBuf::from(format!("{}.{NAME}.bak", path.display()));
@@ -325,11 +391,11 @@ fn edit_json(text: Option<&str>, key: &str, entry: Option<Value>) -> Result<Opti
     Ok(Some(String::from_utf8(out)?))
 }
 
-fn edit_toml(text: Option<&str>, exe: Option<&str>) -> Result<Option<String>> {
+fn edit_toml(text: Option<&str>, conn: Option<&Conn>) -> Result<Option<String>> {
     use toml_edit::{Array, Item, Table, value};
     let mut doc: toml_edit::DocumentMut = text.unwrap_or_default().parse().context("not valid TOML")?;
-    match exe {
-        Some(exe) => {
+    match conn {
+        Some(conn) => {
             let servers = doc.entry("mcp_servers").or_insert_with(|| {
                 let mut t = Table::new();
                 t.set_implicit(true);
@@ -338,11 +404,21 @@ fn edit_toml(text: Option<&str>, exe: Option<&str>) -> Result<Option<String>> {
             let servers = servers.as_table_mut().context("`mcp_servers` is not a table")?;
             let ours = servers.entry(NAME).or_insert_with(|| Item::Table(Table::new()));
             let ours = ours.as_table_mut().context("`mcp_servers.scriber` is not a table")?;
-            if ours.get("command").and_then(Item::as_str) == Some(exe) {
-                return Ok(None);
+            let get = |k| ours.get(k).and_then(Item::as_str);
+            match conn {
+                Conn::Url(u) if get("url") == Some(u) && get("command").is_none() => return Ok(None),
+                Conn::Exe(e) if get("command") == Some(e) && get("url").is_none() => return Ok(None),
+                Conn::Url(u) => {
+                    ours.remove("command");
+                    ours.remove("args");
+                    ours["url"] = value(u);
+                }
+                Conn::Exe(e) => {
+                    ours.remove("url");
+                    ours["command"] = value(e);
+                    ours["args"] = value(Array::from_iter(["mcp"]));
+                }
             }
-            ours["command"] = value(exe);
-            ours["args"] = value(Array::from_iter(["mcp"]));
         }
         None => {
             if doc.get_mut("mcp_servers").and_then(Item::as_table_like_mut).and_then(|s| s.remove(NAME)).is_none() {
@@ -412,7 +488,7 @@ fn wsl_envs(exe: &str) -> Vec<Env> {
             let home = run(&["sh", "-c", "echo $HOME"])?;
             let exe = run(&["wslpath", "-u", exe])?;
             let home = PathBuf::from(format!(r"\\wsl.localhost\{d}{}", home.replace('/', "\\")));
-            Some(Env { config: home.join(".config"), home, exe, distro: Some(d.to_owned()), claude: None })
+            Some(Env { config: home.join(".config"), home, exe, port: crate::mcp::port(), distro: Some(d.to_owned()), claude: None })
         })
         .collect()
 }
@@ -443,49 +519,67 @@ mod tests {
             fs::create_dir_all(p.parent().unwrap()).unwrap();
             fs::write(p, s).unwrap();
         };
+        let url = "http://127.0.0.1:47999/mcp";
         put(".cursor/mcp.json", "{\n    \"mcpServers\": {\n        \"lerd\": {\"command\": \"lerd\"}\n    },\n    \"z\": 1\n}\n");
-        put(".codex/config.toml", "# keep me\nmodel = \"x\"\n\n[mcp_servers.lerd]\ncommand = \"lerd\"\n");
+        put(".codex/config.toml", "# keep me\nmodel = \"x\"\n\n[mcp_servers.lerd]\ncommand = \"lerd\"\n\n[mcp_servers.scriber]\ncommand = \"/opt/scriber\"\nargs = [\"mcp\"]\n");
         put(".config/zed/settings.json", "// comment\n{}\n");
-        put(".claude.json", r#"{"mcpServers":{"scriber":{"command":"/old"}}}"#);
+        put(".config/Claude/claude_desktop_config.json", "{}");
+        put(".claude.json", r#"{"mcpServers":{"scriber":{"type":"http","url":"http://127.0.0.1:47999/mcp"}}}"#);
         put(".gemini/settings.json", r#"{"mcpServers":{"scriber":{"command":"/opt/scriber"}}}"#);
         fs::create_dir_all(home.join(".config/opencode")).unwrap();
 
-        let env = Env { config: home.join(".config"), home: home.clone(), exe: "/opt/scriber".into(), distro: None, claude: None };
-        let status = |id: &str| detect_in(&env).into_iter().find(|t| t.id == id).map(|t| t.status);
+        let env = Env { config: home.join(".config"), home: home.clone(), exe: "/opt/scriber".into(), port: 47999, distro: None, claude: None };
+        let status = |env: &Env, id: &str| detect_in(env).into_iter().find(|t| t.id == id).map(|t| t.status);
         let ids: Vec<String> = detect_in(&env).into_iter().map(|t| t.id).collect();
-        assert_eq!(ids, ["claude-code", "cursor", "gemini", "codex", "opencode", "zed"]);
-        assert_eq!(status("claude-code"), Some(Status::Outdated));
-        assert_eq!(status("gemini"), Some(Status::Installed));
-        assert!(matches!(status("zed"), Some(Status::Error(_))));
+        assert_eq!(ids, ["claude-code", "claude-desktop", "cursor", "gemini", "codex", "opencode", "zed"]);
+        assert_eq!(status(&env, "claude-code"), Some(Status::Installed));
+        // Stdio entries of HTTP-capable agents are upgraded by Connect.
+        assert_eq!(status(&env, "gemini"), Some(Status::Outdated));
+        assert_eq!(status(&env, "codex"), Some(Status::Outdated));
+        assert!(matches!(status(&env, "zed"), Some(Status::Error(_))));
 
         for t in detect_in(&env) {
             match t.id.as_str() {
-                "zed" => assert!(format!("{:#}", install(&t).unwrap_err()).contains("\"context_servers\"")),
+                "zed" => assert!(format!("{:#}", install(&t).unwrap_err()).contains(&format!("\"url\": \"{url}\""))),
                 "claude-code" => {}
-                _ => install(&t).unwrap(),
+                "claude-desktop" => assert_eq!(install(&t).unwrap(), "through the stdio relay"),
+                _ => assert_eq!(install(&t).unwrap(), "over HTTP"),
             }
         }
-        for id in ["cursor", "codex", "opencode"] {
-            assert_eq!(status(id), Some(Status::Installed), "{id}");
+        for id in ["claude-desktop", "cursor", "gemini", "codex", "opencode"] {
+            assert_eq!(status(&env, id), Some(Status::Installed), "{id}");
         }
         let cursor = fs::read_to_string(home.join(".cursor/mcp.json")).unwrap();
         assert!(cursor.starts_with("{\n    \"mcpServers\": {\n        \"lerd\""), "{cursor}");
+        assert!(cursor.contains(&format!("\"scriber\": {{\n            \"url\": \"{url}\"")), "{cursor}");
         assert!(cursor.find("scriber").unwrap() < cursor.find("\"z\"").unwrap());
         assert!(home.join(".cursor/mcp.json.scriber.bak").exists());
         assert!(!home.join(".config/opencode/opencode.json.scriber.bak").exists());
         let codex = fs::read_to_string(home.join(".codex/config.toml")).unwrap();
-        assert!(codex.starts_with("# keep me") && codex.contains("[mcp_servers.scriber]\ncommand = \"/opt/scriber\""), "{codex}");
+        assert!(codex.starts_with("# keep me") && codex.ends_with(&format!("[mcp_servers.scriber]\nurl = \"{url}\"\n")), "{codex}");
+        let gemini = fs::read_to_string(home.join(".gemini/settings.json")).unwrap();
+        assert!(gemini.contains("\"httpUrl\"") && !gemini.contains("command"), "{gemini}");
         let oc = fs::read_to_string(home.join(".config/opencode/opencode.json")).unwrap();
-        assert!(oc.contains("\"command\": [\n        \"/opt/scriber\""), "{oc}");
+        assert!(oc.contains("\"type\": \"remote\"") && oc.contains(url), "{oc}");
+        let desktop = fs::read_to_string(home.join(".config/Claude/claude_desktop_config.json")).unwrap();
+        assert!(desktop.contains("\"command\": \"/opt/scriber\""), "{desktop}");
 
         for t in detect_in(&env).iter().filter(|t| !matches!(t.id.as_str(), "zed" | "claude-code")) {
             remove(t).unwrap();
         }
-        for id in ["cursor", "codex", "opencode", "gemini"] {
-            assert_eq!(status(id), Some(Status::NotInstalled), "{id}");
+        for id in ["claude-desktop", "cursor", "codex", "opencode", "gemini"] {
+            assert_eq!(status(&env, id), Some(Status::NotInstalled), "{id}");
         }
         assert!(fs::read_to_string(home.join(".cursor/mcp.json")).unwrap().contains("lerd"));
         assert!(fs::read_to_string(home.join(".codex/config.toml")).unwrap().contains("[mcp_servers.lerd]"));
+
+        // A WSL distro that cannot reach the port falls back to the relay, which counts as connected there.
+        let wsl = Env { distro: Some("scriber-test-no-such-distro".into()), ..env.clone() };
+        let cursor = detect_in(&wsl).into_iter().find(|t| t.id.ends_with(":cursor")).unwrap();
+        assert_eq!(install(&cursor).unwrap(), "through the stdio relay");
+        assert_eq!(status(&wsl, "wsl:scriber-test-no-such-distro:cursor"), Some(Status::Installed));
+        assert_eq!(status(&env, "cursor"), Some(Status::Outdated));
         fs::remove_dir_all(&home).unwrap();
     }
 }
+

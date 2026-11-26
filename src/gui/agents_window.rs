@@ -64,7 +64,7 @@ impl App {
         ui.label(&t.host);
         let (text, color) = match &t.status {
             Status::Installed => ("Connected".to_string(), Color32::from_rgb(40, 160, 70)),
-            Status::Outdated => ("Points to another Scriber".to_string(), Color32::from_rgb(210, 140, 0)),
+            Status::Outdated => ("Outdated: click Connect".to_string(), Color32::from_rgb(210, 140, 0)),
             Status::NotInstalled => ("Not connected".to_string(), ui.visuals().weak_text_color()),
             Status::Error(e) => (format!("{}: {e}", "Error"), Color32::from_rgb(200, 50, 50)),
         };
@@ -73,7 +73,7 @@ impl App {
         ui.horizontal(|ui| {
             if t.status != Status::Installed && ui.button("Connect").clicked() {
                 self.message = match agents::install(t) {
-                    Ok(()) => format!("{} {}. {}", "Connected", t.name, "Restart the agent to use Scriber."),
+                    Ok(how) => format!("Connected {} {how}. Restart the agent to use Scriber.", t.name),
                     Err(e) => format!("{}: {e}", t.name),
                 };
                 changed = true;

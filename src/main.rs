@@ -17,7 +17,7 @@ Usage:
   scriber agents add [ID...]      connect Scriber to agents (default: all detected)
   scriber agents remove [ID...]   disconnect Scriber from agents
 
-Environment: SCRIBER_PORT (default 47821) is the editor's local MCP port.";
+The editor serves MCP at http://127.0.0.1:47821/mcp; SCRIBER_PORT changes the port.";
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
