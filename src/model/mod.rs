@@ -1,6 +1,7 @@
 //! The document and every command that changes it. The GUI and the MCP server both go through here,
 //! so they can do the same things and share one undo history.
 
+mod chain;
 mod file;
 pub mod geom;
 pub mod item;
@@ -242,13 +243,25 @@ impl Document {
     /// Round corners with `radius`: the corner nearest `at`, or every sharp corner of the items.
     /// Two open items are joined where their ends meet and that corner is rounded (radius 0 just joins them).
     pub fn fillet(&mut self, ids: &[u64], radius: f64, at: Option<Point>) -> Result<(), String> {
-        self.corners(ids, at, radius == 0.0, |c, i| ops::fillet(c, i, radius))
+        self.on_chains(ids, at, |d, ids| d.corners(ids, at, radius == 0.0, |c, i| ops::fillet(c, i, radius)))
     }
 
     /// Cut corners off, `d1` mm along the incoming side and `d2` along the outgoing one (for two
     /// joined items: along the first and the second); otherwise like `fillet`.
     pub fn chamfer(&mut self, ids: &[u64], d1: f64, d2: f64, at: Option<Point>) -> Result<(), String> {
-        self.corners(ids, at, d1 == 0.0 && d2 == 0.0, |c, i| ops::chamfer(c, i, d1, d2))
+        self.on_chains(ids, at, |d, ids| d.corners(ids, at, d1 == 0.0 && d2 == 0.0, |c, i| ops::chamfer(c, i, d1, d2)))
+    }
+
+    /// Run a corner op with touching lines joined into one figure first, all or nothing.
+    /// Two picked objects without a corner point keep the two-object behaviour (they get joined there).
+    fn on_chains(&mut self, ids: &[u64], at: Option<Point>, op: impl FnOnce(&mut Self, &[u64]) -> Result<(), String>) -> Result<(), String> {
+        let before = self.s.clone();
+        let ids = if ids.len() == 2 && at.is_none() { ids.to_vec() } else { self.join_chains(ids) };
+        let result = op(self, &ids);
+        if result.is_err() {
+            self.s = before;
+        }
+        result
     }
 
     fn corners(&mut self, ids: &[u64], at: Option<Point>, just_join: bool, cut: impl Fn(&Contour, Option<usize>) -> Result<Contour, String>) -> Result<(), String> {
@@ -303,8 +316,19 @@ impl Document {
             return Err("the offset distance must not be 0".into());
         }
         let mut results = Vec::new();
+        let mut done: Vec<u64> = Vec::new();
         for item in self.paths(ids)? {
-            let contours = ops::offset(item.shape.contours(), distance);
+            if done.contains(&item.id) {
+                continue;
+            }
+            // Lines that touch end to end are offset as one figure.
+            let chain = self.chain(item.id);
+            done.extend(&chain);
+            let source = match self.chain_contour(&chain) {
+                Some(c) if chain.len() > 1 => vec![c],
+                _ => item.shape.contours().to_vec(),
+            };
+            let contours = ops::offset(&source, distance);
             if contours.is_empty() {
                 return Err(format!("offsetting item {} by {distance} mm leaves nothing: it is too small", item.id));
             }
