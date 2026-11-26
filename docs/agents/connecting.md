@@ -1,6 +1,6 @@
 # Connecting AI agents
 
-AI agents (Claude Code, Codex, Cursor, …) can draw in Scriber. They talk to the editor over
+Scriber is made to be driven by AI agents (Claude Code, Codex, Cursor, …). They talk to the editor over
 [MCP](https://modelcontextprotocol.io) and edit the document that is open in your window, so you see
 every change as it happens and can undo it.
 

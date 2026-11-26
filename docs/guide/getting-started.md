@@ -1,7 +1,9 @@
 # Getting started
 
-Scriber is a 2D drawing program for laser cutters. You draw shapes in millimetres on a sheet of
-material, say what the laser should do with each shape, and export a file for your laser software.
+Scriber is a 2D drawing program for laser cutters, made to be driven by an AI agent. You tell the
+agent what you want; it draws shapes in millimetres on a sheet of material, says what the laser
+should do with each shape, and checks the design, while you watch in the Scriber window and step in
+when you like. You can also do all of it by hand. See [Why AI-first](./ai-first).
 
 ## Install and run
 
@@ -23,7 +25,30 @@ scriber agents list        # AI agents found on this computer
 scriber agents add         # connect Scriber to them (see "Connecting agents")
 ```
 
-## Your first drawing: a box with holes
+## Connect an agent
+
+Open **AI agents → Connect AI agents…**, click **Connect** next to your agent (Claude Code, Codex,
+Cursor, …) and restart the agent. Or run `scriber agents add` in a terminal. Details in
+[Connecting agents](../agents/connecting).
+
+## Your first design with an agent
+
+Keep Scriber open and ask your agent, for example:
+
+> Draw a 100 × 60 mm plate with four 6 mm holes, 10 mm in from each corner, to cut from 3 mm
+> plywood. Lock the plate size with dimensions and check that it is ready for the laser.
+
+The plate and holes appear in your window as the agent draws them. Then steer it:
+
+- Pin a [review comment](./comments) on a hole, "make this one 8 mm", and tell the agent "follow my
+  comments". It makes the change, replies and resolves the comment.
+- Or just say the next thing: "round the plate's corners with a 3 mm radius".
+- Not happy with a change? <kbd>Ctrl+Z</kbd> undoes it.
+
+When you are done, ask it to save ("save as `plate.scrbr`") and export, or press <kbd>Ctrl+S</kbd>
+yourself. The agent saves only when you ask.
+
+## The same design by hand
 
 A plate of 100 × 60 mm with four 6 mm holes, cut out of 3 mm plywood.
 

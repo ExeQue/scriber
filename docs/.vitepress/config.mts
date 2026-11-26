@@ -4,7 +4,7 @@ const flag = (name: string) => process.argv.some((a) => a === name || a.startsWi
 
 export default defineConfig({
   title: 'Scriber',
-  description: '2D CAD for laser cutters, for people and AI agents.',
+  description: '2D CAD for laser cutters, made for AI agents and the people who steer them.',
   cleanUrls: true,
   lastUpdated: true,
   srcExclude: ['README.md'],
@@ -22,15 +22,17 @@ export default defineConfig({
   },
   themeConfig: {
     nav: [
-      { text: 'Guide', link: '/guide/getting-started' },
+      { text: 'Guide', link: '/guide/ai-first' },
       { text: 'Libraries', link: '/library/make-a-material-library' },
-      { text: 'AI agents', link: '/agents/connecting' },
+      { text: 'AI agents', link: '/agents/working-with-agents' },
       { text: 'Reference', link: '/reference/file-formats' },
     ],
     sidebar: [
       {
         text: 'Guide',
         items: [
+          { text: 'Why AI-first', link: '/guide/ai-first' },
+          { text: 'Connecting agents', link: '/agents/connecting' },
           { text: 'Getting started', link: '/guide/getting-started' },
           { text: 'The screen', link: '/guide/the-screen' },
           { text: 'Drawing', link: '/guide/drawing' },
@@ -57,7 +59,6 @@ export default defineConfig({
       {
         text: 'AI agents',
         items: [
-          { text: 'Connecting agents', link: '/agents/connecting' },
           { text: 'How agents work with Scriber', link: '/agents/working-with-agents' },
           { text: 'MCP tool reference', link: '/agents/mcp-tools' },
         ],

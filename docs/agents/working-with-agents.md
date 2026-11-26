@@ -24,6 +24,7 @@ Try asking things like:
   one", the agent reads your selection.
 - **Tabs.** With several documents open, the agent works on the active tab unless it names another
   one. It opens and creates documents in new tabs and does not switch your tab unless you ask.
+- **Your files.** It saves, opens and closes files only when you ask.
 - **Undo is shared.** Ctrl+Z undoes the last change, whoever made it. The agent's own `undo` does
   the same, so it only undoes its own step right after making it.
 - **Locked and hidden layers** stay as you set them; the agent cannot edit shapes on a locked layer.
