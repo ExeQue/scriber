@@ -1,6 +1,6 @@
 //! The AutoCAD-style command line: commands and their aliases, the step each command is at,
 //! and the prompt for it. Every input ends up here: typed lines, canvas clicks (through
-//! `place_point`), Enter/Space, the right-click menu and the toolbar buttons.
+//! `place_point`), Enter/Space, the right-click menu and the ribbon buttons.
 
 mod card;
 mod constrain;
@@ -159,7 +159,7 @@ impl Cmd {
         COMMANDS.iter().find(|c| c.1 == word || c.2 == word).map(|c| c.0)
     }
 
-    /// The command a toolbar button runs.
+    /// The command a tool button runs.
     pub fn for_tool(t: Tool) -> Option<Cmd> {
         COMMANDS.iter().find(|c| c.3 == t && !matches!(t, Tool::Select | Tool::Pick)).map(|c| c.0)
     }
@@ -175,15 +175,6 @@ impl Cmd {
     /// Plain-language name for buttons and menus.
     pub fn title(self) -> &'static str {
         card::title(self)
-    }
-
-    /// For constraint commands: a constraint command (its tooltip names the AutoCAD command).
-    pub fn is_constraint(self) -> bool {
-        self.constrains()
-    }
-
-    pub fn alias(self) -> &'static str {
-        self.row().2
     }
 
     fn tool(self) -> Tool {
@@ -297,7 +288,7 @@ pub fn input_id() -> egui::Id {
 }
 
 impl App {
-    /// A toolbar button: runs the same command as typing its name. Select cancels.
+    /// A tool button: runs the same command as typing its name. Select cancels.
     pub(super) fn set_tool(&mut self, t: Tool) {
         match Cmd::for_tool(t) {
             Some(cmd) => self.start(cmd),
@@ -373,7 +364,7 @@ impl App {
         }
     }
 
-    /// The command that is running, for highlighting its toolbar button.
+    /// The command that is running, for highlighting its ribbon button.
     pub(super) fn active_cmd(&self) -> Option<Cmd> {
         self.cmdline.active.map(|(c, _)| c)
     }

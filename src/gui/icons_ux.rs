@@ -1,5 +1,5 @@
-//! Toolbar help texts and line-art icons for the AutoCAD UX pack's commands (guides, zoom, editing,
-//! selection), drawn in the same style as toolbar.rs.
+//! Help texts and line-art icons for the AutoCAD UX pack's commands (guides, zoom, editing,
+//! selection), drawn in the same style as icons.rs.
 
 use super::command::Cmd;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, pos2};

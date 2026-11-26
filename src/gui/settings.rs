@@ -1,5 +1,5 @@
 //! The editor's own settings that survive a restart: the status bar toggles (GRID, SNAP, ORTHO,
-//! POLAR with its angles, OSNAP, OTRACK, INFER) and a few View choices. Stored as JSON in the
+//! POLAR with its angles, OSNAP, OTRACK, INFER), a few View choices and the ribbon's tab and fold. Stored as JSON in the
 //! user's config folder; a missing or broken file just means the defaults.
 
 use super::App;
@@ -21,6 +21,8 @@ pub struct Settings {
     show_guides: bool,
     show_cmdline: bool,
     measure_hover: bool,
+    ribbon_tab: super::ribbon::Tab,
+    ribbon_collapsed: bool,
 }
 
 impl Default for Settings {
@@ -39,6 +41,8 @@ impl Default for Settings {
             show_guides: true,
             show_cmdline: false,
             measure_hover: false,
+            ribbon_tab: Default::default(),
+            ribbon_collapsed: false,
         }
     }
 }
@@ -81,6 +85,8 @@ impl App {
             show_guides: self.show_guides,
             show_cmdline: self.show_cmdline,
             measure_hover: self.measure_hover,
+            ribbon_tab: self.ribbon.tab,
+            ribbon_collapsed: self.ribbon.collapsed,
         }
     }
 
@@ -90,6 +96,7 @@ impl App {
         (a.polar_step, a.polar_extra) = (s.polar_step, s.polar_extra.clone());
         self.polar_extra_text = s.polar_extra.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ");
         (self.snap, self.show_guides, self.show_cmdline, self.measure_hover) = (s.snap, s.show_guides, s.show_cmdline, s.measure_hover);
+        (self.ribbon.tab, self.ribbon.collapsed) = (s.ribbon_tab, s.ribbon_collapsed);
         self.saved_settings = s;
     }
 

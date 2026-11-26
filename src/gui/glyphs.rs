@@ -1,4 +1,4 @@
-//! Line-art glyphs for the constraint kinds, drawn in a unit square: the toolbar's Constrain group
+//! Line-art glyphs for the constraint kinds, drawn in a unit square: the ribbon's Parametric tab
 //! and the constraint bars on the canvas use the same pictures.
 
 use crate::model::Kind;

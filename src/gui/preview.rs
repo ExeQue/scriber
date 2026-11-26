@@ -5,7 +5,7 @@ use super::App;
 use super::geometry_cache::tessellate;
 use crate::model::preview::{Palette, palette, scene};
 use crate::model::{Op, Point, Shape};
-use eframe::egui::{self, Align2, Color32, FontId, Key, Modifiers, PointerButton, Pos2, Rect, Stroke, vec2};
+use eframe::egui::{self, Align2, Color32, FontId, PointerButton, Pos2, Rect, Stroke, vec2};
 
 type Mesh = (Vec<[f32; 2]>, Vec<u32>);
 
@@ -29,13 +29,6 @@ impl App {
         if self.preview.take().is_none() {
             self.cancel();
             self.preview = Some(Preview::default());
-        }
-    }
-
-    /// P turns the preview on and off when no text is being typed.
-    pub(super) fn preview_key(&mut self, ctx: &egui::Context) {
-        if !ctx.text_edit_focused() && self.cmdline.input.is_empty() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::P)) {
-            self.toggle_preview();
         }
     }
 
@@ -110,7 +103,7 @@ impl App {
 
 fn banner(painter: &egui::Painter, rect: Rect) {
     let pos = rect.center_top() + vec2(0.0, 12.0);
-    let galley = painter.layout_no_wrap("Preview — press P or click to edit".into(), FontId::proportional(14.0), Color32::WHITE);
+    let galley = painter.layout_no_wrap(format!("Preview — press {} or click to edit", super::shortcuts::preview_key()), FontId::proportional(14.0), Color32::WHITE);
     let r = Align2::CENTER_TOP.anchor_size(pos, galley.size());
     painter.rect_filled(r.expand2(vec2(10.0, 5.0)), 6.0, Color32::from_rgba_unmultiplied(0, 90, 140, 230));
     painter.galley(r.min, galley, Color32::WHITE);

@@ -1,61 +1,15 @@
-//! The left toolbar (icon buttons for every command, grouped like AutoCAD's Draw and Modify
-//! panels) and the laser bar under the menu (what new or selected shapes do on the laser).
+//! The ribbon's icons and help texts: line-art icons painted for every command (so they stay sharp
+//! at any size), the plain-language help shown in tooltips, and the rounded toggle (`pill`).
 
-use super::App;
 use super::command::Cmd;
-use super::labels::{OPEN_SCORED, op_color, op_help, op_label};
 use super::glyphs;
-use crate::model::{Kind, Op};
-use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, RichText, Sense, Stroke, Vec2, pos2, vec2};
+use crate::model::Kind;
+use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, pos2, vec2};
 
-const BUTTON: f32 = 34.0;
-const ACCENT: Color32 = Color32::from_rgb(0, 110, 160);
+pub(super) const ACCENT: Color32 = Color32::from_rgb(0, 110, 160);
 
-/// The toolbar groups; `None` is the Select button.
-const GROUPS: [(&str, &[Option<Cmd>]); 9] = [
-    ("Draw", &[None, Some(Cmd::Line), Some(Cmd::Pline), Some(Cmd::Rectang), Some(Cmd::Circle), Some(Cmd::Arc), Some(Cmd::Polygon), Some(Cmd::Text), Some(Cmd::DimLinear), Some(Cmd::Dist)]),
-    ("Modify", &[Some(Cmd::Move), Some(Cmd::Copy), Some(Cmd::Rotate), Some(Cmd::Scale), Some(Cmd::Mirror), Some(Cmd::Erase), Some(Cmd::Fillet), Some(Cmd::Chamfer), Some(Cmd::Offset), Some(Cmd::Trim), Some(Cmd::Array)]),
-    ("Combine", &[Some(Cmd::Union), Some(Cmd::Subtract), Some(Cmd::Intersect)]),
-    (
-        "Constrain",
-        &[
-            Some(Cmd::Constrain(Kind::Coincident)),
-            Some(Cmd::Constrain(Kind::Collinear)),
-            Some(Cmd::Constrain(Kind::Concentric)),
-            Some(Cmd::Constrain(Kind::Fix)),
-            Some(Cmd::Constrain(Kind::Parallel)),
-            Some(Cmd::Constrain(Kind::Perpendicular)),
-            Some(Cmd::Constrain(Kind::Horizontal)),
-            Some(Cmd::Constrain(Kind::Vertical)),
-            Some(Cmd::Constrain(Kind::Tangent)),
-            Some(Cmd::Constrain(Kind::Smooth)),
-            Some(Cmd::Constrain(Kind::Symmetric)),
-            Some(Cmd::Constrain(Kind::Equal)),
-            Some(Cmd::AutoConstrain),
-            Some(Cmd::DelConstraint),
-            Some(Cmd::ConstraintBar),
-        ],
-    ),
-    (
-        "Lock sizes",
-        &[
-            Some(Cmd::DcLinear),
-            Some(Cmd::Constrain(Kind::DimHorizontal)),
-            Some(Cmd::Constrain(Kind::DimVertical)),
-            Some(Cmd::Constrain(Kind::DimAligned)),
-            Some(Cmd::Constrain(Kind::DimAngular)),
-            Some(Cmd::Constrain(Kind::DimRadial)),
-            Some(Cmd::Constrain(Kind::DimDiameter)),
-            Some(Cmd::Parameters),
-        ],
-    ),
-    ("Guides", &[Some(Cmd::Xline), Some(Cmd::Ray), Some(Cmd::Centerline), Some(Cmd::Centermark)]),
-    ("Reshape", &[Some(Cmd::Stretch), Some(Cmd::Join), Some(Cmd::Explode), Some(Cmd::Align), Some(Cmd::MatchProp), Some(Cmd::Break), Some(Cmd::Extend), Some(Cmd::Lengthen)]),
-    ("Organise", &[Some(Cmd::Group), Some(Cmd::Ungroup), Some(Cmd::SelectSimilar), Some(Cmd::QuickSelect), Some(Cmd::Isolate), Some(Cmd::Unisolate)]),
-    ("View", &[Some(Cmd::Zoom)]),
-];
-
-fn help(cmd: Option<Cmd>) -> &'static str {
+/// The help text of a command (`None` is Select), shown in its tooltip.
+pub(super) fn help(cmd: Option<Cmd>) -> &'static str {
     let Some(cmd) = cmd else { return "Select shapes. Drag on empty space for a window (→) or crossing (←)." };
     match cmd {
         Cmd::Line => "Straight lines, point after point.",
@@ -81,14 +35,15 @@ fn help(cmd: Option<Cmd>) -> &'static str {
         Cmd::Union => "Merge the selected shapes into one.",
         Cmd::Subtract => "Cut the other selected shapes out of the first one.",
         Cmd::Intersect => "Keep only where the selected shapes overlap.",
-        Cmd::Undo | Cmd::Redo => "",
+        Cmd::Undo => "Take back the last change.",
+        Cmd::Redo => "Do again what Undo took back.",
         Cmd::Constrain(k) => constraint_help(k),
         Cmd::DcLinear => "Lock the horizontal or vertical distance between two points; drag it to change.",
         Cmd::AutoConstrain => "Add the constraints the selection already nearly meets (joined ends, level lines, right angles, …).",
         Cmd::DelConstraint => "Remove every constraint from the selected shapes. They stay where they are.",
         Cmd::ConstraintBar => "Show or hide the constraint icons (for the selection, or all).",
         Cmd::Parameters => "List the locked sizes (d1, d2, …) to change their values or link them with formulas.",
-        c => super::toolbar_ux::help(c),
+        c => super::icons_ux::help(c),
     }
 }
 
@@ -113,104 +68,6 @@ fn constraint_help(k: Kind) -> &'static str {
         Kind::DimRadial => "Lock the radius of a circle or arc.",
         Kind::DimDiameter => "Lock the diameter of a circle or arc.",
     }
-}
-
-impl App {
-    pub(super) fn toolbar(&mut self, ui: &mut egui::Ui) {
-        let active = self.active_cmd();
-        // Scrolls when the window is too short for every group; groups fold away (egui remembers which).
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        for (title, cmds) in GROUPS {
-            ui.add_space(4.0);
-            let open = matches!(title, "Draw" | "Modify");
-            egui::CollapsingHeader::new(RichText::new(title).small().weak()).id_salt(("toolbar", title)).default_open(open).show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
-                for &cmd in cmds {
-                    let on = match cmd {
-                        None => active.is_none(),
-                        Some(c) => active == Some(c),
-                    };
-                    let name = match cmd {
-                        None => "Select (Esc)".to_string(),
-                        Some(c) if c.is_constraint() => format!("{} ({})", c.title(), c.name()),
-                        Some(c) => format!("{} ({})", title_case(c.name()), c.alias()),
-                    };
-                    let response = icon_button(ui, on, |p, r, c| paint_icon(p, r, c, cmd)).on_hover_text(format!("{name}\n{}", help(cmd)));
-                    if response.clicked() {
-                        match cmd {
-                            Some(c) => self.start(c),
-                            None => self.cancel(),
-                        }
-                    }
-                }
-            });
-            });
-        }
-        });
-    }
-
-    /// The laser bar: what the selection (or, with nothing selected, new shapes) does on the laser.
-    pub(super) fn laser_bar(&mut self, ui: &mut egui::Ui) {
-        let doc = self.doc.clone();
-        let mut d = doc.lock().unwrap();
-        let sel = d.selection.clone();
-        let items: Vec<(Op, bool)> = d.s.items.iter().filter(|i| sel.contains(&i.id)).map(|i| (i.op, i.shape.has_area())).collect();
-        // Show the selection's op when they agree; otherwise the default for new shapes.
-        let op = match items.first() {
-            None => Some(self.new_op),
-            Some(first) => Some(first.0).filter(|o| items.iter().all(|i| i.0 == *o)),
-        };
-        let mut set_op = None;
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            let target = if items.is_empty() { "New shapes".to_string() } else { format!("{} selected", items.len()) };
-            ui.label(RichText::new(target).weak());
-            ui.add_space(8.0);
-            for o in Op::ALL {
-                if pill(ui, op == Some(o), Some(op_color(o)), op_label(o)).on_hover_text(op_help(o)).clicked() {
-                    set_op = Some(o);
-                }
-            }
-            if items.iter().any(|i| i.0 == Op::Engrave && !i.1) {
-                ui.add_space(8.0);
-                ui.label(RichText::new(OPEN_SCORED).weak().small());
-            }
-            ui.add_space(16.0);
-            self.preview_and_check_buttons(ui, &d);
-        });
-        super::library_window::pickers(ui, &mut d);
-        let Some(set_op) = set_op else { return };
-        if items.is_empty() {
-            self.new_op = set_op;
-            return;
-        }
-        d.checkpoint();
-        for item in d.s.items.iter_mut().filter(|i| sel.contains(&i.id)) {
-            item.op = set_op;
-        }
-    }
-}
-
-fn title_case(s: &str) -> String {
-    let lower = s.to_lowercase();
-    let mut c = lower.chars();
-    c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
-}
-
-/// A square button with a painted icon.
-fn icon_button(ui: &mut egui::Ui, on: bool, paint: impl FnOnce(&egui::Painter, Rect, Color32)) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(BUTTON), Sense::click());
-    let visuals = ui.visuals();
-    let (bg, fg) = match (on, response.hovered()) {
-        (true, _) => (ACCENT, Color32::WHITE),
-        (false, true) => (visuals.widgets.hovered.bg_fill, visuals.strong_text_color()),
-        (false, false) => (Color32::TRANSPARENT, visuals.text_color()),
-    };
-    let painter = ui.painter();
-    painter.rect_filled(rect, CornerRadius::same(5), bg);
-    paint(painter, rect.shrink(8.0), fg);
-    response
 }
 
 /// A rounded toggle with an optional colour dot.
@@ -238,7 +95,7 @@ pub(super) fn pill(ui: &mut egui::Ui, on: bool, dot: Option<Color32>, text: &str
 }
 
 /// Line-art icons drawn in a unit square, so they stay sharp at any scale.
-fn paint_icon(p: &egui::Painter, r: Rect, c: Color32, cmd: Option<Cmd>) {
+pub(super) fn paint_icon(p: &egui::Painter, r: Rect, c: Color32, cmd: Option<Cmd>) {
     let at = |x: f32, y: f32| pos2(r.left() + x * r.width(), r.top() + y * r.height());
     let s = Stroke::new(1.6, c);
     let line = |pts: &[(f32, f32)]| {
@@ -388,7 +245,16 @@ fn paint_icon(p: &egui::Painter, r: Rect, c: Color32, cmd: Option<Cmd>) {
                 p.circle_stroke(b, rad, s);
             }
         }
-        Cmd::Undo | Cmd::Redo => {}
+        Cmd::Undo | Cmd::Redo => {
+            // A curved arrow, pointing left for Undo and right for Redo.
+            let flip = |x: f32| if cmd == Cmd::Undo { x } else { 1.0 - x };
+            let pts: Vec<Pos2> = (0..=16).map(|i| {
+                let a = (180.0 + 180.0 * i as f32 / 16.0).to_radians();
+                at(flip(0.55 + 0.35 * a.cos()), 0.65 + 0.4 * a.sin())
+            }).collect();
+            p.add(egui::Shape::line(pts, s));
+            line(&[(flip(0.05), 0.45), (flip(0.2), 0.68), (flip(0.38), 0.5)]);
+        }
         Cmd::Constrain(k) => glyphs::paint(p, r, c, k),
         Cmd::DcLinear => {
             glyphs::paint(p, r, c, Kind::DimHorizontal);
@@ -416,7 +282,7 @@ fn paint_icon(p: &egui::Painter, r: Rect, c: Color32, cmd: Option<Cmd>) {
             }
             line(&[(0.4, 0.1), (0.4, 0.9)]);
         }
-        cmd => super::toolbar_ux::paint(p, r, c, cmd),
+        cmd => super::icons_ux::paint(p, r, c, cmd),
     }
 }
 

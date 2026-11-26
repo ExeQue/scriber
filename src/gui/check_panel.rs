@@ -1,4 +1,4 @@
-//! The pre-flight check in the laser bar: Preview and Check buttons, and a small window listing the
+//! The pre-flight check in the ribbon's Laser tab: Preview and Check buttons, and a small window listing the
 //! warnings; clicking one selects its shapes and zooms to them. A window rather than a modal, so the
 //! drawing stays usable while the list is open.
 
@@ -38,7 +38,7 @@ fn color(s: Severity) -> Color32 {
 impl App {
     /// The Preview toggle and the Check button with the number of warnings.
     pub(super) fn preview_and_check_buttons(&mut self, ui: &mut egui::Ui, d: &Document) {
-        if super::toolbar::pill(ui, self.preview.is_some(), None, "Preview").on_hover_text("Show only what the laser makes (P)").clicked() {
+        if super::icons::pill(ui, self.preview.is_some(), None, "Preview").on_hover_text(format!("Show only what the laser makes ({})", super::shortcuts::preview_key())).clicked() {
             self.toggle_preview();
         }
         ui.add_space(4.0);
@@ -46,7 +46,7 @@ impl App {
         let w = &self.check.warnings;
         let dot = w.first().map(|w| color(w.severity)).unwrap_or(Color32::from_rgb(90, 180, 90));
         let label = if w.is_empty() { "Check".to_string() } else { format!("Check ({})", w.len()) };
-        if super::toolbar::pill(ui, self.check.open, Some(dot), &label).on_hover_text("Things that could go wrong on the laser").clicked() {
+        if super::icons::pill(ui, self.check.open, Some(dot), &label).on_hover_text("Things that could go wrong on the laser").clicked() {
             self.check.open = !self.check.open;
         }
     }

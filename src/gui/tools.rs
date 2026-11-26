@@ -16,7 +16,7 @@ pub enum Tool {
     Text,
     Dimension,
     Measure,
-    /// Points for an editing command (base point, second point); not on the toolbar.
+    /// Points for an editing command (base point, second point); not on the ribbon.
     Pick,
 }
 
@@ -24,7 +24,7 @@ impl Tool {
     /// What to do next, given how many points are placed.
     pub fn hint(self, placed: usize) -> &'static str {
         match (self, placed) {
-            (Tool::Select, _) => "Click shapes to add them, Shift-click to remove. Drag on empty space for a window (left to right) or crossing (right to left). Drag grips to edit. Pick a tool on the left to draw.",
+            (Tool::Select, _) => "Click shapes to add them, Shift-click to remove. Drag on empty space for a window (left to right) or crossing (right to left). Drag grips to edit. Pick a tool in the ribbon at the top to draw.",
             (Tool::Rect, 0) => "Click (or press and drag) the first corner.",
             (Tool::Rect, _) => "Click the opposite corner.",
             (Tool::Circle, _) => "Click the points of the circle; the card shows which point comes next and other ways to draw it.",

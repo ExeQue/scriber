@@ -1,6 +1,6 @@
 //! What the pointer is over, before any click: the shape a click would pick glows, and after a
 //! short rest a tooltip tells its name, laser operation, size and constraints. Where shapes
-//! overlap a badge offers Shift+Space to cycle. With no command running, holding Ctrl (or View >
+//! overlap a badge offers Shift+Space to cycle. With no command running, holding Ctrl (or the View tab's
 //! Measure on hover) measures what is under the cursor: a segment's length, an arc's radius, or the
 //! distance between the last two snap points pointed at.
 
@@ -89,7 +89,7 @@ impl App {
         }
     }
 
-    /// Measure on hover: with no command running and Ctrl held (or the View menu toggle on).
+    /// Measure on hover: with no command running and Ctrl held (or the View tab toggle on).
     pub(super) fn paint_hover_measure(&mut self, painter: &egui::Painter, items: &[Item], pointer: Option<Point>) {
         let ctrl = painter.ctx().input(|i| i.modifiers.command);
         let Some(p) = pointer.filter(|_| (ctrl || self.measure_hover) && self.active_cmd().is_none() && self.drag.is_none()) else {

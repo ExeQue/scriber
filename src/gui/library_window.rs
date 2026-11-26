@@ -1,4 +1,4 @@
-//! The "Machines & materials" window, and the machine/material pickers in the laser bar.
+//! The "Machines & materials" window, and the machine/material pickers in the ribbon's Laser tab.
 
 use super::App;
 use crate::library::{self, Laser, LaserKind, Library, Machine, Material, Operation, Setting};
@@ -33,12 +33,6 @@ enum ListAction {
 }
 
 impl App {
-    pub(super) fn laser_menu(&mut self, ui: &mut egui::Ui) {
-        if ui.button("Machines & materials…").on_hover_text("Your laser cutters and the power and speed to use for each material").clicked() {
-            self.library = Some(Editor::new());
-        }
-    }
-
     pub(super) fn library_window(&mut self, ctx: &egui::Context) {
         let Some(ed) = &mut self.library else { return };
         let mut close = false;
@@ -326,7 +320,7 @@ fn setting_row(ui: &mut egui::Ui, s: &mut Setting, machines: &[Machine]) {
     }
 }
 
-/// The laser bar's second row: the document's machine, laser and material, and the settings that apply.
+/// The ribbon's Machine & material panel: the document's machine, laser and material, and the settings that apply.
 pub(super) fn pickers(ui: &mut egui::Ui, d: &mut Document) {
     let lib = library::get();
     let s = &d.s;
@@ -334,48 +328,56 @@ pub(super) fn pickers(ui: &mut egui::Ui, d: &mut Document) {
     let material = s.material.as_deref().and_then(|id| lib.material(id));
     let (mut new_machine, mut new_laser, mut new_material) = (s.machine.clone(), s.laser.clone(), s.material.clone());
     let mut use_area = None;
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("Machine").weak());
-        ComboBox::from_id_salt("doc_machine").selected_text(machine.map_or("None", |m| &m.name)).show_ui(ui, |ui| {
-            ui.selectable_value(&mut new_machine, None, "None");
-            for m in &lib.machines {
-                ui.selectable_value(&mut new_machine, Some(m.id.clone()), &m.name);
-            }
-        });
-        if let Some(m) = machine
-            && m.lasers.len() > 1
-        {
-            let name = s.laser.as_deref().and_then(|l| m.laser(l)).map_or("Choose", |l| &l.name);
-            ComboBox::from_id_salt("doc_laser").selected_text(name).show_ui(ui, |ui| {
-                for l in &m.lasers {
-                    ui.selectable_value(&mut new_laser, Some(l.id.clone()), &l.name);
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 3.0;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Machine").weak());
+            ComboBox::from_id_salt("doc_machine").selected_text(machine.map_or("None", |m| &m.name)).width(150.0).show_ui(ui, |ui| {
+                ui.selectable_value(&mut new_machine, None, "None");
+                for m in &lib.machines {
+                    ui.selectable_value(&mut new_machine, Some(m.id.clone()), &m.name);
                 }
             });
-        }
-        ui.add_space(8.0);
-        ui.label(RichText::new("Material").weak());
-        ComboBox::from_id_salt("doc_material").selected_text(material.map_or("None", |m| &m.name)).width(180.0).show_ui(ui, |ui| {
-            ui.selectable_value(&mut new_material, None, "None");
-            for m in &lib.materials {
-                ui.selectable_value(&mut new_material, Some(m.id.clone()), &m.name);
+            if let Some(m) = machine
+                && m.lasers.len() > 1
+            {
+                let name = s.laser.as_deref().and_then(|l| m.laser(l)).map_or("Choose", |l| &l.name);
+                ComboBox::from_id_salt("doc_laser").selected_text(name).show_ui(ui, |ui| {
+                    for l in &m.lasers {
+                        ui.selectable_value(&mut new_laser, Some(l.id.clone()), &l.name);
+                    }
+                });
             }
+        });
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Material").weak());
+            ComboBox::from_id_salt("doc_material").selected_text(material.map_or("None", |m| &m.name)).width(150.0).show_ui(ui, |ui| {
+                ui.selectable_value(&mut new_material, None, "None");
+                for m in &lib.materials {
+                    ui.selectable_value(&mut new_material, Some(m.id.clone()), &m.name);
+                }
+            });
         });
         if let Some(m) = machine {
             let [w, h] = m.area(s.laser.as_deref());
-            if [w, h] != [s.width, s.height] && ui.button(format!("Use work area {w} × {h} mm")).on_hover_text("Make the material as large as the machine's work area").clicked() {
+            if [w, h] != [s.width, s.height] && ui.small_button(format!("Use work area {w} × {h} mm")).on_hover_text("Make the material as large as the machine's work area").clicked() {
                 use_area = Some([w, h]);
             }
         }
-        if let (Some(m), Some(mat)) = (machine, material) {
-            ui.add_space(8.0);
+    });
+    // The settings for the chosen material, one line per operation.
+    if let (Some(m), Some(mat)) = (machine, material) {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
             let hints: Vec<String> = Operation::ALL.iter().filter_map(|op| mat.setting(&m.id, s.laser.as_deref(), *op).map(|x| format!("{}: {}", op.label(), x.hint()))).collect();
             if hints.is_empty() {
-                ui.label(RichText::new("No settings for this material on this machine yet (Laser > Machines & materials)").weak());
-            } else {
-                ui.label(RichText::new(hints.join("   ")).weak());
+                ui.label(RichText::new("No settings for this material\non this machine yet\n(Machines & materials…)").weak().small());
             }
-        }
-    });
+            for h in hints {
+                ui.label(RichText::new(h).weak().small());
+            }
+        });
+    }
     if new_machine != s.machine {
         new_laser = new_machine.as_deref().and_then(|id| lib.machine(id)).and_then(|m| m.lasers.first()).map(|l| l.id.clone());
     }

@@ -33,7 +33,7 @@ impl Cmd {
     }
 }
 
-/// Plain-language names for the toolbar, card and menus (the AutoCAD name goes in the tooltip).
+/// Plain-language names for the ribbon, card and menus.
 pub(super) fn constrain_title(cmd: Cmd) -> &'static str {
     match cmd {
         Cmd::Constrain(k) => match k {

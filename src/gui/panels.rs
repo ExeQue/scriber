@@ -1,6 +1,6 @@
-//! The panels around the canvas: menu bar, toolbar (left), properties (right) and status bar.
+//! The panels around the canvas: menu bar, properties (right) and status bar (the ribbon is in ribbon/).
 
-use super::{App, command};
+use super::App;
 use super::snap::Aid;
 use super::labels::{OPEN_SCORED, op_color, op_help, op_label};
 use crate::model::{BBox, Op, Shape, State, Transform};
@@ -64,35 +64,14 @@ impl App {
                     self.select_all();
                 }
             });
-            ui.menu_button("View", |ui| {
-                if ui.button("Show whole material").clicked() {
-                    self.view.zoom_extents();
-                }
-                if ui.button("Zoom window  (Z)").clicked() {
-                    self.start(command::Cmd::Zoom);
-                }
-                if ui.button("Previous view").clicked() {
-                    self.zoom_previous();
-                }
-                if ui.button("Zoom to selection").clicked() {
-                    self.zoom_selection();
-                }
-                if self.isolated.is_some() && ui.button("Show everything (end isolation)").clicked() {
-                    self.isolated = None;
-                }
-                if ui.selectable_label(self.preview.is_some(), "Preview what the laser makes  (P)").clicked() {
-                    self.toggle_preview();
-                }
-                ui.checkbox(&mut self.show_guides, "Show guide lines");
-                ui.checkbox(&mut self.measure_hover, "Measure on hover (or hold Ctrl)");
-
-                ui.checkbox(&mut self.snap, "Snap to grid");
-                ui.checkbox(&mut self.show_cmdline, "Command line (for CAD users)");
-            });
-            ui.menu_button("Laser", |ui| self.laser_menu(ui));
             ui.menu_button("AI agents", |ui| {
                 if ui.button("Connect AI agents…").clicked() {
                     self.open_agents();
+                }
+            });
+            ui.menu_button("Help", |ui| {
+                if ui.button("Keyboard shortcuts").clicked() {
+                    self.show_shortcuts = true;
                 }
             });
         });
@@ -114,7 +93,7 @@ impl App {
             match sel.as_slice() {
                 [] => {
                     ui.heading("Nothing selected");
-                    ui.label("Pick a tool on the left and draw, or click a shape to change it.");
+                    ui.label("Pick a tool in the ribbon at the top and draw, or click a shape to change it.");
                 }
                 [id] => {
                     let metrics = d.item(*id).map(|i| i.shape.metrics());

@@ -16,6 +16,8 @@ mod grip_menu;
 mod grips;
 mod guides;
 mod hover;
+mod icons;
+mod icons_ux;
 mod labels;
 mod library_window;
 mod overrides;
@@ -23,12 +25,12 @@ mod panels;
 mod parameters;
 mod picked;
 mod preview;
+mod ribbon;
 mod select;
 mod settings;
+mod shortcuts;
 mod snap;
 mod svg_import;
-mod toolbar;
-mod toolbar_ux;
 mod tools;
 mod tracking;
 mod zoom;
@@ -84,7 +86,7 @@ struct App {
     draft_along: Vec<crate::model::constraints::attach::Along>,
     drag: Option<Drag>,
     cmdline: command::CommandLine,
-    /// The AutoCAD-style command line; hidden unless the user turns it on (View menu).
+    /// The AutoCAD-style command line; hidden unless the user turns it on (ribbon View tab).
     show_cmdline: bool,
     measured: Option<(Point, Point)>,
     /// Where the mouse is on the material (snapped), for the command card's live measurements.
@@ -123,7 +125,11 @@ struct App {
     svg_dialog: Option<svg_import::SvgDialog>,
     /// The open "Machines & materials" window.
     library: Option<library_window::Editor>,
-    /// View > Show guide lines.
+    /// The ribbon's tab, fold and layout.
+    ribbon: ribbon::Ribbon,
+    /// Help > Keyboard shortcuts is open.
+    show_shortcuts: bool,
+    /// Show guide lines (ribbon Annotate and View tabs).
     show_guides: bool,
     /// ISOLATE: only these items are shown (view only, not saved).
     isolated: Option<Vec<u64>>,
@@ -145,7 +151,7 @@ struct App {
     cycle: cycle::Cycle,
     /// The shape a click would pick, and since when the pointer is on it.
     hover: Option<(u64, std::time::Instant)>,
-    /// View > Measure on hover (else hold Ctrl), and the last two snap points pointed at.
+    /// Measure on hover (ribbon View tab) (else hold Ctrl), and the last two snap points pointed at.
     measure_hover: bool,
     /// The settings as last saved (status bar toggles, view choices).
     saved_settings: settings::Settings,
@@ -239,6 +245,8 @@ impl App {
             allow_close: false,
             svg_dialog: None,
             library: None,
+            ribbon: ribbon::Ribbon::default(),
+            show_shortcuts: false,
             show_guides: true,
             isolated: None,
             space_panned: false,
@@ -501,12 +509,14 @@ impl eframe::App for App {
         let hover = ctx.pointer_hover_pos().filter(|p| self.canvas_rect.contains(*p));
         let pointer = hover.map(|p| self.snap(self.s2w(p)));
 
+        // No editing in preview mode.
+        let editing = self.preview.is_none();
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
-        egui::Panel::top("laser").show(ui, |ui| self.laser_bar(ui));
+        egui::Panel::top("ribbon").show(ui, |ui| self.ribbon(ui, editing));
         self.aid_keys(&ctx);
         self.dyn_keys(&ctx);
-        self.preview_key(&ctx);
-        // No editing in preview mode.
+        self.shortcut_keys(&ctx, editing);
+        // The ribbon or a shortcut may have just toggled the preview.
         let editing = self.preview.is_none();
         if editing {
             self.keys(&ctx, pointer);
@@ -515,7 +525,6 @@ impl eframe::App for App {
         if self.show_cmdline {
             egui::Panel::bottom("command").show(ui, |ui| self.command_line(ui));
         }
-        egui::Panel::left("tools").exact_size(146.0).show(ui, |ui| ui.add_enabled_ui(editing, |ui| self.toolbar(ui)));
         egui::Panel::right("props").default_size(290.0).show(ui, |ui| ui.add_enabled_ui(editing, |ui| self.properties(ui)));
         egui::CentralPanel::no_frame().show(ui, |ui| self.canvas(ui));
         self.command_card(&ctx);
@@ -531,6 +540,9 @@ impl eframe::App for App {
             self.agents_window(&ctx);
         }
         self.check_window(&ctx);
+        if self.show_shortcuts {
+            self.shortcuts_window(&ctx);
+        }
         self.svg_import_window(&ctx);
         self.library_window(&ctx);
         if self.confirm_close {
