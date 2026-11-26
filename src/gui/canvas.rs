@@ -487,7 +487,10 @@ impl App {
             Tool::Circle => format!("Ø {:.1} mm", m.bbox[2]),
             _ => format!("{:.1} mm", m.length),
         };
-        painter.text(self.w2s(p) + vec2(14.0, 14.0), Align2::LEFT_TOP, label, FontId::proportional(13.0), Color32::from_gray(30));
+        // Dynamic input shows the same measurements next to the cursor; avoid two boxes on top of each other.
+        if !self.has_dyn_fields() {
+    painter.text(self.w2s(p) + vec2(14.0, 14.0), Align2::LEFT_TOP, label, FontId::proportional(13.0), Color32::from_gray(30));
+        }
     }
 }
 

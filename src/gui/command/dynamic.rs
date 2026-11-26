@@ -87,7 +87,7 @@ fn key_char(key: Key) -> Option<char> {
 }
 
 impl App {
-    pub(super) fn has_dyn_fields(&self) -> bool {
+    pub(in crate::gui) fn has_dyn_fields(&self) -> bool {
         self.dyn_kind().is_some()
     }
 
