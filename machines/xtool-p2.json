@@ -1,0 +1,14 @@
+{
+  "id": "xtool-p2",
+  "name": "xTool P2",
+  "vendor": "xTool",
+  "model": "P2",
+  "xtool": {"device": "MP2", "name": "P2"},
+  "width": 600,
+  "height": 305,
+  "lasers": [
+    {"id": "co2-55w", "name": "55 W CO2 laser", "kind": "co2", "power_w": 55, "ops": ["cut", "score", "engrave"]}
+  ],
+  "notes": "CO2 laser.",
+  "source": "xTool Studio 1.9.11 device extension MP2 (exts/P2), read 2026-11-26. Work area from processingArea (LASER_PLANE 600 x 305; the canvas is 610 x 305); module from defaultPower 55 and laserType CO2. Which operations each module can do is an assumption."
+}

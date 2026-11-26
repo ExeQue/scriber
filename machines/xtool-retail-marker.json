@@ -1,0 +1,15 @@
+{
+  "id": "xtool-retail-marker",
+  "name": "xTool Retail Marker",
+  "vendor": "xTool",
+  "model": "Retail Marker",
+  "xtool": {"device": "GS008", "name": "Retail Marker"},
+  "width": 220,
+  "height": 220,
+  "lasers": [
+    {"id": "fiber-20w", "name": "20 W fiber laser", "kind": "fiber", "power_w": 20, "ops": ["score", "engrave"]},
+    {"id": "diode-20w", "name": "20 W blue laser", "kind": "diode", "power_w": 20, "ops": ["cut", "score", "engrave"]}
+  ],
+  "notes": "Galvo laser, same layout as the F1 Ultra: a 1064 nm fiber laser and a 455 nm blue diode.",
+  "source": "xTool Studio 1.9.11 device extension GS008 (exts/GS008), read 2026-11-26. Work area from processingArea (LASER_PLANE 220 x 220); modules from defaultPower [20, 20] (redPower, laserPower), the labels 455-<W>W / 1064-<W>W and the fiber_ir_blue text key. Which operations each module can do is an assumption."
+}

@@ -1,0 +1,14 @@
+{
+  "id": "xtool-m1",
+  "name": "xTool M1",
+  "vendor": "xTool",
+  "model": "M1",
+  "xtool": {"device": "MLM", "name": "M1"},
+  "width": 385,
+  "height": 300,
+  "lasers": [
+    {"id": "diode-10w", "name": "10 W blue laser", "kind": "diode", "power_w": 10, "ops": ["cut", "score", "engrave"]}
+  ],
+  "notes": "Diode laser with a blade cutter (blade area 365 x 300). xTool also sold a 5 W version; the extension reads the power from the machine and only names 10 W.",
+  "source": "xTool Studio 1.9.11 device extension MLM (exts/M1), read 2026-11-26. Work area from processingArea (LASER_PLANE 385 x 300; the canvas is 400 x 300); module from defaultPower 10. That it is a blue diode is not stated in the extension. Which operations each module can do is an assumption."
+}

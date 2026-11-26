@@ -1,0 +1,15 @@
+{
+  "id": "xtool-metalfab",
+  "name": "xTool MetalFab CNC Cutter",
+  "vendor": "xTool",
+  "model": "MetalFab",
+  "xtool": {"device": "HJ003", "name": "MetalFab CNC Cutter"},
+  "width": 610,
+  "height": 610,
+  "lasers": [
+    {"id": "fiber-1200w", "name": "1200 W fiber laser", "kind": "fiber", "power_w": 1200, "ops": ["cut", "score"]},
+    {"id": "fiber-800w", "name": "800 W fiber laser", "kind": "fiber", "power_w": 800, "ops": ["cut", "score"]}
+  ],
+  "notes": "Metal laser cutter and welder. The extension knows a 1200 W and an 800 W version.",
+  "source": "xTool Studio 1.9.11 device extension HJ003 (exts/HJ003), read 2026-11-26. Work area from processingArea (610 x 610); power from defaultPower 1200 and the 1200 / 800 W status images. Unverified: that the source is a fiber laser (not stated in the extension), and the operations (cut and score; it also does laser cleaning, which Scriber has no operation for)."
+}

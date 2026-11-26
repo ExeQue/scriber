@@ -1,0 +1,14 @@
+{
+  "id": "xtool-p1",
+  "name": "xTool P1",
+  "vendor": "xTool",
+  "model": "P1",
+  "xtool": {"device": "MLR", "name": "P1"},
+  "width": 490,
+  "height": 290,
+  "lasers": [
+    {"id": "co2-40w", "name": "40 W CO2 laser", "kind": "co2", "power_w": 40, "ops": ["cut", "score", "engrave"]}
+  ],
+  "notes": "CO2 laser (also sold as Laserbox).",
+  "source": "xTool Studio 1.9.11 device extension MLR (exts/P1), read 2026-11-26. Work area from processingArea (LASER_PLANE 490 x 290); module from machineProfile laserPower 40 and getDevicePower (co2). Which operations each module can do is an assumption."
+}

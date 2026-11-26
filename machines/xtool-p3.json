@@ -1,0 +1,15 @@
+{
+  "id": "xtool-p3",
+  "name": "xTool P3",
+  "vendor": "xTool",
+  "model": "P3",
+  "xtool": {"device": "ZY015", "name": "P3"},
+  "width": 915,
+  "height": 458,
+  "lasers": [
+    {"id": "co2-80w", "name": "80 W CO2 laser", "kind": "co2", "power_w": 80, "ops": ["cut", "score", "engrave"]},
+    {"id": "ir-5w", "name": "5 W infrared laser", "kind": "infrared", "power_w": 5, "ops": ["score", "engrave"], "area": [670, 427]}
+  ],
+  "notes": "CO2 laser with an optional 5 W infrared laser module (and an inkjet printer head). With the 5 W module fitted, the CO2 area is 670 x 458.",
+  "source": "xTool Studio 1.9.11 device extension ZY015 (exts/P3), read 2026-11-26. Work areas from processingArea (915 x 458; RED_LASER x 245..915, height 458 - 31; co2With5wArea 670 x 458); modules from defaultPower [80, 5, 0], the CO2 head and the Infrared laser module. Which operations each module can do is an assumption."
+}

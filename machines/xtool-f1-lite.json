@@ -1,0 +1,14 @@
+{
+  "id": "xtool-f1-lite",
+  "name": "xTool F1 Lite",
+  "vendor": "xTool",
+  "model": "F1 Lite",
+  "xtool": {"device": "GS005", "name": "F1 Lite"},
+  "width": 115,
+  "height": 115,
+  "lasers": [
+    {"id": "diode-10w", "name": "10 W blue laser", "kind": "diode", "power_w": 10, "ops": ["cut", "score", "engrave"]}
+  ],
+  "notes": "Galvo laser.",
+  "source": "xTool Studio 1.9.11 device extension GS005 (exts/GS005), read 2026-11-26. Work area from processingArea (LASER_PLANE 115 x 115); module from defaultPower [10] (laserPower). That it is a blue diode is not stated in the extension. Which operations each module can do is an assumption."
+}

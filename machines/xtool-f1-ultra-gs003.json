@@ -1,0 +1,15 @@
+{
+  "id": "xtool-f1-ultra-gs003",
+  "name": "xTool F1 Ultra (GS003)",
+  "vendor": "xTool",
+  "model": "F1 Ultra",
+  "xtool": {"device": "GS003", "name": "F1 Ultra"},
+  "width": 220,
+  "height": 220,
+  "lasers": [
+    {"id": "fiber-20w", "name": "20 W fiber laser", "kind": "fiber", "power_w": 20, "ops": ["score", "engrave"]},
+    {"id": "diode-20w", "name": "20 W blue laser", "kind": "diode", "power_w": 20, "ops": ["cut", "score", "engrave"]}
+  ],
+  "notes": "Galvo laser with a 1064 nm fiber laser and a 455 nm blue diode; the newer F1 Ultra extension (xTool-f1-ultra-ext-2.0, device code GS003).",
+  "source": "xTool Studio 1.9.11 device extension GS003 (exts/GS003), read 2026-11-26. Work area from processingArea (LASER_PLANE 220 x 220); modules from defaultPower [20, 20] (redPower, laserPower), the labels 455-<W>W / 1064-<W>W and the fiber_ir_blue text key. Which operations each module can do is an assumption."
+}
