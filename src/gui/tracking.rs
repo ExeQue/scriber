@@ -240,7 +240,7 @@ impl Tracker {
 
 impl App {
     /// OTRACK, Extension and Parallel: acquire what the pointer rests on (while a point is asked for).
-    pub(super) fn acquire(&mut self, items: &[Item], guides: &[[Point; 2]], hit: Option<Snap>) {
+    pub(super) fn acquire(&mut self, items: &[Item], guides: &[[Point; 2]], hit: Option<Snap>, now: Instant) {
         let asking = self.active_cmd().is_some() || matches!(self.drag, Some(Drag::Grip { .. }));
         let hit = hit.filter(|_| asking && (self.aids.otrack || self.aids.osnap));
         let on = |p: Point| snap::pieces_near(items, guides, p, 1e-6);
@@ -249,7 +249,7 @@ impl App {
             Some(Snap { p, .. }) => Some([p[0], p[1], f64::INFINITY, f64::INFINITY]),
             None => None,
         };
-        if !self.tracker.rested(key, Instant::now()) {
+        if !self.tracker.rested(key, now) {
             return;
         }
         let (Some(s), Some(k)) = (hit, key) else { return };
@@ -401,6 +401,58 @@ mod tests {
         assert!(t.rested(k, now + ACQUIRE));
         assert!(!t.rested(k, now + ACQUIRE * 2) && !t.waiting());
         assert!(!t.rested(None, now));
+    }
+
+    /// The real input path: `aim` as the canvas calls it each frame, with the pointer resting and moving.
+    #[test]
+    fn otrack_acquires_on_rest_and_snaps_to_crossing_guides() {
+        use crate::gui::command::Cmd;
+        use crate::model::{Contour, Document, Op, Shape};
+        use std::sync::{Arc, Mutex};
+        let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
+        let mut app = App::new(doc.clone(), Err(String::new()));
+        {
+            let mut d = doc.lock().unwrap();
+            d.add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 0.0])));
+            d.add("", Op::Cut, Shape::path(Contour::line([100.0, 60.0], [100.0, 80.0])));
+        }
+        let items = doc.lock().unwrap().s.items.clone();
+        app.start(Cmd::Line);
+        let t0 = Instant::now();
+        let ms = |n: u64| t0 + Duration::from_millis(n);
+        let aim = |app: &mut App, p: Point, t: Instant| {
+            app.aids.hit = None;
+            app.aids.tracking = None;
+            app.aim_at_time(&items, p, None, t)
+        };
+        // Resting on the end of the first line: acquired once the time is up, not before.
+        aim(&mut app, [40.2, 0.1], ms(0));
+        assert!(app.tracker.points.is_empty() && app.tracker.waiting());
+        aim(&mut app, [40.3, 0.2], ms(300));
+        assert!(app.tracker.points.is_empty());
+        aim(&mut app, [40.2, 0.1], ms(550));
+        assert_eq!(app.tracker.points, vec![[40.0, 0.0]]);
+        // A second point, acquired the same way.
+        aim(&mut app, [100.1, 60.2], ms(700));
+        aim(&mut app, [100.1, 60.2], ms(1300));
+        assert_eq!(app.tracker.points, vec![[40.0, 0.0], [100.0, 60.0]]);
+        // Below the first and level with the second: the guides from both cross there, and the
+        // first point of the line goes exactly there.
+        let p = aim(&mut app, [40.6, 59.5], ms(1400));
+        assert!(close(p, [40.0, 60.0]), "{p:?}");
+        assert_eq!(app.aids.tracking.as_ref().map(|l| l.tracks.len()), Some(2));
+        // Along one guide only.
+        let p = aim(&mut app, [40.5, 30.0], ms(1500));
+        assert!(close(p, [40.0, 30.0]), "{p:?}");
+        // Resting on an acquired point again drops it.
+        aim(&mut app, [100.1, 60.2], ms(1600));
+        aim(&mut app, [100.1, 60.2], ms(2200));
+        assert_eq!(app.tracker.points, vec![[40.0, 0.0]]);
+        // The points stay while the command runs and go when it ends.
+        app.place_point(p);
+        assert_eq!(app.tracker.points, vec![[40.0, 0.0]]);
+        app.escape();
+        assert!(app.tracker.points.is_empty());
     }
 
     #[test]

@@ -126,11 +126,16 @@ impl App {
     /// tracking path (POLAR, OTRACK, Extension, Parallel) or the nearest point on a shape; else the
     /// grid, with ORTHO from `from`.
     pub(super) fn aim(&mut self, items: &[Item], raw: Point, from: Option<Point>) -> Point {
-        let p = self.aim_point(items, raw, from);
+        self.aim_at_time(items, raw, from, std::time::Instant::now())
+    }
+
+    /// `aim` at time `now` (OTRACK acquires what the pointer rested on long enough).
+    pub(super) fn aim_at_time(&mut self, items: &[Item], raw: Point, from: Option<Point>, now: std::time::Instant) -> Point {
+        let p = self.aim_point(items, raw, from, now);
         self.override_point(p)
     }
 
-    fn aim_point(&mut self, items: &[Item], raw: Point, from: Option<Point>) -> Point {
+    fn aim_point(&mut self, items: &[Item], raw: Point, from: Option<Point>, now: std::time::Instant) -> Point {
         let tol = (APERTURE / self.view.zoom) as f64;
         let guides = self.guides_in_view(items);
         if let Some(kind) = self.snap_once() {
@@ -138,7 +143,8 @@ impl App {
             return self.aids.hit.map_or(raw, |s| s.p);
         }
         let hit = if self.aids.osnap { snap::find(items, &guides, raw, tol, from) } else { None };
-        self.acquire(items, &guides, hit);
+        self.acquire(items, &guides, hit, now);
+
         if let Some(s) = hit.filter(|s| s.kind != snap::Kind::Nearest) {
             self.aids.hit = Some(s);
             return s.p;
