@@ -15,17 +15,24 @@ pub struct ModifyState {
     pub radius: f64,
     pub chamfer: f64,
     pub offset: f64,
-    /// The item picked for OFFSET, waiting for the side.
-    target: Option<u64>,
-    /// ARRAY: polar or rectangular, and the numbers given so far.
-    polar: bool,
+    /// The item picked for OFFSET (waiting for the side) or as FILLET/CHAMFER's first object.
+    pub(super) target: Option<u64>,
+    /// ARRAY: polar or rectangular, and the numbers typed so far on the command line.
+    pub(super) polar: bool,
     args: Vec<f64>,
-    centre: Option<Point>,
+    pub(super) centre: Option<Point>,
+    /// ARRAY settings as edited on the command card.
+    pub(super) rows: u32,
+    pub(super) columns: u32,
+    pub(super) row_gap: f64,
+    pub(super) column_gap: f64,
+    pub(super) count: u32,
+    pub(super) angle: f64,
 }
 
 impl ModifyState {
     pub fn new() -> Self {
-        Self { radius: 5.0, chamfer: 2.0, offset: 1.0, ..Self::default() }
+        Self { radius: 5.0, chamfer: 2.0, offset: 1.0, rows: 2, columns: 3, row_gap: 10.0, column_gap: 10.0, count: 6, angle: 360.0, ..Self::default() }
     }
 }
 
@@ -82,7 +89,8 @@ impl App {
             (Cmd::Fillet, Step::Value) => format!("Specify fillet radius <{}>:", m.radius),
             (Cmd::Chamfer, Step::Value) => format!("Specify chamfer distance <{}>:", m.chamfer),
             (Cmd::Offset, Step::Value) => format!("Specify offset distance <{}>:", m.offset),
-            (Cmd::Fillet | Cmd::Chamfer, _) => "Click near a corner, or [All] corners of the selection, or Enter to join two selected lines:".into(),
+            (Cmd::Fillet | Cmd::Chamfer, _) if m.target.is_some() => "Select second object:".into(),
+            (Cmd::Fillet | Cmd::Chamfer, _) => "Select first object or a corner, or [All] corners of the selection:".into(),
             (Cmd::Offset, Step::Pick) => "Select object to offset or <exit>:".into(),
             (Cmd::Offset, _) => "Specify point on side to offset:".into(),
             (Cmd::Trim, _) => "Select the part to trim off or <exit>:".into(),
@@ -160,7 +168,22 @@ impl App {
             }
             (Cmd::Fillet | Cmd::Chamfer, Entry::Point(p)) => {
                 let id = self.item_at(p)?;
-                self.apply_to(&[id], |d, ids| corner(d, ids, Some(p)))
+                // Second pick (AutoCAD: "Select second object"): join the two objects at their corner.
+                if let Some(first) = self.cmdline.modify.target.take()
+                    && first != id
+                {
+                    return self.apply_to(&[first, id], |d, ids| corner(d, ids, None));
+                }
+                // A corner inside one shape.
+                if self.apply_to(&[id], |d, ids| corner(d, ids, Some(p))).is_ok() {
+                    return Ok(());
+                }
+                // A click where two separate lines meet: use both.
+                if let Some(other) = self.other_end_at(id, p) {
+                    return self.apply_to(&[id, other], |d, ids| corner(d, ids, None));
+                }
+                self.cmdline.modify.target = Some(id);
+                Ok(())
             }
             (Cmd::Trim, Entry::Point(p)) => {
                 let id = self.item_at(p)?;
@@ -223,10 +246,36 @@ impl App {
         result
     }
 
+    /// ARRAY from the command card's settings, in one go.
+    pub(super) fn array_now(&mut self) -> Result<(), String> {
+        let m = &self.cmdline.modify;
+        let (polar, rows, cols, dx, dy, count, angle, centre) = (m.polar, m.rows, m.columns, m.column_gap, m.row_gap, m.count, m.angle, m.centre);
+        let result = if polar {
+            let centre = centre.ok_or("Click the centre of the circle on the drawing first.")?;
+            self.apply(|d, ids| d.array_polar(ids, count, centre, angle, true).map(|_| ()))
+        } else {
+            self.apply(|d, ids| d.array_rectangular(ids, rows, cols, dx, dy).map(|_| ()))
+        };
+        if result.is_ok() {
+            self.end();
+        }
+        result
+    }
+
     /// The item under a clicked point.
     fn item_at(&self, p: Point) -> Result<u64, String> {
         let d = self.doc.lock().unwrap();
         self.hit(&d, p).ok_or_else(|| "Nothing there; click on a shape.".into())
+    }
+
+    /// Another open item with an end point within a few pixels of `p` (where two lines meet).
+    fn other_end_at(&self, id: u64, p: Point) -> Option<u64> {
+        let tol = 8.0 / self.view.zoom as f64;
+        let d = self.doc.lock().unwrap();
+        d.s.items.iter().filter(|i| i.id != id).find_map(|i| {
+            let ends = i.shape.contours().iter().filter(|c| !c.closed).flat_map(|c| [c.vertices.first(), c.vertices.last()]).flatten();
+            ends.into_iter().any(|v| crate::model::geom::distance([v.x, v.y], p) <= tol).then_some(i.id)
+        })
     }
 
     /// +1 for outside a closed shape (or left of an open one, as the model offsets it), -1 otherwise.

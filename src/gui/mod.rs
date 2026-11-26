@@ -384,6 +384,7 @@ impl eframe::App for App {
         egui::Panel::left("tools").exact_size(126.0).show(ui, |ui| self.toolbar(ui));
         egui::Panel::right("props").default_size(290.0).show(ui, |ui| self.properties(ui));
         egui::CentralPanel::no_frame().show(ui, |ui| self.canvas(ui));
+        self.command_card(&ctx);
 
         if self.show_agents {
             self.agents_window(&ctx);

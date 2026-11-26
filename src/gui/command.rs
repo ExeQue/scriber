@@ -2,6 +2,7 @@
 //! and the prompt for it. Every input ends up here: typed lines, canvas clicks (through
 //! `place_point`), Enter/Space/right-click and the toolbar buttons.
 
+mod card;
 mod draw;
 mod edit;
 mod modify;
@@ -143,6 +144,9 @@ pub struct CommandLine {
     /// The running command has made its undo step (one per command).
     checkpointed: bool,
     modify: modify::ModifyState,
+    /// ROTATE angle and SCALE factor as set on the command card.
+    card_angle: f64,
+    card_factor: f64,
 }
 
 impl CommandLine {
@@ -157,6 +161,8 @@ impl CommandLine {
             text_height: 10.0,
             checkpointed: false,
             modify: modify::ModifyState::new(),
+            card_angle: 90.0,
+            card_factor: 2.0,
         }
     }
 
