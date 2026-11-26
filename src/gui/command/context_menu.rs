@@ -149,14 +149,18 @@ impl App {
 /// A menu entry with the constraint's glyph before its name, like the toolbar shows it.
 fn icon_item(ui: &mut egui::Ui, kind: Kind, label: &str) -> egui::Response {
     let height = 22.0;
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width().max(200.0), height), egui::Sense::click());
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font.clone(), egui::Color32::WHITE);
+    // As wide as the icon and the text need (the menu then sizes itself to its widest entry).
+    let width = (4.0 + 16.0 + 8.0 + galley.size().x + 12.0).max(140.0);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
     let visuals = ui.style().interact(&response);
     if response.hovered() {
         ui.painter().rect_filled(rect, 3.0, visuals.weak_bg_fill);
     }
     let icon = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 3.0), egui::vec2(16.0, 16.0));
     crate::gui::glyphs::paint(ui.painter(), icon, visuals.text_color(), kind);
-    ui.painter().text(egui::pos2(icon.right() + 8.0, rect.center().y), egui::Align2::LEFT_CENTER, label, egui::TextStyle::Button.resolve(ui.style()), visuals.text_color());
+    ui.painter().text(egui::pos2(icon.right() + 8.0, rect.center().y), egui::Align2::LEFT_CENTER, label, font, visuals.text_color());
     if response.clicked() {
         ui.close();
     }
