@@ -5,7 +5,7 @@ use super::lucide;
 use super::ribbon::{self, Icon};
 use crate::library::{self, Library, Operation};
 use crate::model::{Document, State};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use material_list::{Filter, Picked};
 use widgets::Confirm;
 
@@ -119,9 +119,9 @@ fn show(ctx: &egui::Context, ed: &mut Editor) -> bool {
         ui.add_space(4.0);
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label(RichText::new(&ed.error).color(Color32::from_rgb(230, 90, 80)));
+            ui.label(RichText::new(&ed.error).color(crate::gui::theme::get().error));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let save = egui::Button::new(RichText::new("Save").strong().color(Color32::WHITE)).fill(ui.visuals().selection.bg_fill).min_size(egui::vec2(90.0, 28.0));
+                let save = egui::Button::new(RichText::new("Save").strong().color(crate::gui::theme::get().on_accent)).fill(crate::gui::theme::get().accent).min_size(egui::vec2(90.0, 28.0));
                 if ui.add(save).clicked() {
                     let lib = ed.lib.clone();
                     match library::update(|l| {
@@ -213,10 +213,10 @@ pub(super) fn pickers(ui: &mut egui::Ui, d: &mut Document) -> bool {
             (Some(m), Some(mat)) => {
                 let hints: Vec<String> = Operation::ALL.iter().filter_map(|op| mat.setting(&m.id, s.laser.as_deref(), *op).map(|x| format!("{}: {}", op.label(), x.hint()))).collect();
                 if hints.is_empty() {
-                    (lucide::CIRCLE_ALERT, Color32::from_rgb(230, 160, 40), "No settings yet — set up…".to_string(), format!("The library has no settings for {} on this machine and laser.\nClick to add them.", mat.name))
+                    (lucide::CIRCLE_ALERT, crate::gui::theme::get().warn, "No settings yet — set up…".to_string(), format!("The library has no settings for {} on this machine and laser.\nClick to add them.", mat.name))
                 } else {
                     let ops: Vec<String> = Operation::ALL.iter().filter(|op| mat.setting(&m.id, s.laser.as_deref(), **op).is_some()).map(|op| op.label().to_lowercase()).collect();
-                    (lucide::CIRCLE_CHECK, Color32::from_rgb(80, 190, 100), format!("Settings for {}", ops.join(", ")), hints.join("\n"))
+                    (lucide::CIRCLE_CHECK, crate::gui::theme::get().ok, format!("Settings for {}", ops.join(", ")), hints.join("\n"))
                 }
             }
         };

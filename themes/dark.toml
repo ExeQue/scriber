@@ -1,0 +1,9 @@
+# Scriber's built-in dark theme. Copy it to <config>/scriber/themes/ to make your own.
+name = "Dark"
+mode = "dark"
+
+background = "#1b1b1b"
+foreground = "#d2d2d2"
+muted = "#8c8c8c"
+accent = "#3c9bd7"
+selection = "#1f4a66"

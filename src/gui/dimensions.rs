@@ -12,7 +12,6 @@ use crate::model::geom::distance;
 use crate::model::{Constraint, Document, Kind, Point, State};
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, Stroke, vec2};
 
-const DIM: Color32 = Color32::from_rgb(40, 110, 220);
 
 /// `d1=40`, or `d2=d1/2 (20)` when the value comes from an expression.
 fn label(c: &Constraint, value: Option<f64>) -> String {
@@ -64,7 +63,7 @@ impl App {
 
     pub(super) fn paint_dimensions(&mut self, painter: &egui::Painter, s: &State) {
         let values = parameter_values(s).unwrap_or_default();
-        let labels = s.constraints.iter().filter(|c| c.kind.is_dimension()).filter_map(|c| Some((c.id, self.paint_lock_dimension(painter, s, c, values.get(&c.name).copied(), DIM)?))).collect();
+        let labels = s.constraints.iter().filter(|c| c.kind.is_dimension()).filter_map(|c| Some((c.id, self.paint_lock_dimension(painter, s, c, values.get(&c.name).copied(), crate::gui::theme::get().dimension)?))).collect();
         self.dim_labels = labels;
         self.paint_dim_preview(painter, s);
     }

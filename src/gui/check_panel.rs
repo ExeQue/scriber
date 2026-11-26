@@ -35,8 +35,8 @@ impl Check {
 
 fn color(s: Severity) -> Color32 {
     match s {
-        Severity::Error => Color32::from_rgb(230, 80, 70),
-        Severity::Warning => Color32::from_rgb(230, 170, 40),
+        Severity::Error => crate::gui::theme::get().error,
+        Severity::Warning => crate::gui::theme::get().warn,
     }
 }
 
@@ -49,7 +49,7 @@ impl App {
         ui.add_space(4.0);
         self.check.refresh(d);
         let w = &self.check.warnings;
-        let dot = w.first().map(|w| color(w.severity)).unwrap_or(Color32::from_rgb(90, 180, 90));
+        let dot = w.first().map(|w| color(w.severity)).unwrap_or(crate::gui::theme::get().ok);
         let label = if w.is_empty() { "Check".to_string() } else { format!("Check ({})", w.len()) };
         if super::icons::pill(ui, self.check.open, Some(dot), &label).on_hover_text("Things that could go wrong on the laser").clicked() {
             self.check.open = !self.check.open;

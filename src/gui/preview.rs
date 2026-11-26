@@ -60,7 +60,7 @@ impl App {
             (d.s.clone(), d.rev)
         };
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, Color32::from_gray(33));
+        painter.rect_filled(rect, 0.0, crate::gui::theme::get().canvas);
         let p = palette(&state, &crate::library::get());
         let tol = super::canvas::curve_tol(self.view.zoom, ui.ctx().pixels_per_point());
         let mut preview = self.preview.take().unwrap_or_default();

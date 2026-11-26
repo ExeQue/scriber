@@ -1,0 +1,15 @@
+# Paper: warm and light, like drawing on cream paper.
+name = "Paper"
+mode = "light"
+
+background = "#f4efe6"
+lighter_background = "#ebe4d8"
+dark_background = "#fffdf8"
+foreground = "#2b2620"
+muted = "#6f6457"
+accent = "#b5562b"
+selection = "#ecd3c2"
+
+canvas = "#d9d1c3"
+material = "#fffdf8"
+engrave = "#2b2620"

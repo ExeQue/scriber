@@ -23,6 +23,7 @@ pub struct Settings {
     measure_hover: bool,
     ribbon_tab: super::ribbon::Tab,
     ribbon_collapsed: bool,
+    theme: super::theme::Choice,
     /// File → Open recent, newest first; also what MCP's list_recent_projects shows.
     pub recent: Vec<PathBuf>,
     /// The files open at exit, reopened on start.
@@ -49,6 +50,7 @@ impl Default for Settings {
             measure_hover: false,
             ribbon_tab: Default::default(),
             ribbon_collapsed: false,
+            theme: Default::default(),
             recent: Vec::new(),
             open_files: Vec::new(),
             dxf_ops: Default::default(),
@@ -96,6 +98,7 @@ impl App {
             measure_hover: self.measure_hover,
             ribbon_tab: self.ribbon.tab,
             ribbon_collapsed: self.ribbon.collapsed,
+            theme: self.theme.choice.clone(),
             recent: self.ws.recent(),
             open_files: self.ws.docs().iter().filter_map(|(_, d)| d.lock().unwrap().path.clone()).collect(),
             dxf_ops: self.dxf_ops.clone(),
@@ -109,6 +112,7 @@ impl App {
         self.polar_extra_text = s.polar_extra.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ");
         (self.snap, self.show_guides, self.show_cmdline, self.measure_hover) = (s.snap, s.show_guides, s.show_cmdline, s.measure_hover);
         (self.ribbon.tab, self.ribbon.collapsed) = (s.ribbon_tab, s.ribbon_collapsed);
+        self.theme.choice = s.theme.clone();
         self.ws.set_recent(s.recent.clone());
         self.dxf_ops = s.dxf_ops.clone();
         self.saved_settings = s;
@@ -121,5 +125,21 @@ impl App {
             save(&now);
             self.saved_settings = now;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gui::theme::Choice;
+
+    #[test]
+    fn the_theme_choice_survives_a_restart() {
+        let s = Settings { theme: Choice::File("mine".into()), ..Default::default() };
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert!(back == s);
+        // Settings saved before themes existed follow the system.
+        let old: Settings = serde_json::from_str("{\"grid\": true}").unwrap();
+        assert!(old.theme == Choice::System);
     }
 }

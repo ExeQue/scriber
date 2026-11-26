@@ -1,0 +1,23 @@
+# High contrast: white on black with a yellow accent.
+name = "High contrast"
+mode = "dark"
+
+background = "#000000"
+lighter_background = "#141414"
+dark_background = "#000000"
+foreground = "#ffffff"
+muted = "#d0d0d0"
+accent = "#ffd400"
+selection = "#004f9e"
+
+canvas = "#262626"
+material = "#000000"
+grid = "#5a5a5a"
+engrave = "#ffffff"
+cut = "#ff5a5a"
+score = "#5aa8ff"
+no_output = "#bdbdbd"
+selected = "#ffa000"
+red = "#ff6b6b"
+yellow = "#ffd400"
+green = "#5ee07a"

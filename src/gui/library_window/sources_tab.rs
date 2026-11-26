@@ -7,7 +7,7 @@ use super::widgets::{form_column, section};
 use crate::gui::lucide;
 use crate::library::sources::{self, Choices, Net, Source, Track};
 use crate::library::{self, Origin, store};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
@@ -167,7 +167,7 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
                     ui.label("Syncing sources…");
                 }
                 None if !st.status.0.is_empty() => {
-                    let color = if st.status.1 { Color32::from_rgb(230, 90, 80) } else { Color32::from_rgb(80, 190, 100) };
+                    let color = if st.status.1 { crate::gui::theme::get().error } else { crate::gui::theme::get().ok };
                     ui.label(RichText::new(&st.status.0).color(color));
                 }
                 None => {}
@@ -184,7 +184,7 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
         if !problems.is_empty() {
             ui.collapsing(format!("{} problem(s) while reading the sources", problems.len()), |ui| {
                 for p in problems {
-                    ui.label(RichText::new(p).small().color(Color32::from_rgb(230, 160, 40)));
+                    ui.label(RichText::new(p).small().color(crate::gui::theme::get().warn));
                 }
             });
         }
@@ -261,11 +261,11 @@ fn source_card(ui: &mut egui::Ui, ctx: &egui::Context, st: &mut State, lib: &lib
             ui.label(RichText::new(format!("Last sync: {}", s.last_sync)).small().color(weak));
         }
         if !s.last_error.is_empty() {
-            ui.label(RichText::new(format!("{} {}", lucide::CIRCLE_ALERT, s.last_error)).small().color(Color32::from_rgb(230, 90, 80)));
+            ui.label(RichText::new(format!("{} {}", lucide::CIRCLE_ALERT, s.last_error)).small().color(crate::gui::theme::get().error));
         }
         let missing = sources::missing_machines(lib, &s.id);
         if !missing.is_empty() {
-            ui.label(RichText::new(format!("{} Settings for machines you do not have (kept): {}", lucide::CIRCLE_ALERT, missing.join(", "))).small().color(Color32::from_rgb(230, 160, 40)));
+            ui.label(RichText::new(format!("{} Settings for machines you do not have (kept): {}", lucide::CIRCLE_ALERT, missing.join(", "))).small().color(crate::gui::theme::get().warn));
         }
     });
 }
@@ -281,7 +281,7 @@ fn follow_menu(ui: &mut egui::Ui, ctx: &egui::Context, st: &mut State, s: &Sourc
             }
             for (kind, title) in [(Choices::Branches, "Branch"), (Choices::Tags, "Tag"), (Choices::Releases, "Release")] {
                 ui.menu_button(title, |ui| match st.choices.get(&(s.id.clone(), kind)) {
-                    Some(Err(e)) => _ = ui.label(RichText::new(e).color(Color32::from_rgb(230, 90, 80))),
+                    Some(Err(e)) => _ = ui.label(RichText::new(e).color(crate::gui::theme::get().error)),
                     Some(Ok(list)) if list.is_empty() => _ = ui.label(RichText::new("None").weak()),
                     Some(Ok(list)) => {
                         egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {

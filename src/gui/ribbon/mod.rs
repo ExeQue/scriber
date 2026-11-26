@@ -13,7 +13,7 @@ mod view;
 
 use super::App;
 use super::command::Cmd;
-use super::icons::{ACCENT, help, paint_icon};
+use super::icons::{help, paint_icon};
 use super::shortcuts::{self, Action};
 use eframe::egui::{self, Align, Color32, CornerRadius, FontId, Layout, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
 use serde::{Deserialize, Serialize};
@@ -283,7 +283,7 @@ fn sensed_button(ui: &mut Ui, sense: Sense, large: bool, icon_only: bool, on: bo
     let (rect, response) = ui.allocate_exact_size(size, sense);
     let visuals = ui.visuals();
     let (bg, mut fg) = match (on, response.hovered()) {
-        (true, _) => (ACCENT, Color32::WHITE),
+        (true, _) => (crate::gui::theme::get().accent, crate::gui::theme::get().on_accent),
         (false, true) => (visuals.widgets.hovered.bg_fill, visuals.strong_text_color()),
         (false, false) => (Color32::TRANSPARENT, visuals.text_color()),
     };

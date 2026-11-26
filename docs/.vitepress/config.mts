@@ -33,6 +33,7 @@ export default defineConfig({
           { text: 'Connecting agents', link: '/agents/connecting' },
           { text: 'Getting started', link: '/guide/getting-started' },
           { text: 'The screen', link: '/guide/the-screen' },
+          { text: 'Themes', link: '/guide/themes' },
           { text: 'Drawing', link: '/guide/drawing' },
           { text: 'Editing', link: '/guide/editing' },
           { text: 'Constraints and dimensions', link: '/guide/constraints' },

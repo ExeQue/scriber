@@ -5,7 +5,6 @@
 
 use super::App;
 use super::canvas::tooltip;
-use super::icons::ACCENT;
 use super::lucide;
 use crate::model::Point;
 use crate::model::annotations::{Annotation, Author, Status};
@@ -132,12 +131,12 @@ impl App {
         for (id, at, status) in list.iter().map(|a| (a.id, a.at, a.status)).chain(draft) {
             let tip = self.w2s(at);
             let body = Rect::from_min_size(tip + vec2(-4.0, -PIN.y - 6.0), PIN);
-            let fill = if status == Status::Open { ACCENT } else { RESOLVED };
+            let fill = if status == Status::Open { crate::gui::theme::get().accent } else { RESOLVED };
             let hot = self.comments.hot == Some(id) || self.comments.open == Some(id);
             let stroke = Stroke::new(if hot { 2.0 } else { 1.0 }, Color32::WHITE);
             painter.add(egui::Shape::convex_polygon(vec![tip, body.left_bottom(), body.left_bottom() + vec2(9.0, 0.0)], fill, Stroke::NONE));
             painter.rect(body, 4.0, fill, stroke, egui::StrokeKind::Outside);
-            painter.text(body.center(), Align2::CENTER_CENTER, if id == 0 { "+".into() } else { id.to_string() }, font.clone(), Color32::WHITE);
+            painter.text(body.center(), Align2::CENTER_CENTER, if id == 0 { "+".into() } else { id.to_string() }, font.clone(), if status == Status::Open { crate::gui::theme::get().on_accent } else { Color32::WHITE });
             if id != 0 {
                 self.comments.pins.push((id, body.union(Rect::from_two_pos(tip, tip))));
             }

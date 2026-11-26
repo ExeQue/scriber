@@ -1,0 +1,14 @@
+# Graphite: a neutral dark grey with a soft blue accent.
+name = "Graphite"
+mode = "dark"
+
+background = "#2a2c2f"
+lighter_background = "#33363a"
+dark_background = "#212326"
+foreground = "#e3e3e3"
+muted = "#9a9ea4"
+accent = "#8ab4f8"
+selection = "#3d4a5c"
+
+canvas = "#1c1d1f"
+material = "#3a3d41"

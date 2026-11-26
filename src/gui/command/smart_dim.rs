@@ -12,7 +12,7 @@ use crate::model::constraints::expr::fmt_num;
 use crate::gui::canvas::APERTURE;
 use crate::model::constraints::pick::{nearest_segment, outline};
 use crate::model::{Constraint, Document, Kind, Point, Ref, State};
-use eframe::egui::{self, Color32, RichText, Stroke};
+use eframe::egui::{self, RichText, Stroke};
 use rules::{Layout, Pick, classify, layout, plan};
 
 /// What DIM has picked so far, and the value typed for it.
@@ -29,8 +29,6 @@ pub struct SmartDim {
     at: Option<Point>,
 }
 
-const PREVIEW: Color32 = Color32::from_rgb(120, 165, 235);
-const HOVER: Color32 = Color32::from_rgb(90, 170, 255);
 
 /// "length", "angle", … for messages.
 fn what(kind: Kind) -> &'static str {
@@ -183,7 +181,7 @@ impl App {
             Step::Constrain => glow.extend(self.pick_ref(at, true).ok()),
             _ => glow.extend(self.second_line(at)),
         }
-        let stroke = Stroke::new(4.0, HOVER.gamma_multiply(0.6));
+        let stroke = Stroke::new(4.0, crate::gui::theme::get().hover.gamma_multiply(0.6));
         for r in &glow {
             match outline(s, r).as_slice() {
                 [p] => _ = painter.circle_stroke(self.w2s(*p), 6.0, stroke),
@@ -199,7 +197,7 @@ impl App {
         let typed = self.cmdline.smart_dim.value.trim();
         let expr = if typed.is_empty() { fmt_num(lay.value) } else { typed.to_string() };
         let c = Constraint { id: 0, kind: lay.kind, refs: lay.refs, name, expr, offset: lay.offset, shift: 0.0 };
-        self.paint_lock_dimension(painter, s, &c, typed.is_empty().then_some(lay.value), PREVIEW);
+        self.paint_lock_dimension(painter, s, &c, typed.is_empty().then_some(lay.value), crate::gui::theme::get().dimension);
     }
 
     /// The command card: what to click, radius or diameter, and a value or expression.

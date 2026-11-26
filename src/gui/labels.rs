@@ -19,8 +19,9 @@ pub fn op_help(op: Op) -> &'static str {
 /// Shown when Engrave is chosen for a shape without an area.
 pub const OPEN_SCORED: &str = "Open shapes are scored";
 
+/// The colour of what the laser does, made to read on the theme's material.
 pub fn op_color(op: Op) -> Color32 {
-    rgb(op.rgb())
+    super::theme::get().op(op)
 }
 
 pub fn rgb([r, g, b]: [u8; 3]) -> Color32 {

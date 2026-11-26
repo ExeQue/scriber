@@ -1,0 +1,10 @@
+# Scriber's built-in light theme.
+name = "Light"
+mode = "light"
+
+background = "#f3f3f3"
+foreground = "#1e1e1e"
+muted = "#6b6b6b"
+accent = "#006ea0"
+selection = "#a8d2ee"
+material = "#ffffff"

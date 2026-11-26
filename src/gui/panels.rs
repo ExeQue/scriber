@@ -6,7 +6,7 @@ use super::labels::{OPEN_SCORED, op_help, op_label};
 use super::layers::layer_combo;
 use crate::model::turn;
 use crate::model::{BBox, Op, Shape, State, Transform};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 
 impl App {
     pub(super) fn menu(&mut self, ui: &mut egui::Ui) {
@@ -102,6 +102,9 @@ impl App {
                 if ui.button("Select all  (Ctrl+A)").clicked() {
                     self.select_all();
                 }
+            });
+            ui.menu_button("View", |ui| {
+                ui.menu_button("Theme", |ui| self.theme.menu(ui));
             });
             ui.menu_button("AI agents", |ui| {
                 if ui.button("Connect AI agents…").clicked() {
@@ -268,8 +271,8 @@ impl App {
         // Right side first (fixed width), then the hint in whatever space is left, cut off if too long.
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             match &self.mcp {
-                Ok(port) => ui.label(RichText::new(format!("● MCP :{port}")).color(Color32::from_rgb(40, 160, 70))).on_hover_text("AI agents can connect."),
-                Err(e) => ui.label(RichText::new("● MCP").color(Color32::from_rgb(200, 50, 50))).on_hover_text(format!("AI agents cannot connect (is Scriber already running?): {e}")),
+                Ok(port) => ui.label(RichText::new(format!("● MCP :{port}")).color(crate::gui::theme::get().ok)).on_hover_text("AI agents can connect."),
+                Err(e) => ui.label(RichText::new("● MCP").color(crate::gui::theme::get().error)).on_hover_text(format!("AI agents cannot connect (is Scriber already running?): {e}")),
             };
             for a in Aid::ALL.into_iter().rev() {
                 // POLAR's angle step: ▾ next to it (or a right-click on it).

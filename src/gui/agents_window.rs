@@ -2,7 +2,7 @@
 
 use super::App;
 use crate::agents::{self, Status, Target};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 
 impl App {
     /// Open the window and look for agents in the background (WSL lookups can take seconds).
@@ -63,10 +63,10 @@ impl App {
         ui.label(RichText::new(&t.name).strong()).on_hover_text(&t.config);
         ui.label(&t.host);
         let (text, color) = match &t.status {
-            Status::Installed => ("Connected".to_string(), Color32::from_rgb(40, 160, 70)),
-            Status::Outdated => ("Outdated: click Connect".to_string(), Color32::from_rgb(210, 140, 0)),
+            Status::Installed => ("Connected".to_string(), crate::gui::theme::get().ok),
+            Status::Outdated => ("Outdated: click Connect".to_string(), crate::gui::theme::get().warn),
             Status::NotInstalled => ("Not connected".to_string(), ui.visuals().weak_text_color()),
-            Status::Error(e) => (format!("{}: {e}", "Error"), Color32::from_rgb(200, 50, 50)),
+            Status::Error(e) => (format!("{}: {e}", "Error"), crate::gui::theme::get().error),
         };
         ui.label(RichText::new(text).color(color));
         let skill = match &t.skill {

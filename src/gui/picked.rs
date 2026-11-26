@@ -6,7 +6,6 @@ use super::App;
 use crate::model::Point;
 use eframe::egui::{self, Align2, Color32, FontId, Stroke};
 
-const PICKED: Color32 = Color32::from_rgb(0, 170, 255);
 
 pub struct Picked {
     pub item: u64,
@@ -34,11 +33,11 @@ impl App {
         for (n, pick) in self.picked.iter().enumerate() {
             if let Some(item) = d.item(pick.item) {
                 for line in &self.geometry.get(item, false, tol).outline {
-                    painter.add(egui::Shape::line(line.iter().map(to_screen).collect(), Stroke::new(5.0, PICKED.gamma_multiply(0.55))));
+                    painter.add(egui::Shape::line(line.iter().map(to_screen).collect(), Stroke::new(5.0, crate::gui::theme::get().hover.gamma_multiply(0.55))));
                 }
             }
             let at = to_screen(&pick.at);
-            painter.circle(at, 8.0, PICKED, Stroke::new(1.0, Color32::WHITE));
+            painter.circle(at, 8.0, crate::gui::theme::get().hover, Stroke::new(1.0, Color32::WHITE));
             painter.text(at, Align2::CENTER_CENTER, format!("{}", n + 1), FontId::proportional(11.0), Color32::WHITE);
         }
     }

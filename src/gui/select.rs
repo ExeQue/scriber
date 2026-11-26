@@ -10,8 +10,6 @@ use crate::model::turn::{self, turned_box};
 use crate::model::{BBox, Item, Point, Transform};
 use eframe::egui::{self, Color32, PointerButton, Pos2, Rect, Stroke, vec2};
 
-const SELECTED: Color32 = Color32::from_rgb(255, 150, 0);
-const GRIP: Color32 = Color32::from_rgb(40, 110, 255);
 const GRIP_HOT: Color32 = Color32::from_rgb(240, 60, 60);
 /// Half a grip square, in pixels.
 const GRIP_HALF: f32 = 4.0;
@@ -308,7 +306,7 @@ impl App {
     pub(super) fn paint_selection(&self, painter: &egui::Painter, items: &[Item], selection: &[u64], pointer: Option<Point>) {
         if let Some((b, angle)) = selection_box(items, selection) {
             let pb = grips::padded(b, self.mm(BOX_PAD));
-            let stroke = Stroke::new(1.0, SELECTED.gamma_multiply(0.7));
+            let stroke = Stroke::new(1.0, crate::gui::theme::get().selected.gamma_multiply(0.7));
             let corner = |fx: f64, fy: f64| self.w2s(turn::to_world([pb[0] + fx * pb[2], pb[1] + fy * pb[3]], angle));
             let corners = vec![corner(0.0, 0.0), corner(1.0, 0.0), corner(1.0, 1.0), corner(0.0, 1.0)];
             painter.add(egui::Shape::closed_line(corners, stroke));
@@ -323,7 +321,7 @@ impl App {
             _ => painter.ctx().pointer_hover_pos().and_then(|h| self.grip_at(&grips, h)).map(|(g, _)| g),
         };
         for (g, p) in &grips {
-            let color = if Some(*g) == active { GRIP_HOT } else { GRIP };
+            let color = if Some(*g) == active { GRIP_HOT } else { crate::gui::theme::get().grips };
             let at = self.w2s(*p);
             let square = Rect::from_center_size(at, vec2(GRIP_HALF * 2.0, GRIP_HALF * 2.0));
             match g {

@@ -17,7 +17,6 @@ use std::time::{Duration, Instant};
 
 /// How long the pointer rests on a shape before its tooltip shows.
 const TOOLTIP_DELAY: Duration = Duration::from_millis(600);
-const GLOW: Color32 = Color32::from_rgb(90, 170, 255);
 
 /// A word for what kind of shape an item is.
 fn shape_word(item: &Item) -> &'static str {
@@ -74,7 +73,7 @@ impl App {
         let tol = super::canvas::curve_tol(self.view.zoom, painter.ctx().pixels_per_point());
         for line in item.shape.outline(tol) {
             let pts: Vec<Pos2> = line.iter().map(|q| self.w2s(*q)).collect();
-            painter.add(egui::Shape::line(pts, Stroke::new(5.0, GLOW.gamma_multiply(0.35))));
+            painter.add(egui::Shape::line(pts, Stroke::new(5.0, crate::gui::theme::get().hover.gamma_multiply(0.35))));
         }
         let at = self.w2s(p);
         if self.cycle.count() >= 2 {

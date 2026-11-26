@@ -6,8 +6,6 @@ use super::glyphs;
 use crate::model::Kind;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, pos2, vec2};
 
-pub(super) const ACCENT: Color32 = Color32::from_rgb(0, 110, 160);
-
 /// The help text of a command (`None` is Select), shown in its tooltip.
 pub(super) fn help(cmd: Option<Cmd>) -> &'static str {
     let Some(cmd) = cmd else { return "Select shapes. Drag on empty space for a window (→) or crossing (←)." };
@@ -81,7 +79,7 @@ pub(super) fn pill(ui: &mut egui::Ui, on: bool, dot: Option<Color32>, text: &str
     let size = vec2(galley.size().x + dot_w, galley.size().y) + pad * 2.0;
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let (bg, stroke, fg) = match (on, response.hovered()) {
-        (true, _) => (ACCENT, Stroke::NONE, Color32::WHITE),
+        (true, _) => (crate::gui::theme::get().accent, Stroke::NONE, crate::gui::theme::get().on_accent),
         (false, true) => (visuals.widgets.hovered.bg_fill, Stroke::new(1.0, visuals.widgets.hovered.bg_stroke.color), visuals.strong_text_color()),
         (false, false) => (visuals.widgets.inactive.weak_bg_fill, Stroke::new(1.0, visuals.widgets.noninteractive.bg_stroke.color), visuals.text_color()),
     };
@@ -294,5 +292,6 @@ pub(super) fn paint_icon(p: &egui::Painter, r: Rect, c: Color32, cmd: Option<Cmd
 
 /// Background-ish colour to punch the subtracted circle out of the filled one.
 fn ui_bg_hint(fg: Color32) -> Color32 {
-    if fg == Color32::WHITE { ACCENT } else { Color32::from_gray(27) }
+    let t = crate::gui::theme::get();
+    if fg == t.on_accent { t.accent } else { t.panel }
 }

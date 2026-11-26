@@ -3,11 +3,9 @@
 
 use super::App;
 use crate::model::{BBox, Guide, Item, Shape, State};
-use eframe::egui::{self, Color32, Stroke};
+use eframe::egui::{self, Stroke};
 
 /// Guide lines are drawn in this colour, which no laser operation uses.
-const GUIDE: Color32 = Color32::from_rgb(0, 170, 200);
-const SELECTED: Color32 = Color32::from_rgb(255, 150, 0);
 
 impl App {
     /// Whether the item is drawn and pickable: guides can be hidden, and ISOLATE hides everything else.
@@ -23,11 +21,11 @@ impl App {
     }
 
     pub(super) fn paint_guide(&self, painter: &egui::Painter, g: &Guide, selected: bool) {
-        let stroke = Stroke::new(1.0, GUIDE);
+        let stroke = Stroke::new(1.0, crate::gui::theme::get().guide);
         for [a, b] in g.segments(self.view_box()) {
             let (a, b) = (self.w2s(a), self.w2s(b));
             if selected {
-                painter.line_segment([a, b], Stroke::new(6.0, SELECTED.gamma_multiply(0.45)));
+                painter.line_segment([a, b], Stroke::new(6.0, crate::gui::theme::get().selected.gamma_multiply(0.45)));
             }
             // Dash-dot, like a centre line on a drawing: long dash, gap, dot, gap.
             let len = (b - a).length();

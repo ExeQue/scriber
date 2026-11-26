@@ -25,11 +25,19 @@ The ribbon under the menu bar holds every tool, grouped in tabs:
 | **Parametric** | Geometric constraints, locked sizes (Dimension and *More ▾*), Parameters |
 | **Arrange** | Stretch, join, explode, align, break, extend, lengthen, copy laser settings, group, show only selection, select similar, quick select |
 | **Laser** | Machine and material, export, Machines & materials… |
-| **View** | Zoom, Preview, and toggles for the grid, guide lines, comments, measure on hover and the command line |
+| **View** | Zoom, Preview, toggles for the grid, guide lines, comments, measure on hover and the command line, and **Theme ▾** |
 
 Hover a button for its name, a one-line help and its shortcut. Buttons with a small arrow (circle,
 arc, rectangle, polygon) have several ways of drawing; see [Drawing](./drawing). The ⌃ at the right
 folds the ribbon to just the tab names.
+
+## Themes
+
+View → **Theme ▾** (or the View menu → Theme) picks the colours: **System** (the default) follows
+Omarchy's theme on Omarchy and your system's light or dark mode elsewhere; there are also Dark,
+Light, Graphite, Paper, Blueprint and High contrast, and theme files of your own. Laser colours stay
+red for cut, blue for score and black for engrave, made lighter where the material is dark. See
+[Themes](./themes).
 
 ## Command card
 

@@ -1,0 +1,18 @@
+# Blueprint: white lines on deep blue.
+name = "Blueprint"
+mode = "dark"
+
+background = "#0f2742"
+lighter_background = "#16324f"
+dark_background = "#0a1c30"
+foreground = "#dce9f7"
+muted = "#8eaac8"
+accent = "#7cc4ff"
+selection = "#24507e"
+
+canvas = "#0a1c30"
+material = "#16365a"
+grid = "#2d5682"
+engrave = "#ffffff"
+cut = "#ff7a7a"
+score = "#8fd0ff"

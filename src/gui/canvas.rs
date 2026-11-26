@@ -15,7 +15,6 @@ use std::path::PathBuf;
 
 /// Half the length of the crosshair arms, in pixels.
 const CROSSHAIR: f32 = 20.0;
-const SELECTED: Color32 = Color32::from_rgb(255, 150, 0);
 /// Half the size of the pick box, in pixels; also how close a click must be to a line.
 const PICKBOX: f32 = 5.0;
 /// How close (pixels) the pointer must be for an object snap, polar ray or grip.
@@ -324,8 +323,8 @@ impl App {
 
     fn paint(&mut self, ui: &egui::Ui, rect: Rect, pointer: Option<Point>) {
         let painter = ui.painter_at(rect);
-        // Model space: always dark around the light material.
-        painter.rect_filled(rect, 0.0, Color32::from_gray(33));
+        // Model space around the material.
+        painter.rect_filled(rect, 0.0, crate::gui::theme::get().canvas);
 
         let (state, selection) = {
             let d = self.doc.lock().unwrap();
@@ -371,22 +370,23 @@ impl App {
             tooltip(painter, at, s.kind.label());
         }
         // A short crosshair, like AutoCAD's default size, rather than lines across the whole canvas.
-        let cross = Stroke::new(1.0, Color32::from_gray(150));
+        let cross = Stroke::new(1.0, crate::gui::theme::get().cursor);
         painter.line_segment([at - vec2(CROSSHAIR, 0.0), at + vec2(CROSSHAIR, 0.0)], cross);
         painter.line_segment([at - vec2(0.0, CROSSHAIR), at + vec2(0.0, CROSSHAIR)], cross);
         if self.tool == Tool::Select {
             let pick = Rect::from_center_size(at, vec2(PICKBOX * 2.0, PICKBOX * 2.0));
-            painter.rect_filled(pick, 0.0, Color32::from_gray(33));
-            painter.rect_stroke(pick, 0.0, Stroke::new(1.0, Color32::from_gray(220)), egui::StrokeKind::Middle);
+            painter.rect_filled(pick, 0.0, crate::gui::theme::get().canvas);
+            painter.rect_stroke(pick, 0.0, cross, egui::StrokeKind::Middle);
         }
     }
 
     fn paint_material(&self, painter: &egui::Painter, w: f64, h: f64) {
         let mat = Rect::from_min_max(self.w2s([0.0, 0.0]), self.w2s([w, h]));
         painter.rect_filled(mat.translate(vec2(3.0, 3.0)), 2.0, Color32::from_black_alpha(60));
-        painter.rect_filled(mat, 0.0, Color32::WHITE);
+        let t = crate::gui::theme::get();
+        painter.rect_filled(mat, 0.0, t.material);
         // 1 mm and 10 mm grid lines (GRID, F7), hidden when they would be too dense.
-        for (step, color) in [(1.0, Color32::from_gray(242)), (10.0, Color32::from_gray(222))] {
+        for (step, color) in [(1.0, t.grid_minor()), (10.0, t.grid)] {
             if !self.aids.grid || self.px(step) < 6.0 {
                 continue;
             }
@@ -411,14 +411,14 @@ impl App {
         let geometry = self.geometry.get(item, s.engraves_area(item), tol);
         if selected {
             for line in &geometry.outline {
-                painter.add(egui::Shape::line(line.iter().map(to_screen).collect(), Stroke::new(6.0, SELECTED.gamma_multiply(0.45))));
+                painter.add(egui::Shape::line(line.iter().map(to_screen).collect(), Stroke::new(6.0, crate::gui::theme::get().selected.gamma_multiply(0.45))));
             }
         }
         match &item.shape {
             // Text is drawn from its glyph outlines, the same shapes the laser gets.
             Shape::Path { .. } | Shape::Text { .. } => {
                 if let Some((verts, indices)) = &geometry.fill {
-                    let fill = Color32::from_gray(60);
+                    let fill = crate::gui::theme::get().engrave_fill();
                     let vertices = verts.iter().map(|v| egui::epaint::Vertex { pos: offset + vec2(v[0], v[1]) * zoom, uv: egui::epaint::WHITE_UV, color: fill }).collect();
                     painter.add(egui::Mesh { indices: indices.clone(), vertices, texture_id: egui::TextureId::default() });
                 }
@@ -470,7 +470,7 @@ impl App {
         }
         let Some(p) = pointer else { return };
         // FILLET/CHAMFER: what a click here would do.
-        let preview = Stroke::new(2.0, Color32::from_rgb(255, 150, 0));
+        let preview = Stroke::new(2.0, crate::gui::theme::get().selected);
         for shape in self.op_preview(p) {
             for line in shape.outline(tol) {
                 let pts: Vec<Pos2> = line.iter().map(|q| self.w2s(*q)).collect();
@@ -512,7 +512,7 @@ impl App {
         };
         // Dynamic input shows the same measurements next to the cursor; avoid two boxes on top of each other.
         if !self.has_dyn_fields() {
-    painter.text(self.w2s(p) + vec2(14.0, 14.0), Align2::LEFT_TOP, label, FontId::proportional(13.0), Color32::from_gray(30));
+    painter.text(self.w2s(p) + vec2(14.0, 14.0), Align2::LEFT_TOP, label, FontId::proportional(13.0), crate::gui::theme::get().engrave);
         }
     }
 }

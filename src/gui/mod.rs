@@ -39,6 +39,7 @@ mod snap;
 mod svg_import;
 mod dxf_import;
 mod tabs;
+mod theme;
 mod tools;
 mod tracking;
 mod variant_icons;
@@ -221,6 +222,8 @@ struct App {
     polar_extra_text: String,
     /// Review comments: the Comment tool, pins and their windows.
     comments: comments::Comments,
+    /// The colour theme and what it follows.
+    theme: theme::State,
 }
 
 pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
@@ -246,6 +249,7 @@ pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
         Box::new(move |cc| {
             let ctx = cc.egui_ctx.clone();
             lucide::install(&ctx);
+            theme::watch(ctx.clone());
             let mcp = mcp::listen(ws.clone(), Arc::new(move || ctx.request_repaint())).map_err(|e| e.to_string());
             let mut app = App::new(ws, mcp);
             app.library_sync = Some(library_window::auto_sync(&cc.egui_ctx));
@@ -353,6 +357,7 @@ impl App {
             grip_menu: None,
             polar_extra_text: String::new(),
             comments: comments::Comments::default(),
+            theme: theme::State::default(),
         }
     }
 
@@ -661,6 +666,7 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.theme.update(&ctx);
         self.dialog_answer();
         self.follow_active();
         self.library_synced();
