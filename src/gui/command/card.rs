@@ -17,6 +17,7 @@ impl App {
                 ui.label(RichText::new(self.prompt()).weak());
                 ui.add_space(6.0);
                 self.card_fields(ui, cmd, step);
+                self.dyn_fields(ui);
                 self.exact_value(ui, step);
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
@@ -82,9 +83,6 @@ impl App {
                         }
                     }
                 });
-                if self.draft.len() == 1 && self.cmdline.circle_mode == super::curves::CircleMode::CenterRadius && ui.button("Give the diameter instead").clicked() {
-                    self.answer(Entry::Word("DIAMETER".into()), None);
-                }
             }
             (Cmd::Arc, Step::Draw) => {
                 ui.horizontal_wrapped(|ui| {
@@ -153,7 +151,7 @@ impl App {
 
     /// For exact work without the command line: type a length, angle or point (`40`, `10,20`, `@15,0`, `@40<30`).
     fn exact_value(&mut self, ui: &mut egui::Ui, step: Step) {
-        if !matches!(step, Step::Draw | Step::Base | Step::Second | Step::Diameter | Step::Side) || self.show_cmdline {
+        if !matches!(step, Step::Draw | Step::Base | Step::Second | Step::Diameter | Step::Side) || self.show_cmdline || self.has_dyn_fields() {
             return;
         }
         ui.horizontal(|ui| {

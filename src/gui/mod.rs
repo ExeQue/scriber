@@ -58,6 +58,8 @@ struct App {
     /// The AutoCAD-style command line; hidden unless the user turns it on (View menu).
     show_cmdline: bool,
     measured: Option<(Point, Point)>,
+    /// Where the mouse is on the material (snapped), for the command card's live measurements.
+    pointer_mm: Option<Point>,
     view: View,
     canvas_rect: Rect,
     textures: HashMap<u64, egui::TextureHandle>,
@@ -126,6 +128,7 @@ impl App {
             cmdline: command::CommandLine::new(),
             show_cmdline: false,
             measured: None,
+            pointer_mm: None,
             view: View { offset: Vec2::ZERO, zoom: 3.0, auto_fit: true, fit_size: Vec2::ZERO },
             canvas_rect: Rect::NOTHING,
             textures: HashMap::new(),

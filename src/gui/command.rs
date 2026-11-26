@@ -4,6 +4,7 @@
 
 mod card;
 mod curves;
+mod dynamic;
 mod context_menu;
 mod draw;
 mod edit;
@@ -149,6 +150,8 @@ pub struct CommandLine {
     modify: modify::ModifyState,
     /// How ARC and CIRCLE are drawn (the last way used).
     arc_mode: curves::ArcMode,
+    /// Measurements on the command card (radius, length and angle, …).
+    dynamic: dynamic::DynInput,
     circle_mode: curves::CircleMode,
     /// ROTATE angle and SCALE factor as set on the command card.
     card_angle: f64,
@@ -168,6 +171,7 @@ impl CommandLine {
             checkpointed: false,
             modify: modify::ModifyState::new(),
             arc_mode: curves::ArcMode::default(),
+            dynamic: dynamic::DynInput::default(),
             circle_mode: curves::CircleMode::default(),
             card_angle: 90.0,
             card_factor: 2.0,

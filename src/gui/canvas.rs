@@ -44,6 +44,7 @@ impl App {
             }
             pointer
         };
+        self.pointer_mm = pointer;
         self.dropped_files(&ctx, pointer);
         self.paint(ui, rect, pointer);
     }
@@ -386,6 +387,8 @@ impl App {
             measure_overlay(painter, self.w2s(self.draft[0]), self.w2s(p), self.draft[0], p);
             return;
         }
+        // Typed measurements on the command card win over the mouse.
+        let p = self.dyn_point(p).unwrap_or(p);
         let mut pts = self.draft.clone();
         pts.push(p);
         let Some((_, shape)) = self.draft_shape(&pts) else { return };
