@@ -1,6 +1,8 @@
 # Preview and check
 
 Before you send a job to the laser, look at what it will actually do.
+![Preview mode showing only what the laser makes, in the colours of an Omarchy theme](/screenshots/preview-omarchy.webp)
+
 
 ## Preview (V)
 

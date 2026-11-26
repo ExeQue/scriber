@@ -2,6 +2,9 @@
 layout: home
 
 hero:
+  image:
+    src: /screenshots/theme-light.webp
+    alt: Scriber's main window with a demo project
   name: Scriber
   text: 2D CAD for laser cutters, made for AI agents
   tagline: Tell an AI agent what you want and watch it draw in Scriber. Step in whenever you like, with a comment, an edit or undo.

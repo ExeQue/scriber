@@ -29,6 +29,18 @@ light grey) so they stay readable. A colour you gave a layer yourself is always 
 If a theme cannot be read (a typo in a theme file, a broken Omarchy theme) Scriber says why at the
 bottom of the Theme menu and uses Dark or Light meanwhile.
 
+## Gallery
+
+<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px">
+<figure style="margin:0"><img src="/screenshots/theme-light.webp" alt="Scriber in the Light theme" loading="lazy"><figcaption><strong>Light</strong></figcaption></figure>
+<figure style="margin:0"><img src="/screenshots/theme-system.webp" alt="Scriber in the Following an Omarchy theme theme" loading="lazy"><figcaption><strong>Following an Omarchy theme</strong></figcaption></figure>
+<figure style="margin:0"><img src="/screenshots/theme-dark.webp" alt="Scriber in the Dark theme" loading="lazy"><figcaption><strong>Dark</strong></figcaption></figure>
+<figure style="margin:0"><img src="/screenshots/theme-graphite.webp" alt="Scriber in the Graphite theme" loading="lazy"><figcaption><strong>Graphite</strong></figcaption></figure>
+<figure style="margin:0"><img src="/screenshots/theme-paper.webp" alt="Scriber in the Paper theme" loading="lazy"><figcaption><strong>Paper</strong></figcaption></figure>
+<figure style="margin:0"><img src="/screenshots/theme-blueprint.webp" alt="Scriber in the Blueprint theme" loading="lazy"><figcaption><strong>Blueprint</strong></figcaption></figure>
+<figure style="margin:0"><img src="/screenshots/theme-high-contrast.webp" alt="Scriber in the High contrast theme" loading="lazy"><figcaption><strong>High contrast</strong></figcaption></figure>
+</div>
+
 ## On Omarchy
 
 With **System** or **Omarchy** chosen, Scriber reads the current theme in

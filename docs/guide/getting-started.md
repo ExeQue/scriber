@@ -4,6 +4,10 @@ Scriber is a 2D drawing program for laser cutters, made to be driven by an AI ag
 agent what you want; it draws shapes in millimetres on a sheet of material, says what the laser
 should do with each shape, and checks the design, while you watch in the Scriber window and step in
 when you like. You can also do all of it by hand. See [Why AI-first](./ai-first).
+![Scriber's main window in the light theme: ribbon, document tabs, canvas, layers panel and status bar](/screenshots/theme-light.webp)
+
+*Scriber with a demo project: the ribbon and tabs along the top, the canvas with the material sheet, the layers panel on the right and the status bar at the bottom.*
+
 
 ## Install and run
 

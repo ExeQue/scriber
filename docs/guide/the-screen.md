@@ -1,5 +1,10 @@
 # The screen
 
+![Scriber's main window in the light theme: ribbon, document tabs, canvas, layers panel and status bar](/screenshots/theme-light.webp)
+
+*Scriber with a demo project: the ribbon and tabs along the top, the canvas with the material sheet, the layers panel on the right and the status bar at the bottom.*
+
+
 ```
 ┌ File  Edit  AI agents  Help ───────────────────────────────────────────┐
 │ Home │ Annotate │ Parametric │ Arrange │ Laser │ View          (ribbon) │
