@@ -55,6 +55,8 @@ struct App {
     draft: Vec<Point>,
     drag: Option<Drag>,
     cmdline: command::CommandLine,
+    /// The AutoCAD-style command line; hidden unless the user turns it on (View menu).
+    show_cmdline: bool,
     measured: Option<(Point, Point)>,
     view: View,
     canvas_rect: Rect,
@@ -122,6 +124,7 @@ impl App {
             draft: Vec::new(),
             drag: None,
             cmdline: command::CommandLine::new(),
+            show_cmdline: false,
             measured: None,
             view: View { offset: Vec2::ZERO, zoom: 3.0, auto_fit: true, fit_size: Vec2::ZERO },
             canvas_rect: Rect::NOTHING,
@@ -279,8 +282,8 @@ impl App {
 
     // ---------- keyboard ----------
 
-    /// The keyboard belongs to the command line unless another text field has it (as in AutoCAD,
-    /// typing anywhere goes to the command line). Runs before the panels, so the keys handled
+    /// With the command line shown, the keyboard belongs to it unless another text field has it
+    /// (as in AutoCAD, typing anywhere goes to the command line). Runs before the panels, so the keys handled
     /// here do not also reach the command line's text field.
     fn keys(&mut self, ctx: &egui::Context, pointer: Option<Point>) {
         let input = command::input_id();
@@ -288,7 +291,7 @@ impl App {
         if self.confirm_close || (focused.is_some_and(|f| f != input) && ctx.text_edit_focused()) {
             return;
         }
-        if focused != Some(input) {
+        if self.show_cmdline && focused != Some(input) {
             ctx.memory_mut(|m| m.request_focus(input));
         }
         let consume = |mods: Modifiers, k: Key| ctx.input_mut(|i| i.consume_key(mods, k));
@@ -375,7 +378,9 @@ impl eframe::App for App {
         self.aid_keys(&ctx);
         self.keys(&ctx, pointer);
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui, pointer));
-        egui::Panel::bottom("command").show(ui, |ui| self.command_line(ui));
+        if self.show_cmdline {
+            egui::Panel::bottom("command").show(ui, |ui| self.command_line(ui));
+        }
         egui::Panel::left("tools").exact_size(126.0).show(ui, |ui| self.toolbar(ui));
         egui::Panel::right("props").default_size(290.0).show(ui, |ui| self.properties(ui));
         egui::CentralPanel::no_frame().show(ui, |ui| self.canvas(ui));

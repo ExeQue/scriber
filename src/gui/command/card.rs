@@ -17,6 +17,7 @@ impl App {
                 ui.label(RichText::new(self.prompt()).weak());
                 ui.add_space(6.0);
                 self.card_fields(ui, cmd, step);
+                self.exact_value(ui, step);
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     // ARRAY is finished with its own "Create copies" button.
@@ -132,6 +133,22 @@ impl App {
             (Cmd::Array, Step::Value) => self.array_fields(ui),
             _ => {}
         }
+    }
+
+    /// For exact work without the command line: type a length, angle or point (`40`, `10,20`, `@15,0`, `@40<30`).
+    fn exact_value(&mut self, ui: &mut egui::Ui, step: Step) {
+        if !matches!(step, Step::Draw | Step::Base | Step::Second | Step::Diameter | Step::Side) || self.show_cmdline {
+            return;
+        }
+        ui.horizontal(|ui| {
+            ui.label("Exact value");
+            let field = ui.add(egui::TextEdit::singleline(&mut self.cmdline.input).hint_text("40  or  10,20  or  @40<30").desired_width(150.0));
+            if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                self.submit(None);
+            }
+        })
+        .response
+        .on_hover_text("A number is a length (or angle) in the direction of the mouse. x,y is a point on the material; @dx,dy is relative to the last point; @length<angle goes that far at that angle.");
     }
 
     fn corner_buttons(&mut self, ui: &mut egui::Ui, step: Step) {
