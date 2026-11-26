@@ -9,7 +9,24 @@ use crate::model::Kind;
 use eframe::egui;
 
 impl App {
-    pub(in crate::gui) fn canvas_menu(&mut self, ui: &mut egui::Ui) {
+    /// The menu stays open for a click into one of its value fields (radius, height, text, …),
+    /// so a value can be typed there; a click on anything else (a button, an entry) closes it.
+    pub(in crate::gui) fn show_canvas_menu(&mut self, response: &egui::Response) {
+        let popup = egui::Popup::context_menu(response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+        let id = popup.get_id();
+        popup.show(|ui| {
+            self.canvas_menu(ui);
+            let ctx = ui.ctx().clone();
+            // A clicked widget that took the keyboard focus is a field to type in; an open submenu
+            // handles its own clicks.
+            let clicked = ctx.viewport(|v| v.interact_widgets.clicked).filter(|_| ctx.input(|i| i.pointer.primary_clicked()));
+            if clicked.is_some_and(|w| !ctx.memory(|m| m.has_focus(w))) && egui::containers::menu::MenuState::is_deepest_open_sub_menu(&ctx, id) {
+                ui.close();
+            }
+        });
+    }
+
+    fn canvas_menu(&mut self, ui: &mut egui::Ui) {
         ui.set_min_width(190.0);
         if self.osnap_menu_open {
             return self.osnap_menu(ui);
@@ -185,4 +202,64 @@ fn icon_item(ui: &mut egui::Ui, kind: Kind, label: &str) -> egui::Response {
         ui.close();
     }
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Document;
+    use egui::{Event, PointerButton, Pos2, RawInput, Rect};
+    use std::sync::{Arc, Mutex};
+
+    /// One frame of the canvas with its right-click menu; returns the labelled widgets' centres.
+    fn frame(ctx: &egui::Context, app: &mut App, events: Vec<Event>) -> Vec<(String, Pos2)> {
+        let input = RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1000.0, 800.0))), events, ..Default::default() };
+        let mut out = ctx.run_ui(input, |ui| {
+            let r = ui.allocate_rect(ui.max_rect(), egui::Sense::click());
+            app.show_canvas_menu(&r);
+        });
+        out.textures_delta.clear();
+        let nodes = out.platform_output.accesskit_update.map(|u| u.nodes).unwrap_or_default();
+        nodes.iter().filter_map(|(_, n)| Some((n.label()?.to_string(), n.bounds()?))).map(|(l, b)| (l, Pos2::new(((b.x0 + b.x1) / 2.0) as f32, ((b.y0 + b.y1) / 2.0) as f32))).collect()
+    }
+
+    fn click(ctx: &egui::Context, app: &mut App, at: Pos2, button: PointerButton) -> Vec<(String, Pos2)> {
+        let press = |pressed| Event::PointerButton { pos: at, button, pressed, modifiers: Default::default() };
+        frame(ctx, app, vec![Event::PointerMoved(at), press(true)]);
+        frame(ctx, app, vec![press(false)]);
+        frame(ctx, app, vec![])
+    }
+
+    fn find(widgets: &[(String, Pos2)], label: &str) -> Pos2 {
+        widgets.iter().find(|(l, _)| l == label).unwrap_or_else(|| panic!("no {label:?} in {widgets:?}")).1
+    }
+
+    #[test]
+    fn menu_font_and_values_work() {
+        let mut app = App::new(Arc::new(Mutex::new(Document::new(100.0, 100.0))), Err(String::new()));
+        app.start(Cmd::Text);
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        frame(&ctx, &mut app, vec![]);
+        let menu = click(&ctx, &mut app, Pos2::new(200.0, 200.0), PointerButton::Secondary);
+        // Hover the font entry: its submenu lists the fonts; pick one.
+        let font = find(&menu, "sans-serif");
+        frame(&ctx, &mut app, vec![Event::PointerMoved(font)]);
+        let list = frame(&ctx, &mut app, vec![]);
+        let serif = list.iter().filter(|(l, _)| l == "serif").map(|w| w.1).find(|p| p.x > font.x).expect("font list");
+        frame(&ctx, &mut app, vec![Event::PointerMoved(Pos2::new(font.x + 60.0, font.y)), Event::PointerMoved(serif)]);
+        let after = click(&ctx, &mut app, serif, PointerButton::Primary);
+        assert_eq!(app.cmdline.text_font, "serif");
+        assert!(after.iter().all(|(l, _)| l != "Cancel"), "picking a font closes the menu");
+
+        // A value field in the menu takes a typed value without closing the menu.
+        let menu = click(&ctx, &mut app, Pos2::new(200.0, 200.0), PointerButton::Secondary);
+        let height = find(&menu, "mm");
+        let still = click(&ctx, &mut app, height, PointerButton::Primary);
+        find(&still, "Cancel");
+        // A button still closes it.
+        let gone = click(&ctx, &mut app, find(&still, "Cancel"), PointerButton::Primary);
+        assert!(gone.iter().all(|(l, _)| l != "Cancel"));
+        assert!(app.cmdline.active.is_none());
+    }
 }

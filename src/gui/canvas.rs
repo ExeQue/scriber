@@ -38,7 +38,7 @@ impl App {
         {
             self.right_click(at);
         }
-        response.context_menu(|ui| self.canvas_menu(ui));
+        self.show_canvas_menu(&response);
         self.fit_if_needed(rect);
         self.pan_and_zoom(ui, &response);
         let space_pan = self.space_pan(ui, &response);
