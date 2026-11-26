@@ -185,7 +185,7 @@ fn mm_value(v: &mut f64) -> DragValue<'_> {
     DragValue::new(v).speed(0.1).range(0.0..=10000.0).suffix(" mm")
 }
 
-fn title(cmd: Cmd) -> &'static str {
+pub(super) fn title(cmd: Cmd) -> &'static str {
     match cmd {
         Cmd::Line => "Line",
         Cmd::Circle => "Circle",
@@ -216,7 +216,7 @@ fn title(cmd: Cmd) -> &'static str {
 }
 
 /// The text of the button that does what Enter does at this point.
-fn next_label(cmd: Cmd, step: Step) -> &'static str {
+pub(super) fn next_label(cmd: Cmd, step: Step) -> &'static str {
     match step {
         Step::Select | Step::Choose => "Done selecting",
         Step::Value | Step::Sides | Step::Fillet | Step::Height => "Next",

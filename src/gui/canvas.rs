@@ -24,6 +24,7 @@ impl App {
         self.canvas_rect = rect;
         let ctx = ui.ctx().clone();
         self.zoom_extents_on_wheel_double_click(&response);
+        response.context_menu(|ui| self.canvas_menu(ui));
         self.fit_if_needed(rect);
         self.pan_and_zoom(ui, &response);
         if response.hovered() {

@@ -1,8 +1,9 @@
 //! The AutoCAD-style command line: commands and their aliases, the step each command is at,
 //! and the prompt for it. Every input ends up here: typed lines, canvas clicks (through
-//! `place_point`), Enter/Space/right-click and the toolbar buttons.
+//! `place_point`), Enter/Space, the right-click menu and the toolbar buttons.
 
 mod card;
+mod context_menu;
 mod draw;
 mod edit;
 mod modify;
@@ -271,7 +272,7 @@ impl App {
         }
     }
 
-    /// Enter (or Space, or right-click): answer the prompt with what is typed.
+    /// Enter (or Space): answer the prompt with what is typed.
     pub(super) fn submit(&mut self, pointer: Option<Point>) {
         let text = std::mem::take(&mut self.cmdline.input);
         if self.cmdline.active.is_none() {

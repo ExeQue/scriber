@@ -14,7 +14,7 @@ mod tools;
 
 use crate::model::{Document, Op, Point, Shape, Shared, Transform};
 use crate::{agents, export, mcp};
-use eframe::egui::{self, Event, Key, Modifiers, PointerButton, Pos2, Rect, Vec2};
+use eframe::egui::{self, Event, Key, Modifiers, Pos2, Rect, Vec2};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -308,11 +308,6 @@ impl App {
             _ if consume(Modifiers::NONE, Key::Escape) => self.escape(),
             _ if consume(Modifiers::NONE, Key::Enter) || self.space_as_enter(ctx) => self.submit(pointer),
             _ => {}
-        }
-        // Right-click on the canvas is Enter too (a right-drag pans instead).
-        let right_click = ctx.input(|i| i.pointer.button_clicked(PointerButton::Secondary) && i.pointer.interact_pos().is_some_and(|p| self.canvas_rect.contains(p)));
-        if right_click {
-            self.submit(pointer);
         }
         if !self.cmdline.input.is_empty() {
             return;
