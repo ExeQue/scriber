@@ -26,9 +26,6 @@ impl App {
             self.draw_input(ui, &response, p);
         }
 
-        if !ctx.egui_wants_keyboard_input() {
-            self.keys(&ctx);
-        }
         self.dropped_files(&ctx, pointer);
         self.paint(ui, rect, pointer);
     }

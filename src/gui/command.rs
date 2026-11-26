@@ -1,0 +1,334 @@
+//! The AutoCAD-style command line: commands and their aliases, the step each command is at,
+//! and the prompt for it. Every input ends up here: typed lines, canvas clicks (through
+//! `place_point`), Enter/Space/right-click and the toolbar buttons.
+
+mod draw;
+mod edit;
+mod parse;
+
+use super::App;
+use super::tools::Tool;
+use crate::model::Point;
+use eframe::egui::{self, RichText, TextEdit, TextStyle};
+use parse::Entry;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Cmd {
+    Line,
+    Circle,
+    Arc,
+    Rectang,
+    Polygon,
+    Pline,
+    Text,
+    DimLinear,
+    Dist,
+    Erase,
+    Move,
+    Copy,
+    Rotate,
+    Scale,
+    Mirror,
+    Undo,
+    Redo,
+}
+
+/// Name, alias and the canvas tool used while the command asks for points.
+const COMMANDS: [(Cmd, &str, &str, Tool); 17] = [
+    (Cmd::Line, "LINE", "L", Tool::Line),
+    (Cmd::Circle, "CIRCLE", "C", Tool::Circle),
+    (Cmd::Arc, "ARC", "A", Tool::Arc),
+    (Cmd::Rectang, "RECTANG", "REC", Tool::Rect),
+    (Cmd::Polygon, "POLYGON", "POL", Tool::Polygon),
+    (Cmd::Pline, "PLINE", "PL", Tool::Polyline),
+    (Cmd::Text, "TEXT", "T", Tool::Text),
+    (Cmd::DimLinear, "DIMLINEAR", "DLI", Tool::Dimension),
+    (Cmd::Dist, "DIST", "DI", Tool::Measure),
+    (Cmd::Erase, "ERASE", "E", Tool::Select),
+    (Cmd::Move, "MOVE", "M", Tool::Select),
+    (Cmd::Copy, "COPY", "CO", Tool::Select),
+    (Cmd::Rotate, "ROTATE", "RO", Tool::Select),
+    (Cmd::Scale, "SCALE", "SC", Tool::Select),
+    (Cmd::Mirror, "MIRROR", "MI", Tool::Select),
+    (Cmd::Undo, "UNDO", "U", Tool::Select),
+    (Cmd::Redo, "REDO", "REDO", Tool::Select),
+];
+
+impl Cmd {
+    /// A command by its name or alias, in any case.
+    pub fn find(word: &str) -> Option<Cmd> {
+        let word = word.to_ascii_uppercase();
+        COMMANDS.iter().find(|c| c.1 == word || c.2 == word).map(|c| c.0)
+    }
+
+    /// The command a toolbar button runs.
+    pub fn for_tool(t: Tool) -> Option<Cmd> {
+        COMMANDS.iter().find(|c| c.3 == t && t != Tool::Select).map(|c| c.0)
+    }
+
+    fn row(self) -> &'static (Cmd, &'static str, &'static str, Tool) {
+        COMMANDS.iter().find(|c| c.0 == self).expect("every command is in the table")
+    }
+
+    pub fn name(self) -> &'static str {
+        self.row().1
+    }
+
+    pub fn alias(self) -> &'static str {
+        self.row().2
+    }
+
+    fn tool(self) -> Tool {
+        self.row().3
+    }
+
+    fn edits(self) -> bool {
+        matches!(self, Cmd::Erase | Cmd::Move | Cmd::Copy | Cmd::Rotate | Cmd::Scale | Cmd::Mirror)
+    }
+}
+
+/// Where a command is: which input its prompt asks for.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Step {
+    /// Points for a drawing command (into `App::draft`).
+    Draw,
+    Sides,
+    Diameter,
+    Fillet,
+    Height,
+    /// Free text: Space is a character here, not Enter.
+    Content,
+    Select,
+    Base,
+    /// Second point, rotation angle or scale factor.
+    Second,
+    EraseSource,
+}
+
+pub struct CommandLine {
+    pub input: String,
+    history: Vec<String>,
+    active: Option<(Cmd, Step)>,
+    /// Repeated by Enter on an empty line.
+    last: Option<Cmd>,
+    last_point: Option<Point>,
+    /// Corner radius for RECTANG.
+    fillet: f64,
+    text_height: f64,
+    /// The running command has made its undo step (one per command).
+    checkpointed: bool,
+}
+
+impl CommandLine {
+    pub fn new() -> Self {
+        Self {
+            input: String::new(),
+            history: Vec::new(),
+            active: None,
+            last: None,
+            last_point: None,
+            fillet: 0.0,
+            text_height: 10.0,
+            checkpointed: false,
+        }
+    }
+
+    fn log(&mut self, line: impl Into<String>) {
+        self.history.push(line.into());
+        if self.history.len() > 200 {
+            self.history.remove(0);
+        }
+    }
+}
+
+/// The id of the command line's text field, which has the keyboard unless another text field does.
+pub fn input_id() -> egui::Id {
+    egui::Id::unique("command-line-input")
+}
+
+impl App {
+    /// A toolbar button: runs the same command as typing its name. Select cancels.
+    pub(super) fn set_tool(&mut self, t: Tool) {
+        match Cmd::for_tool(t) {
+            Some(cmd) => self.start(cmd),
+            None => self.cancel(),
+        }
+    }
+
+    pub(super) fn start(&mut self, cmd: Cmd) {
+        self.cancel();
+        self.measured = None;
+        self.cmdline.last = Some(cmd);
+        self.cmdline.checkpointed = false;
+        self.cmdline.log(format!("Command: {}", cmd.name()));
+        match cmd {
+            Cmd::Undo | Cmd::Redo => {
+                let mut d = self.doc.lock().unwrap();
+                let done = if cmd == Cmd::Undo { d.undo() } else { d.redo() };
+                drop(d);
+                if !done {
+                    self.cmdline.log(format!("Nothing to {}.", cmd.name().to_lowercase()));
+                }
+            }
+            c if c.edits() => self.start_edit(c),
+            Cmd::Polygon => self.begin(cmd, Step::Sides),
+            _ => self.begin(cmd, Step::Draw),
+        }
+    }
+
+    fn begin(&mut self, cmd: Cmd, step: Step) {
+        self.cmdline.active = Some((cmd, step));
+        self.tool = cmd.tool();
+        self.draft.clear();
+    }
+
+    fn set_step(&mut self, step: Step) {
+        if let Some((_, s)) = &mut self.cmdline.active {
+            *s = step;
+        }
+    }
+
+    /// The command is done: back to selecting.
+    fn end(&mut self) {
+        self.cmdline.active = None;
+        self.tool = Tool::Select;
+        self.draft.clear();
+    }
+
+    pub(super) fn cancel(&mut self) {
+        if self.cmdline.active.is_some() {
+            self.cmdline.log("*Cancel*");
+        }
+        self.end();
+    }
+
+    /// Esc: cancel the command, or clear the selection when none runs.
+    pub(super) fn escape(&mut self) {
+        self.cmdline.input.clear();
+        if self.cmdline.active.is_some() {
+            self.cancel();
+        } else {
+            self.doc.lock().unwrap().selection.clear();
+            self.measured = None;
+        }
+    }
+
+    /// The prompt asks for free text, so Space types a space instead of acting as Enter.
+    pub(super) fn takes_text(&self) -> bool {
+        matches!(self.cmdline.active, Some((_, Step::Content)))
+    }
+
+    fn last_point(&self) -> Option<Point> {
+        self.draft.last().copied().or(self.cmdline.last_point)
+    }
+
+    /// A point from a typed or clicked entry; a bare number is a distance towards the pointer.
+    fn point_of(&self, entry: &Entry, pointer: Option<Point>) -> Option<Point> {
+        match entry {
+            Entry::Point(p) => Some(*p),
+            Entry::Number(d) => self.last_point().map(|from| parse::toward(from, pointer, *d)),
+            _ => None,
+        }
+    }
+
+    /// Enter (or Space, or right-click): answer the prompt with what is typed.
+    pub(super) fn submit(&mut self, pointer: Option<Point>) {
+        let text = std::mem::take(&mut self.cmdline.input);
+        if self.cmdline.active.is_none() {
+            return self.idle(&text);
+        }
+        self.cmdline.log(format!("{} {text}", self.prompt()).trim_end());
+        if self.takes_text() {
+            return self.enter_text(text);
+        }
+        match parse::parse(&text, self.last_point()) {
+            Ok(entry) => self.answer(entry, pointer),
+            Err(e) => self.cmdline.log(e),
+        }
+    }
+
+    /// Feed one point to the running command. Every way of giving a point ends here: a click on
+    /// the canvas, a snap, or coordinates typed on the command line.
+    pub(super) fn place_point(&mut self, p: Point) {
+        self.cmdline.log(format!("{} {:.2},{:.2}", self.prompt(), p[0], p[1]));
+        self.answer(Entry::Point(p), Some(p));
+    }
+
+    /// A line typed with no command running: a command name, or Enter to repeat the last one.
+    fn idle(&mut self, text: &str) {
+        match (text.trim(), self.cmdline.last) {
+            ("", Some(cmd)) => self.start(cmd),
+            ("", None) => {}
+            (word, _) => match Cmd::find(word) {
+                Some(cmd) => self.start(cmd),
+                None => self.cmdline.log(format!("Unknown command \"{word}\". Try LINE, CIRCLE, RECTANG, MOVE, …")),
+            },
+        }
+    }
+
+    fn answer(&mut self, entry: Entry, pointer: Option<Point>) {
+        let Some((cmd, step)) = self.cmdline.active else { return };
+        let result = match step {
+            Step::Select | Step::Base | Step::Second | Step::EraseSource => self.edit_step(cmd, step, entry, pointer),
+            _ => self.draw_step(cmd, step, entry, pointer),
+        };
+        if let Err(e) = result {
+            self.cmdline.log(e);
+        }
+    }
+
+    pub(super) fn prompt(&self) -> String {
+        let Some((cmd, step)) = self.cmdline.active else { return "Command:".into() };
+        let n = self.draft.len();
+        let text = match (step, cmd) {
+            (Step::Sides, _) => return format!("Enter number of sides <{}>:", self.sides),
+            (Step::Fillet, _) => return format!("Specify fillet radius for rectangles <{}>:", self.cmdline.fillet),
+            (Step::Height, _) => return format!("Specify height <{}>:", self.cmdline.text_height),
+            (Step::Diameter, _) => "Specify diameter of circle:",
+            (Step::Content, _) => "Enter text:",
+            (Step::Select, _) => "Select objects (Enter when done):",
+            (Step::Base, Cmd::Mirror) => "Specify first point of mirror line:",
+            (Step::Base, _) => "Specify base point:",
+            (Step::Second, Cmd::Copy) => "Specify second point or <exit>:",
+            (Step::Second, Cmd::Rotate) => "Specify rotation angle (counter-clockwise):",
+            (Step::Second, Cmd::Scale) => "Specify scale factor:",
+            (Step::Second, Cmd::Mirror) => "Specify second point of mirror line:",
+            (Step::Second, _) => "Specify second point:",
+            (Step::EraseSource, _) => "Erase source objects? [Yes/No] <No>:",
+            (Step::Draw, _) => draw::prompt(cmd, n),
+        };
+        text.into()
+    }
+
+    /// The command line panel: the last few lines, the prompt and the input field.
+    pub(super) fn command_line(&mut self, ui: &mut egui::Ui) {
+        let history = &self.cmdline.history;
+        for line in &history[history.len().saturating_sub(3)..] {
+            ui.label(RichText::new(line).monospace().weak());
+        }
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(self.prompt()).monospace().strong());
+            let field = TextEdit::singleline(&mut self.cmdline.input).id(input_id()).font(TextStyle::Monospace).frame(egui::Frame::NONE);
+            ui.add(field.desired_width(f32::INFINITY));
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_and_aliases() {
+        assert_eq!(Cmd::find("rec"), Some(Cmd::Rectang));
+        assert_eq!(Cmd::find("Line"), Some(Cmd::Line));
+        assert_eq!(Cmd::find("DLI"), Some(Cmd::DimLinear));
+        assert_eq!(Cmd::find("nope"), None);
+        assert_eq!(Cmd::for_tool(Tool::Polyline), Some(Cmd::Pline));
+        assert_eq!(Cmd::for_tool(Tool::Select), None);
+        // Every alias is unique.
+        for a in COMMANDS {
+            assert_eq!(COMMANDS.iter().filter(|b| b.2 == a.2 || b.1 == a.2).count(), 1, "{}", a.2);
+        }
+    }
+}

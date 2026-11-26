@@ -3,13 +3,14 @@
 
 mod agents_window;
 mod canvas;
+mod command;
 mod labels;
 mod panels;
 mod tools;
 
 use crate::model::{Document, Op, Point, Shape, Shared, Transform};
 use crate::{agents, export, mcp};
-use eframe::egui::{self, Key, Pos2, Rect, Vec2};
+use eframe::egui::{self, Event, Key, Modifiers, PointerButton, Pos2, Rect, Vec2};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -41,6 +42,7 @@ struct App {
     /// Points placed so far with the current tool.
     draft: Vec<Point>,
     drag: Option<Drag>,
+    cmdline: command::CommandLine,
     measured: Option<(Point, Point)>,
     view: View,
     canvas_rect: Rect,
@@ -106,6 +108,7 @@ impl App {
             snap: true,
             draft: Vec::new(),
             drag: None,
+            cmdline: command::CommandLine::new(),
             measured: None,
             view: View { offset: Vec2::ZERO, zoom: 3.0, fitted: false },
             canvas_rect: Rect::NOTHING,
@@ -117,12 +120,6 @@ impl App {
             confirm_close: false,
             allow_close: false,
         }
-    }
-
-    fn set_tool(&mut self, t: Tool) {
-        self.tool = t;
-        self.draft.clear();
-        self.measured = None;
     }
 
     // ---------- files ----------
@@ -267,100 +264,63 @@ impl App {
         d.selection = vec![id];
     }
 
-    /// Feed one point to the active drawing tool. Every way of giving a point (a click, a snap,
-    /// typed coordinates on the command line) ends here.
-    fn place_point(&mut self, p: Point) {
-        // Placing the first point again closes a polyline.
-        let first = self.draft.first().copied();
-        if self.tool == Tool::Polyline
-            && self.draft.len() >= 3
-            && let Some(first) = first
-            && crate::model::geom::distance(first, p) * (self.view.zoom as f64) < 8.0
-        {
-            self.draft.push(first);
-            self.finish_draft(true);
-            return;
-        }
-        self.draft.push(p);
-        if self.tool.points() > 0 && self.draft.len() >= self.tool.points() {
-            self.finish_draft(false);
-        }
-    }
-
-    /// Turn the placed points into an item (or a measurement).
-    fn finish_draft(&mut self, close: bool) {
-        let pts = std::mem::take(&mut self.draft);
-        match self.tool {
-            Tool::Measure => {
-                if let [a, b, ..] = pts[..] {
-                    self.measured = Some((a, b));
-                }
-            }
-            Tool::Text => {
-                let op = if self.new_op == Op::Cut { Op::NoLine } else { self.new_op };
-                let text = Shape::Text { x: pts[0][0], y: pts[0][1], size: 10.0, text: "Text".into(), rotation: 0.0 };
-                self.create("text", op, true, text);
-                self.set_tool(Tool::Select);
-            }
-            _ => {
-                let Some((name, mut shape)) = self.tool.shape(&pts, self.sides) else { return };
-                if close && let Shape::Path { contours } = &mut shape {
-                    contours[0].vertices.pop();
-                    contours[0].closed = true;
-                }
-                // Ignore zero-size shapes from accidental double clicks.
-                if shape.metrics().length < 0.05 {
-                    return;
-                }
-                let (op, fill) = if self.tool == Tool::Dimension { (Op::Annotate, false) } else { (self.new_op, self.new_fill) };
-                self.create(name, op, fill, shape);
-            }
-        }
-    }
-
     // ---------- keyboard ----------
 
-    fn keys(&mut self, ctx: &egui::Context) {
-        let (cmd, shift) = ctx.input(|i| (i.modifiers.command, i.modifiers.shift));
-        let pressed = |k: Key| ctx.input(|i| i.key_pressed(k));
-        if cmd {
-            match () {
-                _ if pressed(Key::Z) && shift => _ = self.doc.lock().unwrap().redo(),
-                _ if pressed(Key::Z) => _ = self.doc.lock().unwrap().undo(),
-                _ if pressed(Key::Y) => _ = self.doc.lock().unwrap().redo(),
-                _ if pressed(Key::S) => _ = self.save(shift),
-                _ if pressed(Key::O) => self.open_dialog(),
-                _ if pressed(Key::D) => self.duplicate_selection(),
-                _ if pressed(Key::A) => self.select_all(),
-                _ if pressed(Key::G) && shift => self.break_apart_selection(),
-                _ if pressed(Key::G) => self.combine_selection(),
-                _ => {}
-            }
+    /// The keyboard belongs to the command line unless another text field has it (as in AutoCAD,
+    /// typing anywhere goes to the command line). Runs before the panels, so the keys handled
+    /// here do not also reach the command line's text field.
+    fn keys(&mut self, ctx: &egui::Context, pointer: Option<Point>) {
+        let input = command::input_id();
+        let focused = ctx.memory(|m| m.focused());
+        if self.confirm_close || (focused.is_some_and(|f| f != input) && ctx.text_edit_focused()) {
             return;
         }
-        if pressed(Key::Delete) || pressed(Key::Backspace) {
-            self.delete_selection();
-        } else if pressed(Key::Escape) {
-            if self.draft.is_empty() {
-                self.doc.lock().unwrap().selection.clear();
-                self.set_tool(Tool::Select);
-            }
-            self.draft.clear();
-            self.measured = None;
-        } else if pressed(Key::Enter) && self.tool == Tool::Polyline {
-            self.finish_draft(false);
-        } else {
-            // Arrow keys nudge the selection 1 mm (10 mm with Shift).
-            let step = if shift { 10.0 } else { 1.0 };
-            for (k, dx, dy) in [(Key::ArrowLeft, -step, 0.0), (Key::ArrowRight, step, 0.0), (Key::ArrowUp, 0.0, -step), (Key::ArrowDown, 0.0, step)] {
-                if pressed(k) {
-                    self.transform_selection(Transform::translate(dx, dy));
-                }
-            }
-            if let Some(t) = Tool::ALL.into_iter().find(|t| pressed(t.key())) {
-                self.set_tool(t);
-            }
+        if focused != Some(input) {
+            ctx.memory_mut(|m| m.request_focus(input));
         }
+        let consume = |mods: Modifiers, k: Key| ctx.input_mut(|i| i.consume_key(mods, k));
+        let (ctrl, ctrl_shift) = (Modifiers::COMMAND, Modifiers::COMMAND | Modifiers::SHIFT);
+        // Most specific first: Ctrl+Shift+Z must not also count as Ctrl+Z.
+        match () {
+            _ if consume(ctrl_shift, Key::Z) => _ = self.doc.lock().unwrap().redo(),
+            _ if consume(ctrl, Key::Z) => _ = self.doc.lock().unwrap().undo(),
+            _ if consume(ctrl, Key::Y) => _ = self.doc.lock().unwrap().redo(),
+            _ if consume(ctrl_shift, Key::S) => _ = self.save(true),
+            _ if consume(ctrl, Key::S) => _ = self.save(false),
+            _ if consume(ctrl, Key::O) => self.open_dialog(),
+            _ if consume(ctrl, Key::D) => self.duplicate_selection(),
+            _ if consume(ctrl, Key::A) => self.select_all(),
+            _ if consume(ctrl_shift, Key::G) => self.break_apart_selection(),
+            _ if consume(ctrl, Key::G) => self.combine_selection(),
+            _ if consume(Modifiers::NONE, Key::Escape) => self.escape(),
+            _ if consume(Modifiers::NONE, Key::Enter) || self.space_as_enter(ctx) => self.submit(pointer),
+            _ => {}
+        }
+        // Right-click on the canvas is Enter too (a right-drag pans instead).
+        let right_click = ctx.input(|i| i.pointer.button_clicked(PointerButton::Secondary) && i.pointer.interact_pos().is_some_and(|p| self.canvas_rect.contains(p)));
+        if right_click {
+            self.submit(pointer);
+        }
+        if !self.cmdline.input.is_empty() {
+            return;
+        }
+        if consume(Modifiers::NONE, Key::Delete) || consume(Modifiers::NONE, Key::Backspace) {
+            self.delete_selection();
+        }
+        // Arrow keys nudge the selection 1 mm (10 mm with Shift).
+        for (k, dx, dy) in [(Key::ArrowLeft, -1.0, 0.0), (Key::ArrowRight, 1.0, 0.0), (Key::ArrowUp, 0.0, -1.0), (Key::ArrowDown, 0.0, 1.0)] {
+            let step = if consume(Modifiers::SHIFT, k) { 10.0 } else if consume(Modifiers::NONE, k) { 1.0 } else { continue };
+            self.transform_selection(Transform::translate(dx * step, dy * step));
+        }
+    }
+
+    /// Space acts as Enter, except where the prompt asks for text. Takes the space out of the input.
+    fn space_as_enter(&self, ctx: &egui::Context) -> bool {
+        if self.takes_text() || !ctx.input(|i| i.key_pressed(Key::Space)) {
+            return false;
+        }
+        ctx.input_mut(|i| i.events.retain(|e| !matches!(e, Event::Key { key: Key::Space, .. }) && !matches!(e, Event::Text(t) if t == " ")));
+        true
     }
 
     fn close_dialog(&mut self, ctx: &egui::Context) {
@@ -403,7 +363,9 @@ impl eframe::App for App {
         let pointer = hover.map(|p| self.snap(self.s2w(p)));
 
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
+        self.keys(&ctx, pointer);
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui, pointer));
+        egui::Panel::bottom("command").show(ui, |ui| self.command_line(ui));
         egui::Panel::left("tools").exact_size(160.0).show(ui, |ui| self.toolbar(ui));
         egui::Panel::right("props").default_size(290.0).show(ui, |ui| self.properties(ui));
         egui::CentralPanel::no_frame().show(ui, |ui| self.canvas(ui));

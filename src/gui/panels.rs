@@ -79,7 +79,7 @@ impl App {
         ui.add_space(6.0);
         for t in Tool::ALL {
             let text = RichText::new(format!("{}  {}", t.icon(), t.label())).size(15.0);
-            let hover = format!("{}\n\n{}: {:?}", t.help(), "Shortcut", t.key());
+            let hover = format!("{}\n\nCommand: {}", t.help(), t.command());
             if ui.add_sized([ui.available_width(), 30.0], egui::Button::selectable(self.tool == t, text)).on_hover_text(hover).clicked() {
                 self.set_tool(t);
             }

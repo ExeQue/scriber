@@ -1,8 +1,9 @@
-//! The drawing tools: their names, help texts, shortcuts, and the shape the placed points make.
+//! The canvas tools: their names, help texts, and the shape the placed points make. Commands
+//! (see `command.rs`) switch between them.
 
 use crate::model::geom::distance;
 use crate::model::{Contour, Point, Shape};
-use eframe::egui::Key;
+use super::command::Cmd;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tool {
@@ -16,6 +17,8 @@ pub enum Tool {
     Text,
     Dimension,
     Measure,
+    /// Points for an editing command (base point, second point); not on the toolbar.
+    Pick,
 }
 
 impl Tool {
@@ -44,21 +47,7 @@ impl Tool {
             Tool::Text => "T",
             Tool::Dimension => "↔",
             Tool::Measure => "📏",
-        }
-    }
-
-    pub fn key(self) -> Key {
-        match self {
-            Tool::Select => Key::V,
-            Tool::Line => Key::L,
-            Tool::Rect => Key::R,
-            Tool::Circle => Key::C,
-            Tool::Arc => Key::A,
-            Tool::Polygon => Key::G,
-            Tool::Polyline => Key::P,
-            Tool::Text => Key::T,
-            Tool::Dimension => Key::D,
-            Tool::Measure => Key::M,
+            Tool::Pick => "+",
         }
     }
 
@@ -74,6 +63,7 @@ impl Tool {
             Tool::Text => "Text",
             Tool::Dimension => "Dimension",
             Tool::Measure => "Measure",
+            Tool::Pick => "Point",
         }
     }
 
@@ -89,7 +79,13 @@ impl Tool {
             Tool::Text => "Text you can engrave or cut.",
             Tool::Dimension => "A measurement shown on the drawing.",
             Tool::Measure => "Measure a distance without drawing anything.",
+            Tool::Pick => "A point for the running command.",
         }
+    }
+
+    /// The command a toolbar button runs, as shown in its tooltip.
+    pub fn command(self) -> String {
+        Cmd::for_tool(self).map_or("Esc".into(), |c| format!("{} ({})", c.name(), c.alias()))
     }
 
     /// What to do next, given how many points are placed.
@@ -105,32 +101,33 @@ impl Tool {
             (Tool::Arc, _) => "Click where the arc ends (it runs clockwise).",
             (Tool::Polyline, 0) => "Click the first point.",
             (Tool::Polyline, _) => "Click the next point. Double-click or Enter finishes, Esc cancels.",
-            (Tool::Text, _) => "Click where the text should start, then type it in the panel on the right.",
+            (Tool::Text, _) => "Click where the text should start, then give its height and the text on the command line.",
             (Tool::Line | Tool::Dimension | Tool::Measure, 0) => "Click (or press and drag) the start point.",
             (Tool::Line | Tool::Dimension | Tool::Measure, _) => "Click the end point.",
+            (Tool::Pick, _) => "Click a point, or type coordinates on the command line.",
         }
     }
 
     /// Points needed to finish; 0 = until the user finishes (or not a drawing tool).
     pub fn points(self) -> usize {
         match self {
-            Tool::Select | Tool::Polyline => 0,
+            Tool::Select | Tool::Polyline | Tool::Pick => 0,
             Tool::Text => 1,
             Tool::Arc => 3,
             _ => 2,
         }
     }
 
-    /// Arc, polyline and text are placed by clicking; the others can also be dragged.
+    /// Arc, polyline, text and command points are placed by clicking; the others can also be dragged.
     pub fn clicks_only(self) -> bool {
-        matches!(self, Tool::Arc | Tool::Polyline | Tool::Text)
+        matches!(self, Tool::Arc | Tool::Polyline | Tool::Text | Tool::Pick)
     }
 
     /// The shape made by the placed points (the last one may be the pointer). Default name too.
     pub fn shape(self, pts: &[Point], sides: u32) -> Option<(&'static str, Shape)> {
         let ang = |c: Point, p: Point| (p[1] - c[1]).atan2(p[0] - c[0]).to_degrees();
         let c = match (self, pts) {
-            (Tool::Line, [a, b, ..]) => ("line", Contour::line(*a, *b)),
+            (Tool::Line | Tool::Pick, [a, b, ..]) => ("line", Contour::line(*a, *b)),
             (Tool::Rect, [a, b, ..]) => ("rectangle", Contour::rect(a[0], a[1], b[0] - a[0], b[1] - a[1], 0.0)),
             (Tool::Circle, [c, e, ..]) => ("circle", Contour::circle(c[0], c[1], distance(*c, *e))),
             (Tool::Polygon, [c, e, ..]) => ("polygon", Contour::polygon(c[0], c[1], distance(*c, *e), sides, ang(*c, *e) + 90.0)),
