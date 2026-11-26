@@ -265,7 +265,7 @@ fn panel<R>(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
 }
 
 /// A ribbon button. Large: icon over label. Small: icon and label side by side, or the icon alone.
-fn button(ui: &mut Ui, large: bool, icon_only: bool, on: bool, icon: Icon, label: &str) -> egui::Response {
+pub(in crate::gui) fn button(ui: &mut Ui, large: bool, icon_only: bool, on: bool, icon: Icon, label: &str) -> egui::Response {
     sensed_button(ui, Sense::click(), large, icon_only, on, icon, label)
 }
 

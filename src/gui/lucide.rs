@@ -14,6 +14,13 @@ pub const CHEVRON_UP: &str = "\u{e074}";
 pub const CHEVRON_DOWN: &str = "\u{e071}";
 pub const X: &str = "\u{e1b2}";
 pub const PENCIL: &str = "\u{e1f9}";
+pub const COPY: &str = "\u{e0a2}";
+pub const PRINTER: &str = "\u{e145}";
+pub const ZAP: &str = "\u{e1b4}";
+pub const LAYERS: &str = "\u{e104}";
+pub const MAXIMIZE: &str = "\u{e116}";
+pub const CIRCLE_CHECK: &str = "\u{e226}";
+pub const CIRCLE_ALERT: &str = "\u{e07b}";
 
 /// Add the icon font after the default fonts, so its private-use codepoints work in any text.
 pub fn install(ctx: &egui::Context) {

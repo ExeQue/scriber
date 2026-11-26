@@ -1,7 +1,9 @@
 //! Small building blocks shared by the machine and material pages.
 
 use crate::library::Library;
+use crate::gui::lucide;
 use eframe::egui::{self, Align, Button, Color32, Layout, RichText};
+use std::cmp::Ordering;
 
 /// Width of the labels in front of the form fields, so the fields line up.
 pub(super) const LABEL_WIDTH: f32 = 120.0;
@@ -26,30 +28,34 @@ impl Confirm {
     }
 }
 
-/// The list on the left: a header (e.g. a search box), the rows in a scroll area, and
-/// Add / Duplicate / Delete under it.
+/// The list on the left, exactly `SIDEBAR_WIDTH` wide and as high as the space it gets: a header
+/// (e.g. a search box), the rows in a scroll area, and Add / Duplicate / Delete in a row under it.
 pub(super) fn sidebar(ui: &mut egui::Ui, noun: &str, has_selection: bool, header: impl FnOnce(&mut egui::Ui), rows: impl FnOnce(&mut egui::Ui)) -> Option<ListAction> {
     let mut action = None;
     let height = ui.available_height();
-    egui::Frame::new().fill(ui.visuals().faint_bg_color).corner_radius(6).inner_margin(6).show(ui, |ui| {
-        ui.set_width(SIDEBAR_WIDTH);
-        ui.set_height(height - 12.0);
-        header(ui);
-        egui::ScrollArea::vertical().id_salt("list").max_height(ui.available_height() - 40.0).auto_shrink([false, true]).show(ui, |ui| ui.vertical(rows));
-        ui.with_layout(Layout::bottom_up(Align::LEFT), |ui| {
+    // Its own top-down column: a frame would otherwise take the caller's horizontal layout and
+    // put the header, the list and the buttons side by side.
+    ui.allocate_ui_with_layout(egui::vec2(SIDEBAR_WIDTH, height), Layout::top_down(Align::Min), |ui| {
+        egui::Frame::new().fill(ui.visuals().faint_bg_color).corner_radius(6).inner_margin(6).show(ui, |ui| {
+            ui.set_width(SIDEBAR_WIDTH - 12.0);
+            ui.set_height(height - 12.0);
+            header(ui);
+            let list = (ui.available_height() - 34.0).max(60.0);
+            egui::ScrollArea::vertical().id_salt("list").max_height(list).min_scrolled_height(list).auto_shrink([false, false]).show(ui, |ui| ui.vertical(rows));
+            ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if ui.button("+ Add").on_hover_text(format!("Add a new {noun}")).clicked() {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                if ui.button(format!("{} Add", lucide::PLUS)).on_hover_text(format!("Add a new {noun}")).clicked() {
                     action = Some(ListAction::Add);
                 }
-                ui.add_enabled_ui(has_selection, |ui| {
-                    if ui.button("Duplicate").on_hover_text(format!("Copy this {noun}")).clicked() {
-                        action = Some(ListAction::Duplicate);
+                let duplicate = ui.add_enabled(has_selection, Button::new(format!("{} Duplicate", lucide::COPY)));
+                if duplicate.on_hover_text(format!("Copy this {noun}")).clicked() {
+                    action = Some(ListAction::Duplicate);
+                }
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if lucide::delete(ui, has_selection, &format!("Delete this {noun}")).clicked() {
+                        action = Some(ListAction::Delete);
                     }
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if remove_button(ui, &format!("this {noun}")) {
-                            action = Some(ListAction::Delete);
-                        }
-                    });
                 });
             });
         });
@@ -57,9 +63,17 @@ pub(super) fn sidebar(ui: &mut egui::Ui, noun: &str, has_selection: bool, header
     action
 }
 
+/// Right of the sidebar: `form` fills the rest of the page in a vertical scroll area.
+pub(super) fn form_column(ui: &mut egui::Ui, id: &str, form: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(12.0);
+    ui.allocate_ui_with_layout(ui.available_size(), Layout::top_down(Align::Min), |ui| {
+        egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, false]).show(ui, form);
+    });
+}
+
 /// One row of a plain list: as wide as the list, text on the left. Returns whether it was clicked.
 pub(super) fn list_row(ui: &mut egui::Ui, selected: bool, text: &str) -> bool {
-    ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| ui.add(Button::selectable(selected, text).min_size(egui::vec2(0.0, 26.0))).clicked()).inner
+    ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| ui.add(Button::selectable(selected, text).truncate().min_size(egui::vec2(0.0, 26.0))).on_hover_text(text).clicked()).inner
 }
 
 /// A titled block with a line of plain help under the title.
@@ -85,20 +99,39 @@ pub(super) fn column_title(ui: &mut egui::Ui, text: &str) -> egui::Response {
     ui.label(RichText::new(text).weak())
 }
 
-/// The red cross that deletes something (after asking).
+/// The red ✕ that deletes something (after asking).
 pub(super) fn remove_button(ui: &mut egui::Ui, what: &str) -> bool {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::click());
-    let enabled = ui.is_enabled();
-    let color = match (enabled, response.hovered()) {
-        (false, _) => ui.visuals().weak_text_color(),
-        (true, true) => Color32::from_rgb(240, 70, 60),
-        (true, false) => Color32::from_rgb(200, 80, 70),
-    };
-    let r = rect.shrink(5.0);
-    let stroke = egui::Stroke::new(2.0, color);
-    ui.painter().line_segment([r.left_top(), r.right_bottom()], stroke);
-    ui.painter().line_segment([r.right_top(), r.left_bottom()], stroke);
-    response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(format!("Delete {what}")).clicked()
+    lucide::delete(ui, ui.is_enabled(), &format!("Delete {what}")).clicked()
+}
+
+/// Compares names the way people count: "3 mm" < "10 mm", "1.5 mm" < "2 mm"; text ignores case.
+pub(super) fn natural_cmp(a: &str, b: &str) -> Ordering {
+    let (mut a, mut b) = (a, b);
+    loop {
+        let (Some(x), Some(y)) = (a.chars().next(), b.chars().next()) else { return a.len().cmp(&b.len()) };
+        if x.is_ascii_digit() && y.is_ascii_digit() {
+            let ((n, rest_a), (m, rest_b)) = (number(a), number(b));
+            match n.total_cmp(&m) {
+                Ordering::Equal => (a, b) = (rest_a, rest_b),
+                o => return o,
+            }
+        } else {
+            match x.to_lowercase().cmp(y.to_lowercase()) {
+                Ordering::Equal => (a, b) = (&a[x.len_utf8()..], &b[y.len_utf8()..]),
+                o => return o,
+            }
+        }
+    }
+}
+
+/// The number at the start of `s` (digits, optionally a point and more digits), and the rest.
+fn number(s: &str) -> (f64, &str) {
+    let digits = |s: &str| s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+    let mut end = digits(s);
+    if s[end..].starts_with('.') && s[end + 1..].starts_with(|c: char| c.is_ascii_digit()) {
+        end += 1 + digits(&s[end + 1..]);
+    }
+    (s[..end].parse().unwrap_or(0.0), &s[end..])
 }
 
 /// The "Delete …?" question on top of the window. Returns Some(yes) once the user answers.
@@ -131,4 +164,16 @@ pub(super) fn notes_section(ui: &mut egui::Ui, notes: &mut String, source: &mut 
         ui.label("Where the numbers come from");
         ui.add(egui::TextEdit::multiline(source).desired_width(f32::INFINITY).desired_rows(3).hint_text("e.g. a web page or \"own tests\""));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::natural_cmp;
+
+    #[test]
+    fn natural_order() {
+        let mut names = vec!["Basswood plywood 15 mm", "basswood plywood 3 mm", "Basswood plywood 10 mm", "Acrylic 1.5 mm", "Basswood plywood 8 mm", "Acrylic 10 mm", "Basswood plywood 6 mm", "Acrylic 2 mm", "Basswood plywood"];
+        names.sort_by(|a, b| natural_cmp(a, b));
+        assert_eq!(names, ["Acrylic 1.5 mm", "Acrylic 2 mm", "Acrylic 10 mm", "Basswood plywood", "basswood plywood 3 mm", "Basswood plywood 6 mm", "Basswood plywood 8 mm", "Basswood plywood 10 mm", "Basswood plywood 15 mm"]);
+    }
 }

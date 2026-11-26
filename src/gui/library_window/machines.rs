@@ -1,7 +1,8 @@
 //! The Machines page: the list of machines and the form for the selected one.
 
 use super::Editor;
-use super::widgets::{Confirm, ListAction, column_title, field_label, list_row, notes_section, remove_button, section, sidebar};
+use super::widgets::{Confirm, ListAction, column_title, field_label, form_column, list_row, natural_cmp, notes_section, remove_button, section, sidebar};
+use crate::gui::lucide;
 use crate::library::{Laser, LaserKind, Machine, Operation};
 use eframe::egui::{self, Checkbox, ComboBox, DragValue};
 
@@ -9,7 +10,9 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
     ui.horizontal_top(|ui| {
         let (machines, selected) = (&ed.lib.machines, &mut ed.machine);
         let action = sidebar(ui, "machine", !machines.is_empty(), |_| {}, |ui| {
-            for (i, m) in machines.iter().enumerate() {
+            let mut order: Vec<(usize, &Machine)> = machines.iter().enumerate().collect();
+            order.sort_by(|a, b| natural_cmp(&a.1.name, &b.1.name));
+            for (i, m) in order {
                 if list_row(ui, *selected == i, &m.name) {
                     *selected = i;
                 }
@@ -37,17 +40,11 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
             None => {}
         }
         ed.machine = ed.machine.min(lib.machines.len().saturating_sub(1));
-        ui.add_space(12.0);
-        match lib.machines.get_mut(ed.machine) {
-            // The scroll area takes the parent's horizontal layout; the form inside goes top to bottom.
-            Some(m) => {
-                let (index, confirm) = (ed.machine, &mut ed.confirm);
-                egui::ScrollArea::vertical().id_salt("machine").auto_shrink([false, false]).show(ui, |ui| ui.vertical(|ui| form(ui, m, index, confirm)));
-            }
-            None => {
-                ui.label(egui::RichText::new("No machines yet. Press \"+ Add\" to make one.").weak());
-            }
-        }
+        let (index, confirm) = (ed.machine, &mut ed.confirm);
+        form_column(ui, "machine", |ui| match lib.machines.get_mut(index) {
+            Some(m) => form(ui, m, index, confirm),
+            None => _ = ui.label(egui::RichText::new("No machines yet. Press Add to make one.").weak()),
+        });
     });
 }
 
@@ -121,7 +118,7 @@ fn lasers(ui: &mut egui::Ui, m: &mut Machine, index: usize, confirm: &mut Option
         });
     }
     ui.add_space(4.0);
-    if ui.button("+ Add laser").clicked() {
+    if ui.button(format!("{} Add laser", lucide::PLUS)).clicked() {
         let id = (1..).map(|n| format!("laser-{n}")).find(|id| m.laser(id).is_none()).unwrap();
         m.lasers.push(new_laser(id));
     }

@@ -1,10 +1,12 @@
-//! The material list with search, category filter and cut/score/engrave dots, shared by the
+//! The material list with search, category filter and cut/score/engrave tags, shared by the
 //! editor's sidebar and the ribbon's material picker.
 
-use crate::gui::labels::op_color;
+use super::widgets::natural_cmp;
 use crate::library::{Category, Library, Material, Operation};
-use crate::model::Op;
-use eframe::egui::{self, Align, Button, ComboBox, Layout, RichText};
+use eframe::egui::{self, Align, Button, Color32, ComboBox, Layout, RichText};
+
+/// Shown when the library has no materials at all.
+pub(super) const NO_MATERIALS: &str = "No materials yet — + Add one or import";
 
 /// What the list shows; kept between frames by its owner.
 #[derive(Clone, Default)]
@@ -32,39 +34,66 @@ fn has(m: &Material, machine: Option<&str>, laser: Option<&str>, op: Operation) 
     }
 }
 
-fn color(op: Operation) -> egui::Color32 {
-    op_color(match op {
-        Operation::Cut => Op::Cut,
-        Operation::Score => Op::Score,
-        Operation::Engrave => Op::Engrave,
-    })
+/// One operation's mark: a rounded tag with its letter (C, S, E), filled in a colour that reads on
+/// dark and light themes when the material has a setting for it, only outlined when not.
+fn pill(ui: &mut egui::Ui, op: Operation, on: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(15.0, 15.0), egui::Sense::hover());
+    let dark = ui.visuals().dark_mode;
+    // Brighter than the canvas colours: score's dark blue and engrave's black vanish on a dark theme.
+    let (fill, letter) = match op {
+        Operation::Cut => (Color32::from_rgb(226, 76, 66), Color32::WHITE),
+        Operation::Score => (Color32::from_rgb(66, 140, 245), Color32::WHITE),
+        Operation::Engrave if dark => (Color32::from_rgb(228, 228, 228), Color32::BLACK),
+        Operation::Engrave => (Color32::from_rgb(45, 45, 45), Color32::WHITE),
+    };
+    let text = &op.label()[..1];
+    let font = egui::FontId::proportional(10.5);
+    let painter = ui.painter();
+    if on {
+        painter.rect_filled(rect, 4, fill);
+        painter.text(rect.center(), egui::Align2::CENTER_CENTER, text, font, letter);
+    } else {
+        let weak = ui.visuals().weak_text_color();
+        painter.rect_stroke(rect.shrink(0.5), 4, egui::Stroke::new(1.0, weak), egui::StrokeKind::Inside);
+        painter.text(rect.center(), egui::Align2::CENTER_CENTER, text, font, weak);
+    }
+    response
 }
 
-/// Three dots in the op colours: filled when the material has settings for that operation, hollow when not.
-pub(super) fn op_dots(ui: &mut egui::Ui, m: &Material, machine: Option<&str>, laser: Option<&str>) {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(34.0, 12.0), egui::Sense::hover());
+/// The cut, score and engrave tags of one material for this machine and laser.
+pub(super) fn op_pills(ui: &mut egui::Ui, m: &Material, machine: Option<&str>, laser: Option<&str>) {
     let mut ready = Vec::new();
-    for (k, op) in Operation::ALL.into_iter().enumerate() {
-        let centre = rect.left_center() + egui::vec2(6.0 + k as f32 * 11.0, 0.0);
-        if has(m, machine, laser, op) {
-            ui.painter().circle_filled(centre, 4.0, color(op));
-            ready.push(op.label().to_lowercase());
-        } else {
-            ui.painter().circle_stroke(centre, 3.5, egui::Stroke::new(1.0, color(op).gamma_multiply(0.6)));
+    let mut hover: Option<egui::Response> = None;
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        for op in Operation::ALL {
+            let on = has(m, machine, laser, op);
+            if on {
+                ready.push(op.label().to_lowercase());
+            }
+            let r = pill(ui, op, on);
+            hover = Some(match hover.take() {
+                Some(h) => r.union(h),
+                None => r,
+            });
         }
-    }
+    });
     let target = if machine.is_some() { "this machine" } else { "any machine" };
     let text = if ready.is_empty() { format!("No settings for {target} yet") } else { format!("Settings for {target}: {}", ready.join(", ")) };
-    response.on_hover_text(text);
+    if let Some(h) = hover {
+        h.on_hover_text(text);
+    }
 }
 
-/// What the dots mean, in their colours.
+/// What the tags mean.
 pub(super) fn legend(ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         for op in Operation::ALL {
-            ui.label(RichText::new(format!("● {}", op.label())).small().color(color(op)));
+            pill(ui, op, true);
+            ui.label(RichText::new(op.label()).small());
+            ui.add_space(6.0);
         }
-        ui.label(RichText::new("(hollow: no settings yet)").small().weak());
+        ui.label(RichText::new("Outlined: no settings yet").small().weak());
     });
 }
 
@@ -97,27 +126,30 @@ pub(super) fn rows(ui: &mut egui::Ui, materials: &[Material], f: &Filter, machin
     let mut clicked = None;
     let mut any = false;
     for c in Category::ALL {
-        let list: Vec<(usize, &Material)> = materials.iter().enumerate().filter(|(_, m)| m.category == c && f.shows(m, machine, laser)).collect();
+        let mut list: Vec<(usize, &Material)> = materials.iter().enumerate().filter(|(_, m)| m.category == c && f.shows(m, machine, laser)).collect();
+        list.sort_by(|a, b| natural_cmp(&a.1.name, &b.1.name));
         if list.is_empty() {
             continue;
         }
         any = true;
         ui.add_space(4.0);
-        ui.label(RichText::new(c.label()).small().weak());
+        ui.add(egui::Label::new(RichText::new(c.label()).small().weak()).truncate());
         for (i, m) in list {
             ui.horizontal(|ui| {
                 ui.set_min_height(26.0);
-                op_dots(ui, m, machine, laser);
+                op_pills(ui, m, machine, laser);
                 // Justified: the row is as wide as the list, with its text on the left.
                 ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| {
-                    if ui.add(Button::selectable(selected == Some(m.id.as_str()), m.name.as_str()).min_size(egui::vec2(0.0, 26.0))).clicked() {
+                    if ui.add(Button::selectable(selected == Some(m.id.as_str()), m.name.as_str()).truncate().min_size(egui::vec2(0.0, 26.0))).on_hover_text(&m.name).clicked() {
                         clicked = Some(i);
                     }
                 });
             });
         }
     }
-    if !any {
+    if materials.is_empty() {
+        ui.label(RichText::new(NO_MATERIALS).weak());
+    } else if !any {
         ui.label(RichText::new("No material matches.").weak());
     }
     clicked
@@ -130,14 +162,14 @@ pub(super) enum Picked {
     Chose(Option<String>),
 }
 
-/// The ribbon's material picker: search, filter by kind, and the list with its dots for the document's machine.
+/// The ribbon's material picker: search, filter by kind, and the list with its tags for the document's machine.
 pub(super) fn picker(ctx: &egui::Context, f: &mut Filter, lib: &Library, machine: Option<&str>, laser: Option<&str>, current: Option<&str>) -> Picked {
     let mut picked = Picked::Nothing;
     let modal = egui::Modal::new(egui::Id::unique("material-picker")).show(ctx, |ui| {
         ui.set_width(480.0);
         ui.heading("Choose a material");
         let machine_name = machine.and_then(|id| lib.machine(id)).map(|m| m.name.as_str());
-        ui.label(RichText::new(machine_name.map_or("No machine chosen: the dots show settings for any machine.".into(), |n| format!("The dots show which settings exist for your {n}."))).weak());
+        ui.label(RichText::new(machine_name.map_or("No machine chosen: the tags show settings for any machine.".into(), |n| format!("The tags show which settings exist for your {n}."))).weak());
         ui.add_space(6.0);
         search_box(ui, f);
         category_chips(ui, f, lib);

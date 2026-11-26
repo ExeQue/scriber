@@ -10,7 +10,9 @@ use eframe::egui::Ui;
 impl App {
     pub(super) fn laser(&mut self, ui: &mut Ui) {
         let doc = self.doc.clone();
-        panel(ui, "Machine & material", |ui| pickers(ui, &mut doc.lock().unwrap()));
+        if panel(ui, "Machine & material", |ui| pickers(ui, &mut doc.lock().unwrap())) {
+            self.library = Some(Editor::new(&doc.lock().unwrap().s).on_materials());
+        }
         panel(ui, "Export", |ui| {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;

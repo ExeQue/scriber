@@ -3,7 +3,8 @@
 
 use super::Editor;
 use super::material_list::{category_combo, rows, search_box};
-use super::widgets::{Confirm, ListAction, column_title, field_label, notes_section, remove_button, section, sidebar};
+use super::widgets::{Confirm, ListAction, column_title, field_label, form_column, notes_section, remove_button, section, sidebar};
+use crate::gui::lucide;
 use crate::library::{Category, Library, Machine, Material, Operation, Setting};
 use eframe::egui::{self, Align, Button, Checkbox, ComboBox, DragValue, Layout, RichText};
 
@@ -53,18 +54,12 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
             None => {}
         }
         ed.material = ed.material.min(lib.materials.len().saturating_sub(1));
-        ui.add_space(12.0);
         let Library { machines, materials, .. } = lib;
-        match materials.get_mut(ed.material) {
-            // The scroll area takes the parent's horizontal layout; the form inside goes top to bottom.
-            Some(m) => {
-                let (index, confirm) = (ed.material, &mut ed.confirm);
-                egui::ScrollArea::vertical().id_salt("material").auto_shrink([false, false]).show(ui, |ui| ui.vertical(|ui| form(ui, m, machines, index, confirm)));
-            }
-            None => {
-                ui.label(RichText::new("No materials yet. Press \"+ Add\" to make one.").weak());
-            }
-        }
+        let (index, confirm) = (ed.material, &mut ed.confirm);
+        form_column(ui, "material", |ui| match materials.get_mut(index) {
+            Some(m) => form(ui, m, machines, index, confirm),
+            None => _ = ui.label(RichText::new(super::material_list::NO_MATERIALS).weak()),
+        });
     });
 }
 
@@ -109,7 +104,7 @@ fn settings(ui: &mut egui::Ui, settings: &mut Vec<Setting>, machines: &[Machine]
         ui.label(RichText::new("No settings yet.").weak());
     }
     let free = machines.iter().flat_map(|mc| mc.lasers.iter().map(|l| (mc.id.clone(), l.id.clone()))).find(|k| !groups.contains(k));
-    let add = ui.add_enabled(free.is_some(), Button::new("+ Add settings for a machine or laser"));
+    let add = ui.add_enabled(free.is_some(), Button::new(format!("{} Add settings for a machine or laser", lucide::PLUS)));
     if add.on_disabled_hover_text("Every laser already has settings here").clicked()
         && let Some((machine, laser)) = free
     {
@@ -151,7 +146,7 @@ fn group(ui: &mut egui::Ui, settings: &mut Vec<Setting>, key: &(String, String),
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             for op in Operation::ALL.into_iter().filter(|op| !settings.iter().any(|s| in_group(s) && s.operation == *op)) {
-                if ui.button(format!("+ Add {}", op.label().to_lowercase())).clicked() {
+                if ui.button(format!("{} Add {}", lucide::PLUS, op.label().to_lowercase())).clicked() {
                     add = Some(op);
                 }
             }
