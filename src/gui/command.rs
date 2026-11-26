@@ -18,6 +18,7 @@ mod rects;
 mod preview;
 mod reshape;
 mod ux;
+mod variants;
 
 use super::App;
 use super::tools::Tool;

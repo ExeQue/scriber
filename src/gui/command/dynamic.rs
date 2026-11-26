@@ -237,7 +237,7 @@ impl App {
     fn place_from_values(&mut self) {
         let Some(p) = self.point_from_values(self.pointer_mm.unwrap_or_default()) else { return };
         if matches!(self.drag, Some(Drag::Grip { .. })) {
-            self.move_grip(p, false);
+            self.move_grip(p, false, false);
             self.finish_grip(None);
         } else {
             self.place_point(p);

@@ -173,12 +173,13 @@ pub fn drag_item(shape: &Shape, grip: Grip, at: Point, p: Point) -> Shape {
 }
 
 /// The transform a selection box grip makes when dragged from `at` to `p`. `b` is the selection's
-/// bounding box at the start of the drag. Shift keeps proportions on corners and snaps rotation to 15°.
-pub fn box_transform(b: BBox, grip: Grip, at: Point, p: Point, shift: bool) -> Option<Transform> {
+/// bounding box at the start of the drag. Shift keeps proportions on corners and snaps rotation to 15°;
+/// Alt resizes around the box's centre instead of the opposite side.
+pub fn box_transform(b: BBox, grip: Grip, at: Point, p: Point, shift: bool, alt: bool) -> Option<Transform> {
     match grip {
         Grip::Scale { fx, fy } => {
             let handle = [b[0] + fx * b[2], b[1] + fy * b[3]];
-            let pivot = [b[0] + (1.0 - fx) * b[2], b[1] + (1.0 - fy) * b[3]];
+            let pivot = if alt { [b[0] + b[2] / 2.0, b[1] + b[3] / 2.0] } else { [b[0] + (1.0 - fx) * b[2], b[1] + (1.0 - fy) * b[3]] };
             let target = [handle[0] + p[0] - at[0], handle[1] + p[1] - at[1]];
             let factor = |axis: usize, f: f64| {
                 let span = handle[axis] - pivot[axis];
@@ -268,16 +269,19 @@ mod tests {
     fn box_resize_and_rotate() {
         let b = [0.0, 0.0, 10.0, 20.0];
         // Bottom-right corner dragged by (+10, +10): 2× wide, 1.5× tall around the top-left.
-        let t = box_transform(b, Grip::Scale { fx: 1.0, fy: 1.0 }, [10.0, 20.0], [20.0, 30.0], false).unwrap();
+        let t = box_transform(b, Grip::Scale { fx: 1.0, fy: 1.0 }, [10.0, 20.0], [20.0, 30.0], false, false).unwrap();
         assert_eq!((t.scale_x, t.scale_y, t.pivot), (2.0, 1.5, Some([0.0, 0.0])));
-        let t = box_transform(b, Grip::Scale { fx: 1.0, fy: 1.0 }, [10.0, 20.0], [20.0, 30.0], true).unwrap();
+        let t = box_transform(b, Grip::Scale { fx: 1.0, fy: 1.0 }, [10.0, 20.0], [20.0, 30.0], true, false).unwrap();
         assert_eq!((t.scale_x, t.scale_y), (2.0, 2.0));
         // Right edge only stretches x.
-        let t = box_transform(b, Grip::Scale { fx: 1.0, fy: 0.5 }, [10.0, 10.0], [15.0, 99.0], false).unwrap();
+        let t = box_transform(b, Grip::Scale { fx: 1.0, fy: 0.5 }, [10.0, 10.0], [15.0, 99.0], false, false).unwrap();
         assert_eq!((t.scale_x, t.scale_y), (1.5, 1.0));
         // Rotating from straight above the centre to its right is +90° (clockwise on screen).
-        let t = box_transform(b, Grip::Rotate, [5.0, -10.0], [30.0, 11.0], true).unwrap();
+        let t = box_transform(b, Grip::Rotate, [5.0, -10.0], [30.0, 11.0], true, false).unwrap();
         assert_eq!((t.rotate, t.pivot), (90.0, Some([5.0, 10.0])));
-        assert!(box_transform(b, Grip::Move { id: 1 }, [0.0, 0.0], [1.0, 1.0], false).is_none());
+        // Alt: around the centre, so the same drag doubles the half-width.
+        let t = box_transform(b, Grip::Scale { fx: 1.0, fy: 0.5 }, [10.0, 10.0], [15.0, 99.0], false, true).unwrap();
+        assert_eq!((t.scale_x, t.pivot), (2.0, Some([5.0, 10.0])));
+        assert!(box_transform(b, Grip::Move { id: 1 }, [0.0, 0.0], [1.0, 1.0], false, false).is_none());
     }
 }

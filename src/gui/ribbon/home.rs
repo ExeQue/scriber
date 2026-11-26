@@ -7,10 +7,12 @@ use eframe::egui::Ui;
 impl App {
     pub(super) fn home(&mut self, ui: &mut Ui) {
         panel(ui, "Draw", |ui| {
-            for (cmd, label) in [(Cmd::Line, "Line"), (Cmd::Pline, "Polyline"), (Cmd::Rectang, "Rectangle"), (Cmd::Circle, "Circle"), (Cmd::Arc, "Arc")] {
-                self.large(ui, Some(cmd), label);
+            self.large(ui, Some(Cmd::Line), "Line");
+            self.large(ui, Some(Cmd::Pline), "Polyline");
+            for (cmd, label) in [(Cmd::Rectang, "Rectangle"), (Cmd::Circle, "Circle"), (Cmd::Arc, "Arc"), (Cmd::Polygon, "Polygon")] {
+                self.split(ui, cmd, label);
             }
-            self.smalls(ui, &[(Some(Cmd::Polygon), "Polygon"), (Some(Cmd::Text), "Text"), (None, "Select")]);
+            self.smalls(ui, &[(Some(Cmd::Text), "Text"), (None, "Select")]);
         });
         panel(ui, "Modify", |ui| {
             for (cmd, label) in [(Cmd::Move, "Move"), (Cmd::Copy, "Copy"), (Cmd::Rotate, "Rotate")] {

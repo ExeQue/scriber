@@ -77,7 +77,7 @@ impl App {
 
     /// Mouse input for the select tool. Returns where the crosshair goes (snapped while dragging a grip).
     pub(super) fn select_input(&mut self, ui: &egui::Ui, response: &egui::Response, raw: Option<Point>) -> Option<Point> {
-        let shift = ui.input(|i| i.modifiers.shift);
+        let (shift, alt) = ui.input(|i| (i.modifiers.shift, i.modifiers.alt));
         let doc = self.doc.clone();
         let hot = matches!(self.drag, Some(Drag::Grip { hot: true, .. }));
         if response.drag_started_by(PointerButton::Primary)
@@ -119,7 +119,7 @@ impl App {
             // Locked values typed on dynamic input win over the mouse.
             let p = self.dyn_point(p).unwrap_or(p);
             cursor = Some(p);
-            self.move_grip(p, shift);
+            self.move_grip(p, shift, alt);
         }
         if let (Some(Drag::Move { origin, applied }), Some(p)) = (&mut self.drag, raw) {
             let mut want = [p[0] - origin[0], p[1] - origin[1]];
@@ -207,9 +207,9 @@ impl App {
     }
 
     /// Move the dragged grip to `p`.
-    pub(super) fn move_grip(&mut self, p: Point, shift: bool) {
+    pub(super) fn move_grip(&mut self, p: Point, shift: bool, alt: bool) {
         let Some(Drag::Grip { grip, at, base, bbox, hot }) = self.drag.take() else { return };
-        self.apply_grip(grip, at, &base, bbox, p, shift);
+        self.apply_grip(grip, at, &base, bbox, p, shift, alt);
         self.drag = Some(Drag::Grip { grip, at, base, bbox, hot });
     }
 
@@ -227,7 +227,7 @@ impl App {
     }
 
     /// Redo the grip edit from the state at drag start, so every frame applies one clean change.
-    fn apply_grip(&mut self, grip: Grip, at: Point, base: &[Item], bbox: BBox, p: Point, shift: bool) {
+    fn apply_grip(&mut self, grip: Grip, at: Point, base: &[Item], bbox: BBox, p: Point, shift: bool, alt: bool) {
         let mut d = self.doc.lock().unwrap();
         let ids = d.selection.clone();
         if let Some(id) = grip.id() {
@@ -238,7 +238,7 @@ impl App {
                 item.shape = grips::drag_item(if from_now { &item.shape } else { &b.shape }, grip, at, p);
             }
             d.touch();
-        } else if let Some(t) = grips::box_transform(bbox, grip, at, p, shift) {
+        } else if let Some(t) = grips::box_transform(bbox, grip, at, p, shift, alt) {
             // ponytail: linear lookup per selected item; index `base` by id if huge selections get slow.
             for item in d.s.items.iter_mut().filter(|i| ids.contains(&i.id)) {
                 if let Some(b) = base.iter().find(|b| b.id == item.id) {
@@ -352,7 +352,7 @@ mod tests {
         app.drag = Some(Drag::Box { start: [0.0, 0.0] });
         // Two frames of the drag, each settled as the canvas does.
         for p in [[55.0, 35.0], [70.0, 50.0]] {
-            app.apply_grip(grip, [50.0, 30.0], &base, [10.0, 10.0, 40.0, 20.0], p, false);
+            app.apply_grip(grip, [50.0, 30.0], &base, [10.0, 10.0, 40.0, 20.0], p, false, false);
             app.settle();
         }
         let pts: Vec<Point> = doc.lock().unwrap().item(id).unwrap().shape.contours()[0].vertices.iter().map(|v| [v.x, v.y]).collect();

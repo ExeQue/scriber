@@ -326,7 +326,10 @@ impl App {
         let tol = (0.5 / self.view.zoom as f64).clamp(0.002, 1.0);
         let ids: Vec<u64> = state.items.iter().map(|i| i.id).collect();
         self.geometry.retain(&ids);
-        for item in &state.items {
+        // Filled things (engraved areas, text, images) first, so cut and score lines stay on top.
+        let mut order: Vec<&Item> = state.items.iter().collect();
+        order.sort_by_key(|i| !picks_inside(i));
+        for item in order {
             if !self.visible(item) {
                 continue;
             }

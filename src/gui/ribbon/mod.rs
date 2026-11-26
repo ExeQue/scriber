@@ -41,7 +41,19 @@ pub(super) struct Ribbon {
     compact: bool,
     /// The width each tab needs with labels, measured when it was last drawn with them.
     full_width: [Option<f32>; 6],
+    /// The open list of a split button's ways to draw.
+    flyout: Option<Flyout>,
 }
+
+/// A split button's open list. `hold`: opened by pressing and holding, so letting go picks.
+#[derive(Clone, Copy)]
+struct Flyout {
+    cmd: Cmd,
+    hold: bool,
+}
+
+/// How long a press on a split button lasts before its list opens.
+const HOLD: f64 = 0.35;
 
 /// Height of the panels' button area, and of one small button (three fit in a column).
 const BODY: f32 = 72.0;
@@ -107,6 +119,72 @@ impl App {
         let on = self.active_cmd() == cmd;
         if button(ui, true, false, on, Icon::Cmd(cmd), label).on_hover_text(cmd_tip(cmd, label)).clicked() {
             self.run(cmd);
+        }
+    }
+
+    /// A large button with ▾ for a tool that draws in several ways: a click starts the way used last,
+    /// ▾ lists the ways, and pressing and holding (or dragging off) opens the list to pick on release.
+    fn split(&mut self, ui: &mut Ui, cmd: Cmd, label: &str) {
+        let (names, chosen) = self.variants(cmd);
+        let on = self.active_cmd() == Some(cmd);
+        let response = button(ui, true, false, on, Icon::Cmd(Some(cmd)), &format!("{label}  ")).on_hover_text(format!(
+            "{}\n\nNow: {}\nClick ▾ or press and hold for the other ways.",
+            cmd_tip(Some(cmd), label),
+            names[chosen]
+        ));
+        let rect = response.rect;
+        let arrow = Rect::from_min_max(pos2(rect.left(), rect.bottom() - 18.0), rect.max);
+        let c = if ui.is_enabled() { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
+        let (x, y) = (rect.right() - 9.0, rect.top() + 12.0 + LARGE_ICON + 7.0);
+        ui.painter().add(egui::Shape::convex_polygon(vec![pos2(x - 3.5, y - 2.0), pos2(x + 3.5, y - 2.0), pos2(x, y + 2.0)], c, Stroke::NONE));
+
+        let open = self.ribbon.flyout.is_some_and(|f| f.cmd == cmd);
+        if !open && response.is_pointer_button_down_on() {
+            let (held, moved) = ui.input(|i| {
+                let held = i.pointer.press_start_time().map_or(0.0, |t| i.time - t);
+                let moved = i.pointer.press_origin().zip(i.pointer.interact_pos()).map_or(0.0, |(a, b)| a.distance(b));
+                (held, moved)
+            });
+            if held > HOLD || moved > 6.0 {
+                self.ribbon.flyout = Some(Flyout { cmd, hold: true });
+            } else {
+                ui.ctx().request_repaint();
+            }
+        } else if !open && response.clicked() {
+            if response.interact_pointer_pos().is_some_and(|p| arrow.contains(p) && p.x > rect.right() - 18.0) {
+                self.ribbon.flyout = Some(Flyout { cmd, hold: false });
+            } else {
+                self.start_variant(cmd, chosen);
+            }
+        }
+        if self.ribbon.flyout.is_some_and(|f| f.cmd == cmd) {
+            self.flyout(ui.ctx(), rect, &names, chosen);
+        }
+    }
+
+    /// The open list under a split button; picking a way starts the tool in it.
+    fn flyout(&mut self, ctx: &egui::Context, under: Rect, names: &[&str], chosen: usize) {
+        let Some(f) = self.ribbon.flyout else { return };
+        let (pointer, pressed, released) = ctx.input(|i| (i.pointer.interact_pos(), i.pointer.any_pressed(), i.pointer.any_released()));
+        let mut pick = None;
+        let area = egui::Area::new(egui::Id::NULL.with("ribbon-flyout")).order(egui::Order::Foreground).fixed_pos(under.left_bottom()).show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_min_width(170.0);
+                for (n, name) in names.iter().enumerate() {
+                    let r = ui.add(egui::Button::selectable(n == chosen, *name).min_size(vec2(170.0, 0.0)));
+                    let over = pointer.is_some_and(|p| r.rect.contains(p));
+                    if r.clicked() || (f.hold && released && over) {
+                        pick = Some(n);
+                    }
+                }
+            });
+        });
+        let outside = pointer.is_none_or(|p| !area.response.rect.contains(p));
+        if let Some(n) = pick {
+            self.ribbon.flyout = None;
+            self.start_variant(f.cmd, n);
+        } else if (f.hold && released) || (pressed && outside) || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.ribbon.flyout = None;
         }
     }
 
