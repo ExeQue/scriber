@@ -508,7 +508,7 @@ impl eframe::App for App {
         if self.show_cmdline {
             egui::Panel::bottom("command").show(ui, |ui| self.command_line(ui));
         }
-        egui::Panel::left("tools").exact_size(126.0).show(ui, |ui| ui.add_enabled_ui(editing, |ui| self.toolbar(ui)));
+        egui::Panel::left("tools").exact_size(146.0).show(ui, |ui| ui.add_enabled_ui(editing, |ui| self.toolbar(ui)));
         egui::Panel::right("props").default_size(290.0).show(ui, |ui| ui.add_enabled_ui(editing, |ui| self.properties(ui)));
         egui::CentralPanel::no_frame().show(ui, |ui| self.canvas(ui));
         self.command_card(&ctx);

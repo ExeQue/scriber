@@ -118,9 +118,12 @@ fn constraint_help(k: Kind) -> &'static str {
 impl App {
     pub(super) fn toolbar(&mut self, ui: &mut egui::Ui) {
         let active = self.active_cmd();
+        // Scrolls when the window is too short for every group; groups fold away (egui remembers which).
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         for (title, cmds) in GROUPS {
-            ui.add_space(6.0);
-            ui.label(RichText::new(title).small().weak());
+            ui.add_space(4.0);
+            let open = matches!(title, "Draw" | "Modify");
+            egui::CollapsingHeader::new(RichText::new(title).small().weak()).id_salt(("toolbar", title)).default_open(open).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
                 for &cmd in cmds {
@@ -142,7 +145,9 @@ impl App {
                     }
                 }
             });
+            });
         }
+        });
     }
 
     /// The laser bar: what the selection (or, with nothing selected, new shapes) does on the laser.
