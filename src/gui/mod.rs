@@ -7,14 +7,18 @@ mod check_panel;
 mod command;
 mod constraint_bars;
 mod constraint_list;
+mod cycle;
 mod dimensions;
 mod fonts;
 mod geometry_cache;
 mod glyphs;
+mod grip_menu;
 mod grips;
 mod guides;
+mod hover;
 mod labels;
 mod library_window;
+mod overrides;
 mod panels;
 mod parameters;
 mod preview;
@@ -24,6 +28,7 @@ mod svg_import;
 mod toolbar;
 mod toolbar_ux;
 mod tools;
+mod tracking;
 mod zoom;
 
 use crate::model::{Document, Op, Point, Shape, Shared, Transform};
@@ -122,6 +127,26 @@ struct App {
     preview: Option<preview::Preview>,
     /// The pre-flight check and its window.
     check: check_panel::Check,
+    /// Shift is held (over the canvas): flips ORTHO while a command runs.
+    shift: bool,
+    /// OTRACK, Extension and Parallel: what was acquired for the running command.
+    tracker: tracking::Tracker,
+    /// The one-shot object snap override for the next point (Shift+right-click).
+    once: Option<overrides::Once>,
+    /// The right-click menu is the object snap override menu (opened with Shift).
+    osnap_menu_open: bool,
+    /// The shapes under the cursor and the one Shift+Space cycled to.
+    cycle: cycle::Cycle,
+    /// The shape a click would pick, and since when the pointer is on it.
+    hover: Option<(u64, std::time::Instant)>,
+    /// View > Measure on hover (else hold Ctrl), and the last two snap points pointed at.
+    measure_hover: bool,
+    measure_pts: (Option<Point>, Option<Point>),
+    /// The grip the pointer rests on (since when), and the grip whose menu is open.
+    grip_rest: Option<(grips::Grip, std::time::Instant)>,
+    grip_menu: Option<(grips::Grip, Point)>,
+    /// POLAR's additional angles as typed in its menu.
+    polar_extra_text: String,
 }
 
 pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
@@ -207,6 +232,17 @@ impl App {
             space_panned: false,
             preview: None,
             check: check_panel::Check::default(),
+            shift: false,
+            tracker: tracking::Tracker::default(),
+            once: None,
+            osnap_menu_open: false,
+            cycle: cycle::Cycle::default(),
+            hover: None,
+            measure_hover: false,
+            measure_pts: (None, None),
+            grip_rest: None,
+            grip_menu: None,
+            polar_extra_text: String::new(),
         }
     }
 
@@ -382,6 +418,7 @@ impl App {
             _ if consume(ctrl_shift, Key::G) => self.break_apart_selection(),
             _ if consume(ctrl, Key::G) => self.combine_selection(),
             _ if consume(Modifiers::NONE, Key::Escape) => self.escape(),
+            _ if self.cycle_key(ctx) => {}
             _ if consume(Modifiers::NONE, Key::Enter) || self.space_as_enter(ctx) => self.submit(pointer),
             _ => {}
         }
@@ -470,6 +507,9 @@ impl eframe::App for App {
         egui::CentralPanel::no_frame().show(ui, |ui| self.canvas(ui));
         self.command_card(&ctx);
         self.dyn_cursor(&ctx);
+        self.grip_menu_window(&ctx);
+        self.override_window(&ctx);
+
 
         if self.show_parameters {
             self.parameters_window(&ctx);

@@ -4,6 +4,9 @@
 use super::App;
 use super::labels::op_color;
 use super::snap::{self, Aid};
+use super::tracking;
+use crate::model::guides::guide_segments;
+
 use super::tools::Tool;
 use crate::model::geom::{distance, segment_distance};
 use crate::model::{Document, Img, Item, Op, Point, Shape};
@@ -45,6 +48,7 @@ impl App {
 
         self.aids.hit = None;
         self.aids.tracking = None;
+        self.shift = ui.input(|i| i.modifiers.shift);
         let raw = response.hover_pos().map(|p| self.s2w(p));
         let pointer = if space_pan {
             raw
@@ -59,6 +63,9 @@ impl App {
             pointer
         };
         self.pointer_mm = pointer;
+        if self.tracker.waiting() {
+            ctx.request_repaint_after(super::tracking::ACQUIRE);
+        }
         self.dropped_files(&ctx, pointer);
         self.dimension_input(&response);
         self.settle();
@@ -74,6 +81,7 @@ impl App {
             Aid::Ortho => self.aids.ortho,
             Aid::Osnap => self.aids.osnap,
             Aid::Polar => self.aids.polar,
+            Aid::Otrack => self.aids.otrack,
             Aid::Infer => self.aids.infer,
         }
     }
@@ -86,6 +94,7 @@ impl App {
             Aid::Snap => self.snap = on,
             Aid::Osnap => self.aids.osnap = on,
             Aid::Infer => self.aids.infer = on,
+            Aid::Otrack => self.aids.otrack = on,
             Aid::Ortho => {
                 self.aids.ortho = on;
                 self.aids.polar &= !on;
@@ -113,27 +122,54 @@ impl App {
         }
     }
 
-    /// Where a point lands: an object snap first, else the grid, then ORTHO or POLAR from `from`.
+    /// Where a point lands: a one-shot snap override when one waits; else an object snap, a
+    /// tracking path (POLAR, OTRACK, Extension, Parallel) or the nearest point on a shape; else the
+    /// grid, with ORTHO from `from`.
     pub(super) fn aim(&mut self, items: &[Item], raw: Point, from: Option<Point>) -> Point {
+        let p = self.aim_point(items, raw, from);
+        self.override_point(p)
+    }
+
+    fn aim_point(&mut self, items: &[Item], raw: Point, from: Option<Point>) -> Point {
         let tol = (APERTURE / self.view.zoom) as f64;
-        if self.aids.osnap
-            && let Some(s) = snap::find(items, raw, tol, from)
-        {
+        let guides = self.guides_in_view(items);
+        if let Some(kind) = self.snap_once() {
+            self.aids.hit = snap::find_only(items, &guides, raw, tol, from, kind);
+            return self.aids.hit.map_or(raw, |s| s.p);
+        }
+        let hit = if self.aids.osnap { snap::find(items, &guides, raw, tol, from) } else { None };
+        self.acquire(items, &guides, hit);
+        if let Some(s) = hit.filter(|s| s.kind != snap::Kind::Nearest) {
+            self.aids.hit = Some(s);
+            return s.p;
+        }
+        let ortho = self.ortho_now();
+        let angles = self.aids.polar_angles();
+        let polar = (self.aids.polar && !ortho).then_some(angles.as_slice());
+        let tracks = self.tracker.tracks(from, polar, ortho, self.aids.otrack, self.aids.osnap);
+        if let Some(l) = tracking::lock(&tracks, raw, tol) {
+            let p = l.p;
+            self.aids.tracking = Some(l);
+            return p;
+        }
+        if let Some(s) = hit {
             self.aids.hit = Some(s);
             return s.p;
         }
         let p = self.snap(raw);
-        let Some(f) = from else { return p };
-        if self.aids.ortho {
-            return snap::ortho(f, p);
+        match from {
+            Some(f) if ortho => snap::ortho(f, p),
+            _ => p,
         }
-        if self.aids.polar
-            && let Some(q) = snap::polar(f, raw, 15.0, tol)
-        {
-            self.aids.tracking = Some((f, q));
-            return q;
+    }
+
+    /// The shown guide lines, cut to a box three times the view (so the cut ends are off screen).
+    pub(super) fn guides_in_view(&self, items: &[Item]) -> Vec<[Point; 2]> {
+        if !self.show_guides {
+            return Vec::new();
         }
-        p
+        let v = self.view_box();
+        guide_segments(items.iter().filter(|i| self.visible(i)), [v[0] - v[2], v[1] - v[3], 3.0 * v[2], 3.0 * v[3]])
     }
 
     fn aim_at_doc(&mut self, raw: Point, from: Option<Point>) -> Point {
@@ -234,23 +270,26 @@ impl App {
         mm as f32 * self.view.zoom
     }
 
-    /// The item under `p`: a line within a few pixels wins; otherwise the smallest area containing `p`.
+    /// The item a click at `p` picks: the candidate chosen with Shift+Space, else the front one.
     pub(super) fn hit(&self, d: &Document, p: Point) -> Option<u64> {
+        self.cycle.pick(&self.hits(d, p))
+    }
+
+    /// The items under `p` in the order a click picks them: lines within a few pixels (front
+    /// first), then the areas containing `p`, smallest first.
+    pub(super) fn hits(&self, d: &Document, p: Point) -> Vec<u64> {
         let tol = (PICKBOX / self.view.zoom) as f64;
-        let mut inside: Option<(f64, u64)> = None;
+        let (mut lines, mut inside) = (Vec::new(), Vec::new());
         for item in d.s.items.iter().rev().filter(|i| self.visible(i)) {
-            let near_line = item.shape.outline(0.05).iter().any(|line| line.windows(2).any(|s| segment_distance(p, s[0], s[1]) <= tol));
-            if near_line {
-                return Some(item.id);
-            }
-            if item.shape.contains(p) {
-                let area = item.shape.metrics().area.unwrap_or(f64::MAX);
-                if inside.is_none_or(|(a, _)| area < a) {
-                    inside = Some((area, item.id));
-                }
+            if item.shape.outline(0.05).iter().any(|line| line.windows(2).any(|s| segment_distance(p, s[0], s[1]) <= tol)) {
+                lines.push(item.id);
+            } else if item.shape.contains(p) {
+                inside.push((item.shape.metrics().area.unwrap_or(f64::MAX), item.id));
             }
         }
-        inside.map(|(_, id)| id)
+        inside.sort_by(|a, b| a.0.total_cmp(&b.0));
+        lines.extend(inside.into_iter().map(|(_, id)| id));
+        lines
     }
 
     pub(super) fn texture(&mut self, ctx: &egui::Context, id: u64, img: &Img) -> egui::TextureId {
@@ -293,6 +332,8 @@ impl App {
         self.paint_dimensions(&painter, &state);
         self.paint_bars(&painter, &state);
         self.paint_selection(&painter, &state.items, &selection, pointer);
+        self.paint_hover(&painter, &state, pointer);
+        self.paint_hover_measure(&painter, &state.items, pointer);
         self.paint_draft(&painter, pointer, tol);
         self.paint_aids(&painter, rect, pointer);
     }
@@ -301,14 +342,8 @@ impl App {
     fn paint_aids(&self, painter: &egui::Painter, rect: Rect, pointer: Option<Point>) {
         let Some(p) = pointer else { return };
         let at = self.w2s(p);
-        if let Some((from, q)) = self.aids.tracking {
-            let (a, b) = (self.w2s(from), self.w2s(q));
-            let far = a + (b - a).normalized() * (rect.width() + rect.height());
-            let stroke = Stroke::new(1.0, Color32::from_rgb(120, 200, 120));
-            painter.extend(egui::Shape::dashed_line(&[a, far], stroke, 4.0, 4.0));
-            let ang = (-(q[1] - from[1])).atan2(q[0] - from[0]).to_degrees();
-            tooltip(painter, at, &format!("Polar: {:.2} < {:.0}°", distance(from, q), ang));
-        }
+        self.paint_tracking(painter, rect);
+        self.paint_override(painter, p);
         if let Some(s) = self.aids.hit {
             snap::paint_marker(painter, at, s.kind);
             tooltip(painter, at, s.kind.label());
@@ -471,7 +506,7 @@ pub(super) fn arrow_head(painter: &egui::Painter, tip: Pos2, from: Pos2, color: 
 }
 
 /// A small dark label next to the cursor.
-fn tooltip(painter: &egui::Painter, at: Pos2, text: &str) {
+pub(super) fn tooltip(painter: &egui::Painter, at: Pos2, text: &str) {
     let pos = at + vec2(16.0, 16.0);
     let galley = painter.layout_no_wrap(text.to_string(), FontId::proportional(12.0), Color32::WHITE);
     painter.rect_filled(Rect::from_min_size(pos, galley.size()).expand(3.0), 3.0, Color32::from_black_alpha(200));

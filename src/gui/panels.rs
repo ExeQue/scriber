@@ -84,6 +84,8 @@ impl App {
                     self.toggle_preview();
                 }
                 ui.checkbox(&mut self.show_guides, "Show guide lines");
+                ui.checkbox(&mut self.measure_hover, "Measure on hover (or hold Ctrl)");
+
                 ui.checkbox(&mut self.snap, "Snap to grid");
                 ui.checkbox(&mut self.show_cmdline, "Command line (for CAD users)");
             });
@@ -241,8 +243,16 @@ impl App {
                 Err(e) => ui.label(RichText::new("● MCP").color(Color32::from_rgb(200, 50, 50))).on_hover_text(format!("AI agents cannot connect (is Scriber already running?): {e}")),
             };
             for a in Aid::ALL.into_iter().rev() {
-                if ui.selectable_label(self.aid_on(a), RichText::new(a.label()).monospace()).on_hover_text(a.help()).clicked() {
+                // POLAR's angle step: ▾ next to it (or a right-click on it).
+                if a == Aid::Polar {
+                    ui.menu_button("▾", |ui| self.polar_menu(ui)).response.on_hover_text("Polar angle step");
+                }
+                let r = ui.selectable_label(self.aid_on(a), RichText::new(a.label()).monospace()).on_hover_text(a.help());
+                if r.clicked() {
                     self.toggle(a);
+                }
+                if a == Aid::Polar {
+                    r.context_menu(|ui| self.polar_menu(ui));
                 }
             }
             // 96 DPI screen: 3.78 px per mm is 100 %.

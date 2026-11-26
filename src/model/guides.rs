@@ -3,7 +3,7 @@
 //! Centre lines and centre marks made from other items follow those items (see `follow_guides`).
 
 use super::geom::{BBox, Contour, Point, Transform, arc_params, bbox_of, distance};
-use super::{Document, Shape};
+use super::{Document, Item, Shape};
 use rmcp::schemars::{self, JsonSchema};
 use serde::{Deserialize, Serialize};
 
@@ -190,13 +190,11 @@ impl Document {
             self.s.items[n].shape = Shape::Guide(g);
         }
     }
+}
 
-    /// Every visible piece of every guide line in `view`: for object snaps and EXTEND boundaries.
-    // For snap.rs: guide lines as snap targets (not wired in yet).
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn guide_segments(&self, view: BBox) -> Vec<[Point; 2]> {
-        self.s.items.iter().filter_map(|i| if let Shape::Guide(g) = &i.shape { Some(g.segments(view)) } else { None }).flatten().collect()
-    }
+/// Every visible piece of the guide lines among `items` in `view`: for object snaps and EXTEND boundaries.
+pub fn guide_segments<'a>(items: impl IntoIterator<Item = &'a Item>, view: BBox) -> Vec<[Point; 2]> {
+    items.into_iter().filter_map(|i| if let Shape::Guide(g) = &i.shape { Some(g.segments(view)) } else { None }).flatten().collect()
 }
 
 #[cfg(test)]
@@ -238,7 +236,8 @@ mod tests {
         let Shape::Guide(Guide::Centermark { cx, cy, r, .. }) = d.item(cm).unwrap().shape else { panic!() };
         assert!(close([cx, cy], [50.0, 50.0]) && (r - 20.0).abs() < 1e-9);
         // The cross reaches EXT past the circle.
-        let segs = d.guide_segments([0.0, 0.0, 100.0, 100.0]);
+        let segs = guide_segments(&d.s.items, [0.0, 0.0, 100.0, 100.0]);
+
         assert!(segs.iter().any(|s| close(s[0], [50.0 - 20.0 - EXT, 50.0])));
     }
 

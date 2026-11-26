@@ -12,17 +12,32 @@ pub struct Aids {
     pub ortho: bool,
     pub osnap: bool,
     pub polar: bool,
+    /// OTRACK: alignment paths from acquired snap points.
+    pub otrack: bool,
     /// INFER: constraints from the snaps used while drawing.
     pub infer: bool,
+    /// POLAR's increment angle, and extra angles it also tracks (degrees).
+    pub polar_step: f64,
+    pub polar_extra: Vec<f64>,
     /// The object snap the pointer locked to.
     pub hit: Option<Snap>,
-    /// POLAR tracking: the ray from the last point and the point on it.
-    pub tracking: Option<(Point, Point)>,
+    /// The tracking path(s) the pointer locked to (POLAR, OTRACK, Extension, Parallel).
+    pub tracking: Option<super::tracking::Locked>,
 }
 
 impl Default for Aids {
     fn default() -> Self {
-        Self { grid: true, ortho: false, osnap: true, polar: false, infer: true, hit: None, tracking: None }
+        Self { grid: true, ortho: false, osnap: true, polar: true, otrack: true, infer: true, polar_step: 15.0, polar_extra: Vec::new(), hit: None, tracking: None }
+    }
+}
+
+impl Aids {
+    /// Every angle POLAR tracks, in degrees: the increment's multiples plus the extra angles both ways.
+    pub fn polar_angles(&self) -> Vec<f64> {
+        let step = self.polar_step.clamp(1.0, 180.0);
+        let mut out: Vec<f64> = (0..(360.0 / step).round() as usize).map(|k| k as f64 * step).collect();
+        out.extend(self.polar_extra.iter().flat_map(|a| [a.rem_euclid(360.0), (a + 180.0).rem_euclid(360.0)]));
+        out
     }
 }
 
@@ -33,11 +48,12 @@ pub enum Aid {
     Ortho,
     Osnap,
     Polar,
+    Otrack,
     Infer,
 }
 
 impl Aid {
-    pub const ALL: [Aid; 6] = [Aid::Grid, Aid::Snap, Aid::Ortho, Aid::Polar, Aid::Osnap, Aid::Infer];
+    pub const ALL: [Aid; 7] = [Aid::Grid, Aid::Snap, Aid::Ortho, Aid::Polar, Aid::Osnap, Aid::Otrack, Aid::Infer];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -46,6 +62,7 @@ impl Aid {
             Aid::Ortho => "ORTHO",
             Aid::Osnap => "OSNAP",
             Aid::Polar => "POLAR",
+            Aid::Otrack => "OTRACK",
             Aid::Infer => "INFER",
         }
     }
@@ -57,6 +74,7 @@ impl Aid {
             Aid::Ortho => Key::F8,
             Aid::Osnap => Key::F3,
             Aid::Polar => Key::F10,
+            Aid::Otrack => Key::F11,
             Aid::Infer => return None,
         })
     }
@@ -67,7 +85,8 @@ impl Aid {
             Aid::Snap => "Round points to the grid (F9).",
             Aid::Ortho => "Only horizontal and vertical lines from the last point (F8).",
             Aid::Osnap => "Lock onto ends, middles, centres and crossings of shapes (F3).",
-            Aid::Polar => "Track angles in 15° steps from the last point (F10).",
+            Aid::Polar => "Track angles from the last point and from tracked points (F10). Pick the angle step with ▾.",
+            Aid::Otrack => "Rest the pointer on a snap point to track lines from it; dashed lines guide the cursor (F11).",
             Aid::Infer => "Automatically connect what you draw to the points you snap to",
         }
     }
@@ -84,6 +103,10 @@ pub enum Kind {
     Perpendicular,
     Tangent,
     Nearest,
+    /// Along a line or arc beyond its end (a tracking snap).
+    Extension,
+    /// Parallel to a line pointed at earlier (a tracking snap).
+    Parallel,
 }
 
 impl Kind {
@@ -97,6 +120,8 @@ impl Kind {
             Kind::Perpendicular => "Perpendicular",
             Kind::Tangent => "Tangent",
             Kind::Nearest => "Nearest",
+            Kind::Extension => "Extension",
+            Kind::Parallel => "Parallel",
         }
     }
 }
@@ -117,7 +142,7 @@ impl Snap {
             Kind::Endpoint | Kind::Center | Kind::Nearest => Constraint::Coincident,
             Kind::Perpendicular => Constraint::Perpendicular,
             Kind::Tangent => Constraint::Tangent,
-            Kind::Intersection | Kind::Quadrant | Kind::Midpoint => return None,
+            Kind::Intersection | Kind::Quadrant | Kind::Midpoint | Kind::Extension | Kind::Parallel => return None,
         };
         Some((kind, self.target?))
     }
@@ -153,14 +178,14 @@ impl On {
 }
 
 /// A straight or arc piece of an outline. Arcs run from `start` by `sweep` radians around `c`.
-#[derive(Clone, Copy, Debug)]
-enum Seg {
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Seg {
     Line(Point, Point),
     Arc { a: Point, b: Point, c: Point, r: f64, start: f64, sweep: f64 },
 }
 
 impl Seg {
-    fn ends(self) -> [Point; 2] {
+    pub(super) fn ends(self) -> [Point; 2] {
         match self {
             Seg::Line(a, b) | Seg::Arc { a, b, .. } => [a, b],
         }
@@ -173,7 +198,7 @@ impl Seg {
         }
     }
 
-    fn nearest(self, p: Point) -> Point {
+    pub(super) fn nearest(self, p: Point) -> Point {
         match self {
             Seg::Line(a, b) => foot(p, a, b).map_or_else(|| if distance(p, a) < distance(p, b) { a } else { b }, |(q, _)| q),
             Seg::Arc { a, b, c, r, start, sweep } => {
@@ -212,7 +237,7 @@ impl Seg {
     }
 }
 
-fn polar_point(c: Point, r: f64, ang: f64) -> Point {
+pub(super) fn polar_point(c: Point, r: f64, ang: f64) -> Point {
     [c[0] + r * ang.cos(), c[1] + r * ang.sin()]
 }
 
@@ -265,7 +290,7 @@ fn line_circle(a: Point, b: Point, c: Point, r: f64) -> Vec<Point> {
         .collect()
 }
 
-fn circle_circle(c1: Point, r1: f64, c2: Point, r2: f64) -> Vec<Point> {
+pub(super) fn circle_circle(c1: Point, r1: f64, c2: Point, r2: f64) -> Vec<Point> {
     let d = distance(c1, c2);
     if d < 1e-12 || d > r1 + r2 || d < (r1 - r2).abs() {
         return Vec::new();
@@ -292,6 +317,9 @@ fn intersections(s: Seg, t: Seg) -> Vec<Point> {
 
 /// The pieces of an item's outline: real arcs for paths, straight lines for the rest.
 fn segments(item: &Item) -> Vec<(Seg, Option<On>)> {
+    if matches!(item.shape, Shape::Guide(_)) {
+        return Vec::new(); // guide lines come in as `guides`, cut to the view
+    }
     let Shape::Path { contours } = &item.shape else {
         return item.shape.outline(0.1).iter().flat_map(|l| l.windows(2).map(|w| (Seg::Line(w[0], w[1]), None)).collect::<Vec<_>>()).collect();
     };
@@ -314,14 +342,38 @@ fn segments(item: &Item) -> Vec<(Seg, Option<On>)> {
     out
 }
 
-/// The object snap for pointer `p`: the closest snap point within `tol` mm, else the nearest
-/// point on a shape. `from` is the last placed point (for perpendicular and tangent).
-pub fn find(items: &[Item], p: Point, tol: f64, from: Option<Point>) -> Option<Snap> {
-    let segs: Vec<(Seg, Option<On>)> = items
+/// The pieces of outline (and guide lines) within `tol` mm of `p`, closest first.
+pub fn pieces_near(items: &[Item], guides: &[[Point; 2]], p: Point, tol: f64) -> Vec<Seg> {
+    let mut out: Vec<Seg> = near(items, guides, p, tol).into_iter().map(|(s, _)| s).filter(|s| distance(p, s.nearest(p)) <= tol).collect();
+    out.sort_by(|a, b| distance(p, a.nearest(p)).total_cmp(&distance(p, b.nearest(p))));
+    out
+}
+
+/// Pieces near `p` (also arcs whose centre is near), guide lines last.
+fn near(items: &[Item], guides: &[[Point; 2]], p: Point, tol: f64) -> Vec<(Seg, Option<On>)> {
+    let guides = guides.iter().map(|[a, b]| (Seg::Line(*a, *b), None));
+    items
         .iter()
         .flat_map(segments)
+        .chain(guides)
         .filter(|(s, _)| distance(p, s.nearest(p)) <= tol || matches!(s, Seg::Arc { c, .. } if distance(p, *c) <= tol))
-        .collect();
+        .collect()
+}
+
+/// The object snap for pointer `p`: the closest snap point within `tol` mm, else the nearest
+/// point on a shape. `from` is the last placed point (for perpendicular and tangent). `guides` are
+/// the guide lines cut to (a bit more than) the view: they give ends, crossings and nearest points.
+pub fn find(items: &[Item], guides: &[[Point; 2]], p: Point, tol: f64, from: Option<Point>) -> Option<Snap> {
+    find_with(items, guides, p, tol, from, None)
+}
+
+/// A one-shot object snap override: only snaps of `kind` count, whatever OSNAP says.
+pub fn find_only(items: &[Item], guides: &[[Point; 2]], p: Point, tol: f64, from: Option<Point>, kind: Kind) -> Option<Snap> {
+    find_with(items, guides, p, tol, from, Some(kind))
+}
+
+fn find_with(items: &[Item], guides: &[[Point; 2]], p: Point, tol: f64, from: Option<Point>, only: Option<Kind>) -> Option<Snap> {
+    let segs = near(items, guides, p, tol);
     let mut cands = Vec::new();
     let mut add = |kind, q: Point, target: Option<Ref>| cands.push(Snap { p: q, kind, target });
     for (i, &(s, on)) in segs.iter().enumerate() {
@@ -329,7 +381,10 @@ pub fn find(items: &[Item], p: Point, tol: f64, from: Option<Point>) -> Option<S
         for (k, q) in s.ends().into_iter().enumerate() {
             add(Kind::Endpoint, q, on.map(|o| o.end(k)));
         }
-        add(Kind::Midpoint, s.mid(), target(On::segment));
+        // A guide line's middle is only where the view cuts it.
+        if on.is_some() || !is_guide(guides, s) {
+            add(Kind::Midpoint, s.mid(), target(On::segment));
+        }
         if let Seg::Arc { c, r, start, sweep, .. } = s {
             add(Kind::Center, c, target(On::centre));
             for k in 0..4 {
@@ -350,8 +405,11 @@ pub fn find(items: &[Item], p: Point, tol: f64, from: Option<Point>) -> Option<S
     // Closest wins; on the same spot the kind listed first wins (e.g. a quadrant beats an arc's midpoint).
     let best = cands
         .into_iter()
-        .filter(|s| distance(s.p, p) <= tol)
+        .filter(|s| distance(s.p, p) <= tol && only.is_none_or(|k| k == s.kind))
         .min_by_key(|s| ((distance(s.p, p) * 1e6).round() as i64, s.kind));
+    if only.is_some_and(|k| k != Kind::Nearest) {
+        return best;
+    }
     best.or_else(|| {
         segs.iter()
             .map(|(s, on)| (s.nearest(p), on.map(On::segment)))
@@ -360,25 +418,15 @@ pub fn find(items: &[Item], p: Point, tol: f64, from: Option<Point>) -> Option<S
     })
 }
 
+fn is_guide(guides: &[[Point; 2]], s: Seg) -> bool {
+    matches!(s, Seg::Line(a, b) if guides.contains(&[a, b]))
+}
+
 /// ORTHO: keep only the larger of the horizontal and vertical move from `from`.
 pub fn ortho(from: Point, p: Point) -> Point {
     if (p[0] - from[0]).abs() >= (p[1] - from[1]).abs() { [p[0], from[1]] } else { [from[0], p[1]] }
 }
 
-/// POLAR tracking: when `p` is within `tol` mm of a ray from `from` at a multiple of `step`
-/// degrees, the point on that ray.
-pub fn polar(from: Point, p: Point, step: f64, tol: f64) -> Option<Point> {
-    let (dx, dy) = (p[0] - from[0], p[1] - from[1]);
-    let len = dx.hypot(dy);
-    if len < tol {
-        return None;
-    }
-    let ang = (dy.atan2(dx).to_degrees() / step).round() * step;
-    let (s, c) = ang.to_radians().sin_cos();
-    let along = dx * c + dy * s;
-    let q = [from[0] + along * c, from[1] + along * s];
-    (along > 0.0 && distance(p, q) <= tol).then_some(q)
-}
 
 /// AutoCAD's marker for a snap kind, centred on `at`.
 pub fn paint_marker(painter: &egui::Painter, at: Pos2, kind: Kind) {
@@ -406,6 +454,15 @@ pub fn paint_marker(painter: &egui::Painter, at: Pos2, kind: Kind) {
             line(tl, tr);
         }
         Kind::Nearest => _ = painter.add(egui::Shape::closed_line(vec![tl, tr, bl, br], stroke)),
+        Kind::Extension => {
+            for dx in [-s, 0.0, s] {
+                painter.circle_filled(at + vec2(dx, 0.0), 1.5, stroke.color);
+            }
+        }
+        Kind::Parallel => {
+            line(bl + vec2(s * 0.3, 0.0), tr - vec2(s * 0.7, 0.0));
+            line(bl + vec2(s, 0.0), tr);
+        }
     }
 }
 
@@ -419,7 +476,7 @@ mod tests {
     }
 
     fn snap_at(items: &[Item], p: Point) -> Snap {
-        find(items, p, 1.0, None).expect("a snap")
+        find(items, &[], p, 1.0, None).expect("a snap")
     }
 
     fn close(a: Point, b: Point) -> bool {
@@ -434,8 +491,8 @@ mod tests {
         assert!(s.kind == Kind::Midpoint && close(s.p, [5.0, 0.0]));
         let s = snap_at(&items, [3.0, 0.5]);
         assert!(s.kind == Kind::Nearest && close(s.p, [3.0, 0.0]));
-        assert!(find(&items, [3.0, 5.0], 1.0, None).is_none());
-        let s = find(&items, [7.1, 0.2], 1.0, Some([7.0, 20.0])).unwrap();
+        assert!(find(&items, &[], [3.0, 5.0], 1.0, None).is_none());
+        let s = find(&items, &[], [7.1, 0.2], 1.0, Some([7.0, 20.0])).unwrap();
         assert!(s.kind == Kind::Perpendicular && close(s.p, [7.0, 0.0]));
     }
 
@@ -467,7 +524,7 @@ mod tests {
         let s = snap_at(&items, [m + 0.2, m]);
         assert!(s.kind == Kind::Midpoint && close(s.p, [m, m]), "{s:?}");
         // No quadrant at 180°, which is not on the arc.
-        assert!(find(&items, [-10.0, 0.0], 1.0, None).is_none());
+        assert!(find(&items, &[], [-10.0, 0.0], 1.0, None).is_none());
     }
 
     #[test]
@@ -487,16 +544,31 @@ mod tests {
         // From (30, -10) to the circle around (30, 0) radius 5: touches at ±60° from straight up.
         let items = [item(2, Contour::circle(30.0, 0.0, 5.0))];
         let (sx, sy) = (5.0 * 60f64.to_radians().sin(), -5.0 * 60f64.to_radians().cos());
-        let s = find(&items, [30.0 + sx + 0.2, sy], 1.0, Some([30.0, -10.0])).unwrap();
+        let s = find(&items, &[], [30.0 + sx + 0.2, sy], 1.0, Some([30.0, -10.0])).unwrap();
         assert!(s.kind == Kind::Tangent && close(s.p, [30.0 + sx, sy]), "{s:?}");
     }
 
     #[test]
-    fn ortho_and_polar() {
+    fn ortho_and_polar_angles() {
         assert_eq!(ortho([0.0, 0.0], [10.0, 3.0]), [10.0, 0.0]);
         assert_eq!(ortho([0.0, 0.0], [2.0, -7.0]), [0.0, -7.0]);
-        let q = polar([0.0, 0.0], [10.0, 10.3], 15.0, 1.0).unwrap();
-        assert!((q[0] - q[1]).abs() < 1e-9);
-        assert!(polar([0.0, 0.0], [10.0, 4.0], 15.0, 0.5).is_none());
+        let aids = Aids { polar_step: 90.0, polar_extra: vec![30.0], ..Aids::default() };
+        assert_eq!(aids.polar_angles(), vec![0.0, 90.0, 180.0, 270.0, 30.0, 210.0]);
+        assert_eq!(Aids::default().polar_angles().len(), 24);
     }
+
+    #[test]
+    fn guide_lines_snap() {
+        // A guide line across the view and a line crossing it: their crossing and the guide's
+        // nearest point snap, but the guide's middle (where the view cuts it) does not.
+        let guides = [[[0.0, 5.0], [100.0, 5.0]]];
+        let items = [item(1, Contour::line([20.0, 0.0], [20.0, 10.0]))];
+        let s = find(&items, &guides, [20.3, 5.2], 1.0, None).unwrap();
+        assert!(s.kind == Kind::Intersection && close(s.p, [20.0, 5.0]), "{s:?}");
+        let s = find(&items, &guides, [50.2, 5.3], 1.0, None).unwrap();
+        assert_eq!(s.kind, Kind::Nearest);
+        assert_eq!(find_only(&items, &guides, [20.3, 5.2], 1.0, None, Kind::Endpoint), None);
+        assert_eq!(find_only(&items, &guides, [20.3, 9.5], 1.0, None, Kind::Endpoint).map(|s| s.p), Some([20.0, 10.0]));
+    }
+
 }

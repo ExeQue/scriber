@@ -345,6 +345,8 @@ impl App {
         self.tool = Tool::Select;
         self.draft.clear();
         self.draft_links.clear();
+        self.tracker.clear();
+        self.once = None;
     }
 
     pub(super) fn cancel(&mut self) {
@@ -412,6 +414,11 @@ impl App {
     pub(super) fn place_point(&mut self, p: Point) {
         // Locked measurements from dynamic input win over the mouse, also for clicks.
         let p = self.dyn_point(p).unwrap_or(p);
+        // The first pick of "Mid between 2 points" or "From" is the override's, not the command's.
+        if self.override_pick(p) {
+            return;
+        }
+
         self.dyn_reset();
         self.cmdline.log(format!("{} {:.2},{:.2}", self.prompt(), p[0], p[1]));
         self.answer(Entry::Point(p), Some(p));

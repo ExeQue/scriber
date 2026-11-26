@@ -11,6 +11,9 @@ use eframe::egui;
 impl App {
     pub(in crate::gui) fn canvas_menu(&mut self, ui: &mut egui::Ui) {
         ui.set_min_width(190.0);
+        if self.osnap_menu_open {
+            return self.osnap_menu(ui);
+        }
         match self.cmdline.active {
             Some((cmd, step)) => self.command_menu(ui, cmd, step),
             None => match self.menu_constraint {
@@ -24,8 +27,14 @@ impl App {
     /// running) it selects that shape, so "Add constraint" applies to it. With one other shape
     /// selected, both stay selected.
     pub(in crate::gui) fn right_click(&mut self, at: egui::Pos2) {
+        // Shift+right-click while a point is asked for: the one-shot object snap menu.
+        self.osnap_menu_open = self.shift && self.active_cmd().is_some();
+        if self.osnap_menu_open {
+            return;
+        }
         self.menu_constraint = self.constraint_at(at);
-        if self.menu_constraint.is_some() || self.cmdline.active.is_some() {
+
+        if self.menu_constraint.is_some() || self.active_cmd().is_some() {
             return;
         }
         let mut d = self.doc.lock().unwrap();

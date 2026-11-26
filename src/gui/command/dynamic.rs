@@ -8,6 +8,9 @@ use super::curves::{ArcMode, CircleMode};
 use super::rects::{RectMode, height_from};
 use super::parse::toward;
 use super::{App, Cmd, Step};
+use crate::gui::grips::Grip;
+use crate::gui::select::Drag;
+
 use crate::model::Point;
 use crate::model::geom::distance;
 use eframe::egui::{self, DragValue, Event, Key, RichText};
@@ -89,6 +92,14 @@ impl App {
     }
 
     fn dyn_kind(&self) -> Option<Kind> {
+        // A dragged or hot grip: how far and which way it moved, or a circle's radius.
+        if let Some(Drag::Grip { grip, .. }) = &self.drag {
+            return match grip {
+                Grip::Radius { .. } => Some(Kind::Radius { diameter: true }),
+                Grip::Scale { .. } | Grip::Rotate | Grip::DimLine { .. } => None,
+                _ => Some(Kind::LengthAngle),
+            };
+        }
         let (cmd, step) = self.cmdline.active?;
         let n = self.draft.len();
         Some(match (cmd, step, n) {
@@ -108,9 +119,20 @@ impl App {
         })
     }
 
+    /// Where the measurements start: the last point, or a dragged grip's start (a circle's centre for its radius).
+    fn dyn_base(&self) -> Option<Point> {
+        match &self.drag {
+            Some(Drag::Grip { grip: Grip::Radius { id, contour }, base, .. }) => {
+                base.iter().find(|i| i.id == *id).and_then(|i| i.shape.contours().get(*contour).and_then(|c| c.as_circle())).map(|(m, _)| m)
+            }
+            Some(Drag::Grip { at, .. }) => Some(*at),
+            _ => self.draft.last().copied(),
+        }
+    }
+
     /// The measurements the mouse gives right now.
     fn live(&self, kind: Kind, p: Point) -> [f64; 2] {
-        let Some(&last) = self.draft.last() else { return [0.0; 2] };
+        let Some(last) = self.dyn_base() else { return [0.0; 2] };
         match kind {
             Kind::Radius { .. } | Kind::Polygon => [distance(last, p), 0.0],
             Kind::LengthAngle => [distance(last, p), (last[1] - p[1]).atan2(p[0] - last[0]).to_degrees()],
@@ -142,17 +164,17 @@ impl App {
     }
 
     fn point_from_values(&self, pointer: Point) -> Option<Point> {
-        let (cmd, _) = self.cmdline.active?;
+        let cmd = self.cmdline.active.map(|(c, _)| c);
         let kind = self.dyn_kind()?;
-        let last = *self.draft.last()?;
+        let last = self.dyn_base()?;
         let [a, b] = self.effective(kind, pointer);
         Some(match kind {
-            Kind::Radius { .. } if cmd == Cmd::Arc => self.curve_number(cmd, a, Some(pointer))?,
+            Kind::Radius { .. } if cmd == Some(Cmd::Arc) => self.curve_number(Cmd::Arc, a, Some(pointer))?,
             Kind::Radius { .. } | Kind::Polygon => toward(last, Some(pointer), a),
-            Kind::Sweep => self.curve_number(cmd, a, Some(pointer))?,
+            Kind::Sweep => self.curve_number(cmd?, a, Some(pointer))?,
             // Angles are counter-clockwise on screen; the model's y points down.
             Kind::LengthAngle => [last[0] + a * b.to_radians().cos(), last[1] - a * b.to_radians().sin()],
-            Kind::Size if self.rect_in(cmd, RectMode::Center) => [last[0] + a / 2.0, last[1] + b / 2.0],
+            Kind::Size if cmd.is_some_and(|c| self.rect_in(c, RectMode::Center)) => [last[0] + a / 2.0, last[1] + b / 2.0],
             Kind::Size => [self.draft[0][0] + a, self.draft[0][1] + b],
             Kind::Height => {
                 let (a0, b0) = (self.draft[0], self.draft[1]);
@@ -193,7 +215,11 @@ impl App {
     }
 
     fn place_from_values(&mut self) {
-        if let Some(p) = self.point_from_values(self.pointer_mm.unwrap_or_default()) {
+        let Some(p) = self.point_from_values(self.pointer_mm.unwrap_or_default()) else { return };
+        if matches!(self.drag, Some(Drag::Grip { .. })) {
+            self.move_grip(p, false);
+            self.finish_grip(None);
+        } else {
             self.place_point(p);
         }
     }

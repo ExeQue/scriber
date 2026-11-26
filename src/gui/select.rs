@@ -25,8 +25,9 @@ pub(super) enum Drag {
     Move { origin: Point, applied: Point },
     /// A selection window from `start`, by dragging or by two clicks.
     Box { start: Point },
-    /// A grip dragged from `at`; `base` is every item as it was when the drag started, `bbox` the selection box then.
-    Grip { grip: Grip, at: Point, base: Vec<Item>, bbox: BBox },
+    /// A grip dragged from `at`; `base` is every item as it was when the drag started, `bbox` the
+    /// selection box then. A `hot` grip follows the cursor without a button held, until a click.
+    Grip { grip: Grip, at: Point, base: Vec<Item>, bbox: BBox, hot: bool },
 }
 
 fn selection_box(items: &[Item], selection: &[u64]) -> Option<BBox> {
@@ -78,7 +79,9 @@ impl App {
     pub(super) fn select_input(&mut self, ui: &egui::Ui, response: &egui::Response, raw: Option<Point>) -> Option<Point> {
         let shift = ui.input(|i| i.modifiers.shift);
         let doc = self.doc.clone();
+        let hot = matches!(self.drag, Some(Drag::Grip { hot: true, .. }));
         if response.drag_started_by(PointerButton::Primary)
+            && !hot
             && !matches!(self.drag, Some(Drag::Box { .. }))
             && let Some(o) = ui.input(|i| i.pointer.press_origin())
         {
@@ -89,29 +92,34 @@ impl App {
                 (Some((grip, at)), _) => {
                     d.checkpoint();
                     let bbox = d.bbox(&d.selection).unwrap_or_default();
-                    Drag::Grip { grip, at, base: d.s.items.clone(), bbox }
+                    Drag::Grip { grip, at, base: d.s.items.clone(), bbox, hot: false }
                 }
+                // A grouped shape moves with its group.
                 (None, Some(id)) => {
                     if !d.selection.contains(&id) {
-                        d.selection = vec![id];
+                        d.selection = d.expand_groups(&[id]);
                     }
                     d.checkpoint();
                     Drag::Move { origin, applied: [0.0, 0.0] }
                 }
                 (None, None) => Drag::Box { start: origin },
             });
+            drop(d);
+            self.grip_menu = None;
+            self.dyn_reset();
         }
 
         let mut cursor = raw;
-        if response.dragged_by(PointerButton::Primary)
+        if (response.dragged_by(PointerButton::Primary) || hot)
             && let Some(r) = raw
-            && matches!(self.drag, Some(Drag::Grip { .. }))
-            && let Some(Drag::Grip { grip, at, base, bbox }) = self.drag.take()
+            && let Some(Drag::Grip { grip, at, base, bbox, hot }) = self.drag.take_if(|d| matches!(d, Drag::Grip { .. }))
         {
             let p = self.aim(&base, r, Some(at));
+            self.drag = Some(Drag::Grip { grip, at, base, bbox, hot });
+            // Locked values typed on dynamic input win over the mouse.
+            let p = self.dyn_point(p).unwrap_or(p);
             cursor = Some(p);
-            self.apply_grip(grip, at, &base, bbox, p, shift);
-            self.drag = Some(Drag::Grip { grip, at, base, bbox });
+            self.move_grip(p, shift);
         }
         if let (Some(Drag::Move { origin, applied }), Some(p)) = (&mut self.drag, raw) {
             let mut want = [p[0] - origin[0], p[1] - origin[1]];
@@ -129,10 +137,9 @@ impl App {
         if response.drag_stopped_by(PointerButton::Primary) {
             match (self.drag.take(), raw) {
                 (Some(Drag::Box { start }), Some(p)) => self.finish_box(start, p, shift),
-                // Let go on a snap: INFER joins the grip's point to it.
-                (Some(Drag::Grip { grip, at, base, .. }), Some(r)) => {
-                    self.aim(&base, r, Some(at));
-                    self.infer_grip(grip, self.aids.hit);
+                (Some(g @ Drag::Grip { .. }), r) => {
+                    self.drag = Some(g);
+                    self.finish_grip(r);
                 }
                 _ => {}
             }
@@ -141,18 +148,82 @@ impl App {
         if response.clicked_by(PointerButton::Primary)
             && let Some(p) = raw
         {
-            let mut d = doc.lock().unwrap();
-            match self.hit(&d, p) {
-                // Shift+click adds or removes; a plain click selects only that shape.
-                Some(id) if shift && d.selection.contains(&id) => d.selection.retain(|s| *s != id),
-                Some(id) if shift => d.selection.push(id),
-                Some(id) => d.selection = vec![id],
-                // A click on empty space clears the selection; window and crossing are made by dragging.
-                None if !shift => d.selection.clear(),
-                None => {}
+            let grip = response.interact_pointer_pos().and_then(|at| {
+                let d = doc.lock().unwrap();
+                self.grip_at(&self.grips(&d.s.items, &d.selection), at)
+            });
+            match grip {
+                _ if hot => self.finish_grip(Some(p)),
+                // A click on a grip makes it hot, as in AutoCAD: it follows the cursor until the next click.
+                Some((grip, at)) => {
+                    self.grip_menu = None;
+                    self.start_hot_grip(grip, at, true);
+                }
+                None => self.click_select(p, shift),
             }
         }
+
+        // Before a click: what it would pick glows, overlapping shapes can be cycled, grips offer their menu.
+        if self.drag.is_none() {
+            let (under, grip) = match raw {
+                Some(p) => {
+                    let d = doc.lock().unwrap();
+                    // ponytail: outlines of every visible item per frame; cache them if big drawings get slow.
+                    (self.hits(&d, p), response.hover_pos().and_then(|h| self.grip_at(&self.grips(&d.s.items, &d.selection), h)))
+                }
+                None => (Vec::new(), None),
+            };
+            self.cycle.update(under);
+            self.update_hover(if grip.is_some() { None } else { self.cycle.current() });
+            self.rest_on_grip(ui.ctx(), grip);
+        } else {
+            self.update_hover(None);
+        }
         cursor
+    }
+
+    /// A click on a shape selects it with its group: Shift adds them, or takes them out when selected.
+    fn click_select(&mut self, p: Point, shift: bool) {
+        let mut d = self.doc.lock().unwrap();
+        match self.hit(&d, p) {
+            Some(id) => {
+                let group = d.expand_groups(&[id]);
+                if shift && d.selection.contains(&id) {
+                    d.selection.retain(|s| !group.contains(s));
+                } else if shift {
+                    for g in group {
+                        if !d.selection.contains(&g) {
+                            d.selection.push(g);
+                        }
+                    }
+                } else {
+                    d.selection = group;
+                }
+            }
+            // A click on empty space clears the selection; window and crossing are made by dragging.
+            None if !shift => d.selection.clear(),
+            None => {}
+        }
+    }
+
+    /// Move the dragged grip to `p`.
+    pub(super) fn move_grip(&mut self, p: Point, shift: bool) {
+        let Some(Drag::Grip { grip, at, base, bbox, hot }) = self.drag.take() else { return };
+        self.apply_grip(grip, at, &base, bbox, p, shift);
+        self.drag = Some(Drag::Grip { grip, at, base, bbox, hot });
+    }
+
+    /// Let go of the grip (at `raw`, if over the canvas): INFER joins its point to a snap it was let go on.
+    pub(super) fn finish_grip(&mut self, raw: Option<Point>) {
+        let Some(Drag::Grip { grip, at, base, .. }) = self.drag.take() else { return };
+        if let Some(r) = raw {
+            self.aim(&base, r, Some(at));
+            self.infer_grip(grip, self.aids.hit);
+        }
+        self.dyn_reset();
+        self.once = None;
+        self.tracker.clear();
+        self.message.clear();
     }
 
     /// Redo the grip edit from the state at drag start, so every frame applies one clean change.
@@ -184,13 +255,16 @@ impl App {
         let area = [start[0].min(end[0]), start[1].min(end[1]), (end[0] - start[0]).abs(), (end[1] - start[1]).abs()];
         let crossing = end[0] < start[0];
         let mut d = self.doc.lock().unwrap();
+        // Hidden and isolated-away items are not picked; a picked item brings its group.
         let picked: Vec<u64> = d
             .s
             .items
             .iter()
+            .filter(|i| self.visible(i))
             .filter(|i| contains_box(area, i.shape.metrics().bbox) || (crossing && touches(area, &i.shape.outline(0.1))))
             .map(|i| i.id)
             .collect();
+        let picked = d.expand_groups(&picked);
         // Without Shift the box replaces the selection; with Shift it adds to it.
         if !add {
             d.selection.clear();
@@ -208,6 +282,8 @@ impl App {
     pub(super) fn cancel_drag(&mut self) {
         if let Some(Drag::Grip { .. } | Drag::Move { .. }) = self.drag.take() {
             self.doc.lock().unwrap().undo();
+            self.tracker.clear();
+            self.message.clear();
         }
     }
 
@@ -233,6 +309,7 @@ impl App {
             match g {
                 Grip::Rotate => painter.circle(at, GRIP_HALF + 1.0, color, Stroke::new(1.0, Color32::WHITE)),
                 Grip::Scale { .. } => painter.rect(square, 0.0, Color32::WHITE, Stroke::new(1.5, color), egui::StrokeKind::Middle),
+                Grip::Mid { .. } => painter.rect(square.shrink(1.5), 0.0, color.gamma_multiply(0.8), Stroke::new(1.0, Color32::from_gray(20)), egui::StrokeKind::Middle),
                 _ => painter.rect(square, 0.0, color, Stroke::new(1.0, Color32::from_gray(20)), egui::StrokeKind::Middle),
             };
         }
@@ -283,7 +360,29 @@ mod tests {
     }
 
     #[test]
+    fn window_takes_whole_groups_and_skips_hidden_items() {
+        use crate::model::{Contour, Document, Op, Shape};
+        let doc = std::sync::Arc::new(std::sync::Mutex::new(Document::new(200.0, 200.0)));
+        let mut app = App::new(doc.clone(), Err(String::new()));
+        let [a, b, c] = {
+            let mut d = doc.lock().unwrap();
+            let ids = [0.0, 50.0, 100.0].map(|x| d.add("", Op::Cut, Shape::path(Contour::rect(x, 0.0, 10.0, 10.0, 0.0))));
+            d.s.groups.push(vec![ids[0], ids[1]]);
+            ids
+        };
+        app.finish_box([-1.0, -1.0], [20.0, 20.0], false);
+        assert_eq!(doc.lock().unwrap().selection, vec![a, b], "the window caught a; b is in its group");
+        app.isolated = Some(vec![a, b]);
+        app.finish_box([-1.0, -1.0], [199.0, 20.0], false);
+        assert!(!doc.lock().unwrap().selection.contains(&c), "isolated away");
+        // A click on b selects its group too.
+        app.click_select([50.0, 5.0], false);
+        assert_eq!(doc.lock().unwrap().selection, vec![b, a]);
+    }
+
+    #[test]
     fn crossing_touches() {
+
         let square = vec![vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]];
         assert!(touches([5.0, -1.0, 1.0, 2.0], &square), "box over the top edge");
         assert!(!touches([2.0, 2.0, 1.0, 1.0], &square), "box inside, touching no line");

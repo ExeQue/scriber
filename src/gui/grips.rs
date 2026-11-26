@@ -1,13 +1,15 @@
 //! Grips: the handles on selected items. Item grips move one defining point (a vertex, a circle's
 //! radius, a dimension end); the selection box grips resize, stretch and rotate everything selected.
 
-use crate::model::geom::distance;
+use crate::model::geom::{arc_params, distance};
 use crate::model::{BBox, Contour, Item, Point, Shape, Transform};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Grip {
     /// A path vertex.
     Vertex { id: u64, contour: usize, vertex: usize },
+    /// The middle of a path segment: moves a straight segment, bends an arc through it.
+    Mid { id: u64, contour: usize, segment: usize },
     /// A circle's quadrant: changes its radius.
     Radius { id: u64, contour: usize },
     /// A circle's centre: moves that circle.
@@ -28,7 +30,7 @@ impl Grip {
     /// The item an item grip edits; None for the selection box grips.
     pub fn id(self) -> Option<u64> {
         match self {
-            Grip::Vertex { id, .. } | Grip::Radius { id, .. } | Grip::Centre { id, .. } | Grip::Move { id } | Grip::DimEnd { id, .. } | Grip::DimLine { id } => Some(id),
+            Grip::Vertex { id, .. } | Grip::Mid { id, .. } | Grip::Radius { id, .. } | Grip::Centre { id, .. } | Grip::Move { id } | Grip::DimEnd { id, .. } | Grip::DimLine { id } => Some(id),
             Grip::Scale { .. } | Grip::Rotate => None,
         }
     }
@@ -36,6 +38,34 @@ impl Grip {
 
 fn circle(c: &Contour) -> Option<(Point, f64)> {
     c.as_circle()
+}
+
+/// How many segments a contour has.
+pub fn segment_count(c: &Contour) -> usize {
+    if c.closed { c.vertices.len() } else { c.vertices.len().saturating_sub(1) }
+}
+
+/// The middle of segment `i` (on the arc for a bent one).
+pub fn segment_mid(c: &Contour, i: usize) -> Point {
+    let (a, b) = (&c.vertices[i], &c.vertices[(i + 1) % c.vertices.len()]);
+    if a.bulge.abs() < 1e-9 {
+        return [(a.x + b.x) / 2.0, (a.y + b.y) / 2.0];
+    }
+    let (m, r, start, sweep) = arc_params([a.x, a.y], [b.x, b.y], a.bulge);
+    let ang = start + sweep / 2.0;
+    [m[0] + r * ang.cos(), m[1] + r * ang.sin()]
+}
+
+/// The bulge of the arc from `a` to `b` through `m` (0 when `m` is on the chord).
+pub fn bulge_through(a: Point, b: Point, m: Point) -> f64 {
+    let (u, v) = ([a[0] - m[0], a[1] - m[1]], [b[0] - m[0], b[1] - m[1]]);
+    let cross = (b[0] - a[0]) * (m[1] - a[1]) - (b[1] - a[1]) * (m[0] - a[0]);
+    let phi = (u[0] * v[1] - u[1] * v[0]).abs().atan2(u[0] * v[0] + u[1] * v[1]);
+    if cross.abs() < 1e-12 {
+        return 0.0;
+    }
+    // The sweep is 2π minus twice the angle at m; the bulge is tan(sweep / 4).
+    -cross.signum() * ((std::f64::consts::PI - phi) / 2.0).tan()
 }
 
 /// The grips of one selected item, with their positions.
@@ -52,6 +82,7 @@ pub fn item_grips(item: &Item) -> Vec<(Grip, Point)> {
                     }
                 } else {
                     out.extend(c.vertices.iter().enumerate().map(|(vi, v)| (Grip::Vertex { id, contour: ci, vertex: vi }, [v.x, v.y])));
+                    out.extend((0..segment_count(c)).map(|s| (Grip::Mid { id, contour: ci, segment: s }, segment_mid(c, s))));
                 }
             }
             out
@@ -91,6 +122,20 @@ pub fn drag_item(shape: &Shape, grip: Grip, at: Point, p: Point) -> Shape {
         (Shape::Path { contours }, Grip::Vertex { contour, vertex, .. }) => {
             if let Some(v) = contours.get_mut(contour).and_then(|c| c.vertices.get_mut(vertex)) {
                 (v.x, v.y) = (p[0], p[1]);
+            }
+        }
+        (Shape::Path { contours }, Grip::Mid { contour, segment, .. }) => {
+            if let Some(c) = contours.get_mut(contour).filter(|c| segment < segment_count(c)) {
+                let n = c.vertices.len();
+                let (a, b) = (c.vertices[segment], c.vertices[(segment + 1) % n]);
+                if a.bulge.abs() < 1e-9 {
+                    for k in [segment, (segment + 1) % n] {
+                        c.vertices[k].x += dx;
+                        c.vertices[k].y += dy;
+                    }
+                } else {
+                    c.vertices[segment].bulge = bulge_through([a.x, a.y], [b.x, b.y], p);
+                }
             }
         }
         (Shape::Path { contours }, Grip::Radius { contour, .. }) => {
@@ -174,7 +219,7 @@ mod tests {
     fn vertex_and_circle_grips() {
         let rect = item(Shape::path(Contour::rect(0.0, 0.0, 10.0, 10.0, 0.0)));
         let grips = item_grips(&rect);
-        assert_eq!(grips.len(), 4);
+        assert_eq!(grips.len(), 8, "4 corners and 4 segment middles");
         let (g, at) = grips[2];
         let moved = drag_item(&rect.shape, g, at, [12.0, 15.0]);
         assert_eq!(moved.metrics().bbox, [0.0, 0.0, 12.0, 15.0]);
@@ -191,7 +236,27 @@ mod tests {
     }
 
     #[test]
+    fn mid_grips_move_lines_and_bend_arcs() {
+        let line = item(Shape::path(Contour::line([0.0, 0.0], [10.0, 0.0])));
+        let (g, at) = item_grips(&line)[2];
+        assert_eq!((g, at), (Grip::Mid { id: 7, contour: 0, segment: 0 }, [5.0, 0.0]));
+        let moved = drag_item(&line.shape, g, at, [5.0, 3.0]);
+        assert_eq!(moved.metrics().bbox, [0.0, 3.0, 10.0, 0.0]);
+        // Bent through a point above the chord, and back through itself.
+        let mut arc = Contour::line([0.0, 0.0], [10.0, 0.0]);
+        for m in [[5.0, -5.0], [5.0, 2.0], [3.0, -4.0]] {
+            arc.vertices[0].bulge = bulge_through([0.0, 0.0], [10.0, 0.0], m);
+            let (c, r, ..) = arc_params([0.0, 0.0], [10.0, 0.0], arc.vertices[0].bulge);
+            assert!((distance(c, m) - r).abs() < 1e-9, "arc passes through {m:?}");
+            let mid = segment_mid(&arc, 0);
+            assert!((mid[0] - 5.0).abs() < 1e-9 && (mid[1] < 0.0) == (m[1] < 0.0), "{mid:?} on the side of {m:?}");
+        }
+        assert!((bulge_through([0.0, 0.0], [10.0, 0.0], [5.0, -5.0]).abs() - 1.0).abs() < 1e-9, "half circle");
+    }
+
+    #[test]
     fn dimension_grips() {
+
         let d = item(Shape::Dimension { x1: 0.0, y1: 0.0, x2: 10.0, y2: 0.0, offset: 5.0 });
         let grips = item_grips(&d);
         let (g, at) = grips[2];
