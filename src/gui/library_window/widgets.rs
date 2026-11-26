@@ -67,7 +67,12 @@ pub(super) fn sidebar(ui: &mut egui::Ui, noun: &str, has_selection: bool, header
 pub(super) fn form_column(ui: &mut egui::Ui, id: &str, form: impl FnOnce(&mut egui::Ui)) {
     ui.add_space(12.0);
     ui.allocate_ui_with_layout(ui.available_size(), Layout::top_down(Align::Min), |ui| {
-        egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, false]).show(ui, form);
+        // The column's width is fixed: help text wraps to it and wide tables cannot widen it.
+        let width = ui.available_width() - 14.0;
+        egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, false]).show(ui, |ui| {
+            ui.set_max_width(width);
+            form(ui)
+        });
     });
 }
 

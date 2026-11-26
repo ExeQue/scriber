@@ -221,11 +221,13 @@ fn short_row(ui: &mut egui::Ui, layer: &mut Layer, current: u64, action: &mut Op
         }
         let (swatch, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
         ui.painter().rect_filled(swatch, 3.0, rgb(layer.rgb()));
-        let name = ui.add(egui::Label::new(&layer.name).sense(egui::Sense::click())).on_hover_text(op_help(layer.op));
+        // Name (and the operation when the name doesn't already say it) in the room left of the toggles.
+        let text = if layer.name.eq_ignore_ascii_case(op_label(layer.op)) { layer.name.clone() } else { format!("{}  ·  {}", layer.name, op_label(layer.op)) };
+        let room = (ui.available_width() - 2.0 * 26.0 - 4.0).max(40.0);
+        let name = ui.add_sized([room, 20.0], egui::Label::new(text).truncate().sense(egui::Sense::click())).on_hover_text(format!("{}: {}", op_label(layer.op), op_help(layer.op)));
         if name.clicked() {
             *action = Some(Action::Current(layer.id));
         }
-        ui.label(RichText::new(op_label(layer.op)).weak().small());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             // Right to left: lock first.
             let mut changed = false;
