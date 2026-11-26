@@ -51,7 +51,16 @@ impl App {
                 });
             }
             // Once the centre is down, sides and radius are in the measurement fields below.
-            (Cmd::Polygon, _) if self.draft.is_empty() => {
+            (Cmd::Polygon, _) => {
+                ui.horizontal(|ui| {
+                    ui.label("Size to");
+                    ui.selectable_value(&mut self.cmdline.polygon_flat, false, "a corner");
+                    ui.selectable_value(&mut self.cmdline.polygon_flat, true, "a side");
+                });
+                // Once the centre is down, the sides are also in the measurement fields.
+                if !self.draft.is_empty() {
+                    return;
+                }
                 ui.horizontal(|ui| {
                     ui.label("Sides");
                     ui.add(DragValue::new(&mut self.sides).range(3..=64));

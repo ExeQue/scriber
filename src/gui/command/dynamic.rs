@@ -44,7 +44,7 @@ impl Kind {
             Kind::LengthAngle => &[("Length", "mm"), ("Angle", "°")],
             Kind::Size => &[("Width", "mm"), ("Height", "mm")],
             Kind::Sweep => &[("Angle", "°")],
-            Kind::Polygon => &[("Radius", "mm"), ("Sides", "")],
+            Kind::Polygon => &[("Diameter", "mm"), ("Sides", "")],
             Kind::Height => &[("Height", "mm")],
             Kind::Angle => &[("Angle", "°")],
             Kind::Factor => &[("Factor", "×")],
@@ -145,7 +145,8 @@ impl App {
     fn live(&self, kind: Kind, p: Point) -> [f64; 2] {
         let Some(last) = self.dyn_base() else { return [0.0; 2] };
         match kind {
-            Kind::Radius { .. } | Kind::Polygon => [distance(last, p), 0.0],
+            Kind::Radius { .. } => [distance(last, p), 0.0],
+            Kind::Polygon => [2.0 * distance(last, p), 0.0],
             Kind::LengthAngle => [distance(last, p), (last[1] - p[1]).atan2(p[0] - last[0]).to_degrees()],
             // From the centre the size is twice the offset.
             Kind::Size if self.rect_in(Cmd::Rectang, RectMode::Center) => [2.0 * (p[0] - last[0]).abs(), 2.0 * (p[1] - last[1]).abs()],
@@ -183,7 +184,8 @@ impl App {
         let [a, b] = self.effective(kind, pointer);
         Some(match kind {
             Kind::Radius { .. } if cmd == Some(Cmd::Arc) => self.curve_number(Cmd::Arc, a, Some(pointer))?,
-            Kind::Radius { .. } | Kind::Polygon => toward(last, Some(pointer), a),
+            Kind::Radius { .. } => toward(last, Some(pointer), a),
+            Kind::Polygon => toward(last, Some(pointer), a / 2.0),
             Kind::Sweep => self.curve_number(cmd?, a, Some(pointer))?,
             // Angles are counter-clockwise on screen; the model's y points down.
             Kind::LengthAngle => [last[0] + a * b.to_radians().cos(), last[1] - a * b.to_radians().sin()],

@@ -103,6 +103,9 @@ impl App {
             Cmd::Arc if n == 1 && *arc == ArcMode::ThreePoint && is_option(word, "Center") => *arc = ArcMode::StartCenterEnd,
             Cmd::Arc if n == 1 && *arc == ArcMode::ThreePoint && is_option(word, "End") => *arc = ArcMode::StartEndRadius,
             Cmd::Circle if n == 0 && word == "3P" => *circle = CircleMode::ThreePoint,
+            Cmd::Polygon if is_option(word, "Inscribed") => self.cmdline.polygon_flat = false,
+            Cmd::Polygon if is_option(word, "Circumscribed") => self.cmdline.polygon_flat = true,
+            Cmd::Polygon if n == 0 && is_option(word, "Sides") => self.set_step(super::Step::Sides),
             Cmd::Rectang if n == 0 && is_option(word, "Center") => self.cmdline.rect_mode = super::rects::RectMode::Center,
             Cmd::Rectang if n == 0 && word == "3P" => self.cmdline.rect_mode = super::rects::RectMode::ThreePoint,
             Cmd::Circle if n == 0 && word == "2P" => *circle = CircleMode::TwoPoint,
@@ -130,6 +133,9 @@ impl App {
     /// The shape the placed points make, in the current mode; other tools use `Tool::shape`.
     pub(in crate::gui) fn draft_shape(&self, pts: &[Point]) -> Option<(&'static str, Shape)> {
         let cmd = self.active_cmd();
+        if cmd == Some(Cmd::Polygon) {
+            return self.polygon_shape(pts).map(|s| ("polygon", s));
+        }
         if cmd == Some(Cmd::Rectang) {
             return self.rect_shape(pts).map(|s| ("rectangle", s));
         }

@@ -13,6 +13,7 @@ mod guide;
 mod infer;
 mod modify;
 mod parse;
+mod polygons;
 mod rects;
 mod preview;
 mod reshape;
@@ -245,6 +246,8 @@ pub struct CommandLine {
     /// How ARC and CIRCLE are drawn (the last way used).
     arc_mode: curves::ArcMode,
     rect_mode: rects::RectMode,
+    /// POLYGON measures to the middle of a side instead of a corner.
+    polygon_flat: bool,
     /// Measurements on the command card (radius, length and angle, …).
     dynamic: dynamic::DynInput,
     circle_mode: curves::CircleMode,
@@ -270,6 +273,7 @@ impl CommandLine {
             modify: modify::ModifyState::new(),
             arc_mode: curves::ArcMode::default(),
             rect_mode: rects::RectMode::default(),
+            polygon_flat: false,
             dynamic: dynamic::DynInput::default(),
             circle_mode: curves::CircleMode::default(),
             constrain: constrain::ConstrainState::default(),
@@ -321,7 +325,6 @@ impl App {
             c if c.modifies() => self.start_modify(c),
             c if c.constrains() => self.start_constrain(c),
             c if c.ux() => self.start_ux(c),
-            Cmd::Polygon => self.begin(cmd, Step::Sides),
             _ => self.begin(cmd, Step::Draw),
         }
     }
