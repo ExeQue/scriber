@@ -16,6 +16,7 @@ pub mod preflight;
 pub mod preview;
 pub mod text;
 pub mod turn;
+pub mod workspace;
 
 pub use geom::{BBox, Contour, Point, Transform};
 pub use guides::Guide;
@@ -23,6 +24,7 @@ pub use item::{Item, Op, Shape};
 pub use layer::{Layer, Overrides};
 pub use constraints::{Constraint, Kind, Ref};
 pub use ops::BoolOp;
+pub use workspace::Workspace;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
