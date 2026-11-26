@@ -405,6 +405,34 @@ mod tests {
 
     /// The real input path: `aim` as the canvas calls it each frame, with the pointer resting and moving.
     #[test]
+    fn otrack_works_with_polar_off() {
+        use crate::gui::command::Cmd;
+        use crate::model::{Contour, Document, Op, Shape};
+        use std::sync::{Arc, Mutex};
+        let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
+        let mut app = App::new(doc.clone(), Err(String::new()));
+        doc.lock().unwrap().add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 0.0])));
+        let items = doc.lock().unwrap().s.items.clone();
+        app.aids.polar = false;
+        app.start(Cmd::Line);
+        let t0 = Instant::now();
+        let ms = |n: u64| t0 + Duration::from_millis(n);
+        let aim = |app: &mut App, p: Point, from: Option<Point>, t: Instant| {
+            app.aids.hit = None;
+            app.aids.tracking = None;
+            app.aim_at_time(&items, p, from, t)
+        };
+        aim(&mut app, [40.2, 0.1], None, ms(0));
+        aim(&mut app, [40.2, 0.1], None, ms(600));
+        assert_eq!(app.tracker.points, vec![[40.0, 0.0]]);
+        // Straight below the acquired point, with and without a placed first point.
+        let p = aim(&mut app, [40.5, 30.0], None, ms(700));
+        assert!(close(p, [40.0, 30.0]), "no from: {p:?}");
+        let p = aim(&mut app, [40.5, 30.0], Some([10.0, 50.0]), ms(800));
+        assert!(close(p, [40.0, 30.0]), "with from: {p:?}");
+    }
+
+    #[test]
     fn otrack_acquires_on_rest_and_snaps_to_crossing_guides() {
         use crate::gui::command::Cmd;
         use crate::model::{Contour, Document, Op, Shape};

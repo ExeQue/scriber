@@ -23,6 +23,7 @@ mod panels;
 mod parameters;
 mod preview;
 mod select;
+mod settings;
 mod snap;
 mod svg_import;
 mod toolbar;
@@ -141,6 +142,8 @@ struct App {
     hover: Option<(u64, std::time::Instant)>,
     /// View > Measure on hover (else hold Ctrl), and the last two snap points pointed at.
     measure_hover: bool,
+    /// The settings as last saved (status bar toggles, view choices).
+    saved_settings: settings::Settings,
     measure_pts: (Option<Point>, Option<Point>),
     /// The grip the pointer rests on (since when), and the grip whose menu is open.
     grip_rest: Option<(grips::Grip, std::time::Instant)>,
@@ -172,7 +175,9 @@ pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
         Box::new(move |cc| {
             let ctx = cc.egui_ctx.clone();
             let mcp = mcp::listen(shared.clone(), Arc::new(move || ctx.request_repaint())).map_err(|e| e.to_string());
-            Ok(Box::new(App::new(shared, mcp)))
+            let mut app = App::new(shared, mcp);
+            app.apply_settings(settings::load());
+            Ok(Box::new(app))
         }),
     )
     .map_err(|e| anyhow::anyhow!("{e}"))
@@ -239,6 +244,7 @@ impl App {
             cycle: cycle::Cycle::default(),
             hover: None,
             measure_hover: false,
+            saved_settings: settings::Settings::default(),
             measure_pts: (None, None),
             grip_rest: None,
             grip_menu: None,
@@ -523,6 +529,7 @@ impl eframe::App for App {
         if self.confirm_close {
             self.close_dialog(&ctx);
         }
+        self.save_settings_if_changed();
     }
 }
 
