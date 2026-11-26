@@ -46,6 +46,10 @@ impl App {
         if ui.button("Cancel").clicked() {
             self.escape();
         }
+        // The running tool's settings (radius, sides, height, mode, …), as on the command card.
+        ui.separator();
+        self.card_fields(ui, cmd, step);
+        self.dyn_fields(ui);
         let placed = self.draft.len();
         let options: &[(&str, &str)] = match (cmd, step) {
             (Cmd::Pline, Step::Draw) if placed >= 3 => &[("Close shape", "CLOSE"), ("Undo last point", "UNDO")],

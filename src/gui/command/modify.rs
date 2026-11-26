@@ -52,7 +52,9 @@ impl App {
         m.centre = None;
         m.polar = false;
         match cmd {
-            Cmd::Fillet | Cmd::Chamfer | Cmd::Offset => self.begin(cmd, Step::Value),
+            // FILLET/CHAMFER start picking at once with the last radius/distance (it can be changed on the card).
+            Cmd::Fillet | Cmd::Chamfer => self.pick(cmd),
+            Cmd::Offset => self.begin(cmd, Step::Value),
             Cmd::Trim => self.pick(cmd),
             _ => {
                 self.begin(cmd, Step::Choose);

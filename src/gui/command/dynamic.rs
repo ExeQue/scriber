@@ -60,6 +60,25 @@ pub struct DynInput {
     key: Option<(Cmd, Step, usize)>,
 }
 
+/// The character a number key types, for starting dynamic input without a focused field.
+fn key_char(key: Key) -> Option<char> {
+    Some(match key {
+        Key::Num0 => '0',
+        Key::Num1 => '1',
+        Key::Num2 => '2',
+        Key::Num3 => '3',
+        Key::Num4 => '4',
+        Key::Num5 => '5',
+        Key::Num6 => '6',
+        Key::Num7 => '7',
+        Key::Num8 => '8',
+        Key::Num9 => '9',
+        Key::Minus => '-',
+        Key::Period | Key::Comma => '.',
+        _ => return None,
+    })
+}
+
 fn field_id(i: usize) -> egui::Id {
     egui::Id::unique("dynamic-input").with(i)
 }
@@ -177,11 +196,18 @@ impl App {
         // Start typing anywhere: the first number goes into the first field.
         if focused.is_none() && !ctx.text_edit_focused() {
             let typed: Option<String> = ctx.input_mut(|i| {
-                let pos = i.events.iter().position(|e| matches!(e, Event::Text(t) if t.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-')))?;
-                match i.events.remove(pos) {
-                    Event::Text(t) => Some(t),
-                    _ => None,
+                // Text events carry the character; without a focused text field some platforms only
+                // send key presses, so map number keys too.
+                let is_number = |t: &str| !t.is_empty() && t.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ',' || c == '-');
+                if let Some(pos) = i.events.iter().position(|e| matches!(e, Event::Text(t) if is_number(t))) {
+                    let Event::Text(t) = i.events.remove(pos) else { return None };
+                    // Drop the matching key press, so it is not seen twice.
+                    i.events.retain(|e| !matches!(e, Event::Key { key, pressed: true, .. } if key_char(*key).is_some()));
+                    return Some(t.replace(',', "."));
                 }
+                let pos = i.events.iter().position(|e| matches!(e, Event::Key { key, pressed: true, modifiers, .. } if key_char(*key).is_some() && !modifiers.command && !modifiers.alt))?;
+                let Event::Key { key, .. } = i.events.remove(pos) else { return None };
+                key_char(key).map(String::from)
             });
             if let Some(t) = typed {
                 self.cmdline.dynamic.texts[0] = t;
@@ -192,7 +218,7 @@ impl App {
         if let Some(i) = focused
             && ctx.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, Key::Tab))
         {
-            if let Ok(v) = self.cmdline.dynamic.texts[i].trim().parse::<f64>() {
+            if let Ok(v) = self.cmdline.dynamic.texts[i].trim().replace(',', ".").parse::<f64>() {
                 self.set_field(kind, i, v);
             }
             let next = (i + 1) % count;
@@ -218,7 +244,7 @@ impl App {
                         let edit = TextEdit::singleline(&mut self.cmdline.dynamic.texts[i]).id(field_id(i)).hint_text(hint).desired_width(64.0);
                         let r = ui.add(edit);
                         if r.changed()
-                            && let Ok(v) = self.cmdline.dynamic.texts[i].trim().parse::<f64>()
+                            && let Ok(v) = self.cmdline.dynamic.texts[i].trim().replace(',', ".").parse::<f64>()
                         {
                             self.set_field(kind, i, v);
                         }

@@ -35,7 +35,7 @@ impl App {
     }
 
     /// The settings and options for this command and step.
-    fn card_fields(&mut self, ui: &mut egui::Ui, cmd: Cmd, step: Step) {
+    pub(super) fn card_fields(&mut self, ui: &mut egui::Ui, cmd: Cmd, step: Step) {
         match (cmd, step) {
             (Cmd::Rectang, _) => {
                 ui.horizontal(|ui| {

@@ -65,7 +65,7 @@ impl App {
         let mut open = true;
         let s = self.doc.lock().unwrap().s.clone();
         let mut change = None;
-        egui::Window::new("Parameters").open(&mut open).resizable(false).show(ctx, |ui| {
+        egui::Window::new("Parameters").pivot(egui::Align2::CENTER_CENTER).default_pos(ctx.content_rect().center()).open(&mut open).resizable(false).show(ctx, |ui| {
             if !s.constraints.iter().any(|c| c.kind.is_dimension()) {
                 ui.label("No locked sizes yet. Use the Lock sizes buttons (DCLINEAR, DCRADIUS, …) to add some.");
                 return;
