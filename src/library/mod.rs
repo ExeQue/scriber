@@ -7,7 +7,7 @@ mod materials;
 pub mod store;
 
 pub use machines::{Laser, LaserKind, Machine};
-pub use materials::{Material, Operation, Setting};
+pub use materials::{Category, Material, Operation, Setting};
 
 use std::sync::{LazyLock, Mutex, MutexGuard};
 

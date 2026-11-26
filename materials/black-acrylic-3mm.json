@@ -1,6 +1,7 @@
 {
   "id": "black-acrylic-3mm",
   "name": "Black acrylic 3 mm",
+  "category": "acrylic",
   "thickness": 3,
   "notes": "",
   "source": "xTool M2 FAQ, recommended cutting settings, https://support.xtool.com/article/3324, read 2026-11-26. All at 100 % power.",

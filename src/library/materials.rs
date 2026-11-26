@@ -42,7 +42,7 @@ pub struct Setting {
     pub speed: f64,
     #[serde(default = "one")]
     pub passes: u32,
-    /// Engrave only: distance between engraved lines in mm (lines per cm = 10 / this).
+    /// Engrave only: distance between engraved lines in mm. People see it as lines per cm = 10 / this (0.1 mm = 100 lines/cm).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_interval: Option<f64>,
     /// Engrave only: engrave in both directions.
@@ -59,7 +59,7 @@ impl Setting {
     pub fn hint(&self) -> String {
         let mut s = format!("{} % · {} mm/s · {}×", self.power, self.speed, self.passes);
         if let Some(i) = self.line_interval.filter(|i| *i > 0.0) {
-            s += &format!(" · {i} mm ({:.0} lines/cm)", 10.0 / i);
+            s += &format!(" · {} lines/cm", (100.0 / i).round() / 10.0);
         }
         if self.bidirectional == Some(true) {
             s += " · both ways";
@@ -78,11 +78,50 @@ impl Setting {
     }
 }
 
+/// What kind of material it is, so a long list can be filtered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Category {
+    Paper,
+    Wood,
+    Plywood,
+    Acrylic,
+    Leather,
+    Fabric,
+    Metal,
+    Stone,
+    Glass,
+    #[default]
+    Other,
+}
+
+impl Category {
+    pub const ALL: [Category; 10] = [Category::Paper, Category::Wood, Category::Plywood, Category::Acrylic, Category::Leather, Category::Fabric, Category::Metal, Category::Stone, Category::Glass, Category::Other];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Category::Paper => "Paper & card",
+            Category::Wood => "Wood",
+            Category::Plywood => "Plywood & MDF",
+            Category::Acrylic => "Acrylic",
+            Category::Leather => "Leather",
+            Category::Fabric => "Fabric & felt",
+            Category::Metal => "Metal",
+            Category::Stone => "Stone & tile",
+            Category::Glass => "Glass",
+            Category::Other => "Other",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Material {
     /// Unique key, e.g. "basswood-plywood-3mm".
     pub id: String,
     pub name: String,
+    /// Missing in older files: Other.
+    #[serde(default)]
+    pub category: Category,
     /// Thickness in mm.
     pub thickness: f64,
     #[serde(default)]
@@ -124,5 +163,18 @@ impl Material {
             return Err(format!("{}: thickness cannot be negative", self.name));
         }
         self.settings.iter().try_for_each(|s| s.check().map_err(|e| format!("{}: {e}", self.name)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hint_shows_lines_per_cm() {
+        let mut s = Setting { machine: "m".into(), laser: "l".into(), operation: Operation::Engrave, power: 30.0, speed: 200.0, passes: 1, line_interval: Some(0.1), bidirectional: Some(true) };
+        assert_eq!(s.hint(), "30 % · 200 mm/s · 1× · 100 lines/cm · both ways");
+        s.line_interval = Some(0.07);
+        assert_eq!(s.hint(), "30 % · 200 mm/s · 1× · 142.9 lines/cm · both ways");
     }
 }

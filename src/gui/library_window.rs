@@ -1,9 +1,16 @@
 //! The "Machines & materials" window, and the machine/material pickers in the ribbon's Laser tab.
 
 use super::App;
-use crate::library::{self, Laser, LaserKind, Library, Machine, Material, Operation, Setting};
-use crate::model::Document;
-use eframe::egui::{self, Color32, ComboBox, DragValue, RichText};
+use crate::library::{self, Library, Operation};
+use crate::model::{Document, State};
+use eframe::egui::{self, Color32, ComboBox, RichText};
+use material_list::{Filter, Picked};
+use widgets::Confirm;
+
+mod machines;
+mod material_list;
+mod materials;
+mod widgets;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
@@ -18,43 +25,58 @@ pub(super) struct Editor {
     machine: usize,
     material: usize,
     error: String,
+    /// The document's machine and laser: the material list's dots show the settings for them.
+    doc_machine: Option<String>,
+    doc_laser: Option<String>,
+    filter: Filter,
+    /// A delete waiting for "yes".
+    confirm: Option<Confirm>,
 }
 
 impl Editor {
-    pub(super) fn new() -> Self {
-        Self { lib: library::get().clone(), tab: Tab::Machines, machine: 0, material: 0, error: String::new() }
+    /// Opens on the document's machine and material.
+    pub(super) fn new(s: &State) -> Self {
+        let lib = library::get().clone();
+        let index = |list: Vec<&String>, id: &Option<String>| list.iter().position(|i| Some(*i) == id.as_ref()).unwrap_or(0);
+        let machine = index(lib.machines.iter().map(|m| &m.id).collect(), &s.machine);
+        let material = index(lib.materials.iter().map(|m| &m.id).collect(), &s.material);
+        Self { lib, tab: Tab::Machines, machine, material, error: String::new(), doc_machine: s.machine.clone(), doc_laser: s.laser.clone(), filter: Filter::default(), confirm: None }
     }
-}
-
-enum ListAction {
-    Add,
-    Duplicate,
-    Delete,
 }
 
 impl App {
     pub(super) fn library_window(&mut self, ctx: &egui::Context) {
         let Some(ed) = &mut self.library else { return };
         let mut close = false;
+        // A fixed size that still fits small screens, so the layout does not jump between pages.
+        let screen = ctx.content_rect().size();
+        let size = egui::vec2((screen.x - 80.0).clamp(560.0, 980.0), (screen.y - 220.0).clamp(300.0, 560.0));
         // A centred modal: the drawing waits until the user saves or cancels.
         let modal = egui::Modal::new(egui::Id::unique("library-modal")).show(ctx, |ui| {
-            ui.set_width(900.0);
+            ui.set_width(size.x);
             ui.horizontal(|ui| {
                 ui.heading("Machines & materials");
-                ui.add_space(16.0);
+                ui.add_space(24.0);
                 ui.selectable_value(&mut ed.tab, Tab::Machines, RichText::new("Machines").size(15.0));
                 ui.selectable_value(&mut ed.tab, Tab::Materials, RichText::new("Materials").size(15.0));
             });
+            ui.add_space(4.0);
             ui.separator();
-            ui.allocate_ui(egui::vec2(900.0, 460.0), |ui| match ed.tab {
-                Tab::Machines => machines_tab(ui, ed),
-                Tab::Materials => materials_tab(ui, ed),
+            ui.add_space(4.0);
+            ui.allocate_ui(size, |ui| {
+                ui.set_min_size(size);
+                match ed.tab {
+                    Tab::Machines => machines::page(ui, ed),
+                    Tab::Materials => materials::page(ui, ed),
+                }
             });
+            ui.add_space(4.0);
             ui.separator();
             ui.horizontal(|ui| {
                 ui.label(RichText::new(&ed.error).color(Color32::from_rgb(230, 90, 80)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(RichText::new("Save").strong()).clicked() {
+                    let save = egui::Button::new(RichText::new("Save").strong().color(Color32::WHITE)).fill(ui.visuals().selection.bg_fill).min_size(egui::vec2(90.0, 28.0));
+                    if ui.add(save).clicked() {
                         let lib = ed.lib.clone();
                         match library::update(|l| {
                             *l = lib;
@@ -64,259 +86,23 @@ impl App {
                             Err(e) => ed.error = e,
                         }
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.add(egui::Button::new("Cancel").min_size(egui::vec2(90.0, 28.0))).clicked() {
                         close = true;
                     }
                 });
             });
         });
+        // Shown after the window, so it sits on top of it.
+        let answer = ed.confirm.as_ref().and_then(|c| widgets::confirm_modal(ctx, &c.question));
+        match (answer, ed.confirm.take()) {
+            (Some(true), Some(c)) => (c.apply)(&mut ed.lib),
+            (None, c) => ed.confirm = c,
+            _ => {}
+        }
         let open = !modal.should_close();
         if !open || close {
             self.library = None;
         }
-    }
-}
-
-/// The list on the left with Add / Duplicate / Delete.
-fn list(ui: &mut egui::Ui, names: Vec<&str>, selected: &mut usize) -> Option<ListAction> {
-    let mut action = None;
-    ui.vertical(|ui| {
-        ui.set_width(200.0);
-        egui::ScrollArea::vertical().id_salt("list").max_height(380.0).show(ui, |ui| {
-            for (i, name) in names.iter().enumerate() {
-                if ui.selectable_label(*selected == i, *name).clicked() {
-                    *selected = i;
-                }
-            }
-        });
-        ui.horizontal(|ui| {
-            if ui.button("Add").clicked() {
-                action = Some(ListAction::Add);
-            }
-            if !names.is_empty() && ui.button("Duplicate").clicked() {
-                action = Some(ListAction::Duplicate);
-            }
-            if !names.is_empty() && ui.button("Delete").clicked() {
-                action = Some(ListAction::Delete);
-            }
-        });
-    });
-    action
-}
-
-fn machines_tab(ui: &mut egui::Ui, ed: &mut Editor) {
-    ui.horizontal_top(|ui| {
-        let names = ed.lib.machines.iter().map(|m| m.name.as_str()).collect();
-        let action = list(ui, names, &mut ed.machine);
-        let lib = &mut ed.lib;
-        match action {
-            Some(ListAction::Add) => {
-                let laser = Laser { id: "laser-1".into(), name: "Laser".into(), kind: LaserKind::Diode, power_w: 10.0, ops: Operation::ALL.to_vec(), area: None };
-                let m = Machine { id: lib.new_id("New machine"), name: "New machine".into(), vendor: String::new(), model: String::new(), width: 400.0, height: 300.0, lasers: vec![laser], notes: String::new(), source: String::new() };
-                lib.machines.push(m);
-                ed.machine = lib.machines.len() - 1;
-            }
-            Some(ListAction::Duplicate) => {
-                let mut m = lib.machines[ed.machine].clone();
-                m.name += " (copy)";
-                m.id = lib.new_id(&m.name);
-                lib.machines.push(m);
-                ed.machine = lib.machines.len() - 1;
-            }
-            Some(ListAction::Delete) => {
-                let id = lib.machines[ed.machine].id.clone();
-                lib.remove_machine(&id);
-            }
-            None => {}
-        }
-        ed.machine = ed.machine.min(lib.machines.len().saturating_sub(1));
-        ui.separator();
-        if let Some(m) = lib.machines.get_mut(ed.machine) {
-            egui::ScrollArea::vertical().id_salt("machine").show(ui, |ui| ui.vertical(|ui| machine_form(ui, m)));
-        }
-    });
-}
-
-fn machine_form(ui: &mut egui::Ui, m: &mut Machine) {
-    egui::Grid::new("machine_form").num_columns(2).show(ui, |ui| {
-        ui.label("Name");
-        ui.text_edit_singleline(&mut m.name);
-        ui.end_row();
-        ui.label("Brand");
-        ui.text_edit_singleline(&mut m.vendor);
-        ui.end_row();
-        ui.label("Model");
-        ui.text_edit_singleline(&mut m.model);
-        ui.end_row();
-        ui.label("Work area").on_hover_text("The largest area the laser can reach, in mm");
-        ui.horizontal(|ui| {
-            ui.add(DragValue::new(&mut m.width).range(1.0..=5000.0).suffix(" mm"));
-            ui.label("×");
-            ui.add(DragValue::new(&mut m.height).range(1.0..=5000.0).suffix(" mm"));
-        });
-        ui.end_row();
-    });
-    ui.add_space(6.0);
-    ui.strong("Lasers");
-    let mut remove = None;
-    // One row per laser module, like a table.
-    egui::Grid::new("lasers").num_columns(4 + Operation::ALL.len()).striped(true).spacing([12.0, 6.0]).show(ui, |ui| {
-        for h in ["Name", "Type", "Power"] {
-            ui.label(RichText::new(h).weak());
-        }
-        for op in Operation::ALL {
-            ui.label(RichText::new(op.label()).weak()).on_hover_text("This laser can do it");
-        }
-        ui.label("");
-        ui.end_row();
-        for (i, l) in m.lasers.iter_mut().enumerate() {
-            ui.push_id(i, |ui| {
-                ui.add(egui::TextEdit::singleline(&mut l.name).desired_width(150.0));
-            });
-            ComboBox::from_id_salt(("kind", i)).selected_text(l.kind.label()).width(110.0).show_ui(ui, |ui| {
-                for k in LaserKind::ALL {
-                    ui.selectable_value(&mut l.kind, k, k.label());
-                }
-            });
-            ui.add(DragValue::new(&mut l.power_w).range(0.1..=500.0).suffix(" W"));
-            for op in Operation::ALL {
-                let mut on = l.ops.contains(&op);
-                if ui.checkbox(&mut on, "").changed() {
-                    l.ops.retain(|o| *o != op);
-                    if on {
-                        l.ops.push(op);
-                    }
-                }
-            }
-            if ui.small_button("🗑").on_hover_text("Remove this laser").clicked() {
-                remove = Some(i);
-            }
-            ui.end_row();
-        }
-    });
-    if let Some(i) = remove {
-        m.lasers.remove(i);
-    }
-    if ui.button("Add laser").clicked() {
-        let id = (1..).map(|n| format!("laser-{n}")).find(|id| m.laser(id).is_none()).unwrap();
-        m.lasers.push(Laser { id, name: "Laser".into(), kind: LaserKind::Diode, power_w: 10.0, ops: Operation::ALL.to_vec(), area: None });
-    }
-    ui.add_space(6.0);
-    ui.label("Notes");
-    ui.add(egui::TextEdit::multiline(&mut m.notes).desired_width(f32::INFINITY).desired_rows(3));
-    ui.label("Where the numbers come from");
-    ui.add(egui::TextEdit::multiline(&mut m.source).desired_width(f32::INFINITY).desired_rows(3));
-}
-
-fn materials_tab(ui: &mut egui::Ui, ed: &mut Editor) {
-    ui.horizontal_top(|ui| {
-        let names = ed.lib.materials.iter().map(|m| m.name.as_str()).collect();
-        let action = list(ui, names, &mut ed.material);
-        let lib = &mut ed.lib;
-        match action {
-            Some(ListAction::Add) => {
-                let m = Material { id: lib.new_id("New material"), name: "New material".into(), thickness: 3.0, notes: String::new(), source: String::new(), settings: Vec::new() };
-                lib.materials.push(m);
-                ed.material = lib.materials.len() - 1;
-            }
-            Some(ListAction::Duplicate) => {
-                let mut m = lib.materials[ed.material].clone();
-                m.name += " (copy)";
-                m.id = lib.new_id(&m.name);
-                lib.materials.push(m);
-                ed.material = lib.materials.len() - 1;
-            }
-            Some(ListAction::Delete) => {
-                let id = lib.materials[ed.material].id.clone();
-                lib.remove_material(&id);
-            }
-            None => {}
-        }
-        ed.material = ed.material.min(lib.materials.len().saturating_sub(1));
-        ui.separator();
-        let Library { machines, materials, .. } = lib;
-        if let Some(m) = materials.get_mut(ed.material) {
-            egui::ScrollArea::vertical().id_salt("material").show(ui, |ui| ui.vertical(|ui| material_form(ui, m, machines)));
-        }
-    });
-}
-
-fn material_form(ui: &mut egui::Ui, m: &mut Material, machines: &[Machine]) {
-    egui::Grid::new("material_form").num_columns(2).show(ui, |ui| {
-        ui.label("Name");
-        ui.text_edit_singleline(&mut m.name);
-        ui.end_row();
-        ui.label("Thickness");
-        ui.add(DragValue::new(&mut m.thickness).range(0.0..=100.0).speed(0.1).suffix(" mm"));
-        ui.end_row();
-    });
-    ui.add_space(6.0);
-    ui.strong("Laser settings").on_hover_text("Power, speed and passes for each machine, laser and operation");
-    let mut remove = None;
-    egui::Grid::new("settings").num_columns(9).striped(true).show(ui, |ui| {
-        for h in ["Machine", "Laser", "Operation", "Power", "Speed", "Passes", "Line spacing", "Both ways", ""] {
-            ui.label(RichText::new(h).weak());
-        }
-        ui.end_row();
-        for (i, s) in m.settings.iter_mut().enumerate() {
-            ui.push_id(i, |ui| setting_row(ui, s, machines));
-            if ui.button("Remove").clicked() {
-                remove = Some(i);
-            }
-            ui.end_row();
-        }
-    });
-    if let Some(i) = remove {
-        m.settings.remove(i);
-    }
-    if let Some(machine) = machines.first()
-        && ui.button("Add setting").clicked()
-    {
-        let laser = machine.lasers.first().map(|l| l.id.clone()).unwrap_or_default();
-        m.settings.push(Setting { machine: machine.id.clone(), laser, operation: Operation::Cut, power: 100.0, speed: 10.0, passes: 1, line_interval: None, bidirectional: None });
-    }
-    ui.add_space(6.0);
-    ui.label("Notes");
-    ui.add(egui::TextEdit::multiline(&mut m.notes).desired_width(f32::INFINITY).desired_rows(3));
-    ui.label("Where the settings come from");
-    ui.add(egui::TextEdit::multiline(&mut m.source).desired_width(f32::INFINITY).desired_rows(3));
-}
-
-/// Eight grid cells for one setting.
-fn setting_row(ui: &mut egui::Ui, s: &mut Setting, machines: &[Machine]) {
-    let machine = machines.iter().find(|m| m.id == s.machine);
-    ComboBox::from_id_salt("machine").selected_text(machine.map_or(s.machine.as_str(), |m| &m.name)).show_ui(ui, |ui| {
-        for m in machines {
-            if ui.selectable_label(s.machine == m.id, &m.name).clicked() && s.machine != m.id {
-                s.machine = m.id.clone();
-                s.laser = m.lasers.first().map(|l| l.id.clone()).unwrap_or_default();
-            }
-        }
-    });
-    let lasers = machine.map(|m| m.lasers.as_slice()).unwrap_or_default();
-    let laser_name = lasers.iter().find(|l| l.id == s.laser).map_or(s.laser.as_str(), |l| &l.name);
-    ComboBox::from_id_salt("laser").selected_text(laser_name).show_ui(ui, |ui| {
-        for l in lasers {
-            ui.selectable_value(&mut s.laser, l.id.clone(), &l.name);
-        }
-    });
-    ComboBox::from_id_salt("op").selected_text(s.operation.label()).show_ui(ui, |ui| {
-        for op in Operation::ALL {
-            ui.selectable_value(&mut s.operation, op, op.label());
-        }
-    });
-    ui.add(DragValue::new(&mut s.power).range(0.0..=100.0).suffix(" %"));
-    ui.add(DragValue::new(&mut s.speed).range(0.1..=2000.0).suffix(" mm/s"));
-    ui.add(DragValue::new(&mut s.passes).range(1..=50).suffix("×"));
-    if s.operation == Operation::Engrave {
-        let interval = s.line_interval.get_or_insert(0.1);
-        ui.add(DragValue::new(interval).range(0.01..=2.0).speed(0.005).suffix(" mm"))
-            .on_hover_text(format!("Distance between engraved lines: {:.0} lines per cm", 10.0 / *interval));
-        ui.checkbox(s.bidirectional.get_or_insert(false), "").on_hover_text("Engrave in both directions (faster)");
-    } else {
-        (s.line_interval, s.bidirectional) = (None, None);
-        ui.label("");
-        ui.label("");
     }
 }
 
@@ -351,12 +137,26 @@ pub(super) fn pickers(ui: &mut egui::Ui, d: &mut Document) {
         });
         ui.horizontal(|ui| {
             ui.label(RichText::new("Material").weak());
-            ComboBox::from_id_salt("doc_material").selected_text(material.map_or("None", |m| &m.name)).width(150.0).show_ui(ui, |ui| {
-                ui.selectable_value(&mut new_material, None, "None");
-                for m in &lib.materials {
-                    ui.selectable_value(&mut new_material, Some(m.id.clone()), &m.name);
+            // A button that opens the picker with search and kinds; its state lives in egui's memory.
+            let picker = egui::Id::unique("material-picker-state");
+            let text = format!("{}  ▾", material.map_or("None", |m| &m.name));
+            if ui.add(egui::Button::new(text).min_size(egui::vec2(150.0, 0.0))).on_hover_text("Choose the material").clicked() {
+                ui.data_mut(|data| data.insert_temp(picker, Filter { only_ready: s.machine.is_some(), ..Filter::default() }));
+            }
+            if let Some(mut f) = ui.data(|data| data.get_temp::<Filter>(picker)) {
+                match material_list::picker(ui.ctx(), &mut f, &lib, s.machine.as_deref(), s.laser.as_deref(), s.material.as_deref()) {
+                    Picked::Nothing => {
+                        ui.data_mut(|data| data.insert_temp(picker, f));
+                    }
+                    Picked::Closed => {
+                        ui.data_mut(|data| data.remove::<Filter>(picker));
+                    }
+                    Picked::Chose(id) => {
+                        new_material = id;
+                        ui.data_mut(|data| data.remove::<Filter>(picker));
+                    }
                 }
-            });
+            }
         });
         if let Some(m) = machine {
             let [w, h] = m.area(s.laser.as_deref());

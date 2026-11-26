@@ -28,8 +28,8 @@ The file name must be the machine's `id` plus `.json`.
 - `source` is required in practice: only put in numbers you can cite, and say which ones are unverified.
 
 Material presets work the same way in `../materials/` (one material per file, `id` = file name):
-`name`, `thickness` (mm), `notes`, `source`, and `settings`, each with `machine`, `laser`, `operation`,
-`power` (%), `speed` (mm/s), `passes`, and for `engrave` optionally `line_interval` (mm) and `bidirectional`.
+`name`, `category` (paper, wood, plywood, acrylic, leather, fabric, metal, stone, glass or other; missing = other), `thickness` (mm), `notes`, `source`, and `settings`, each with `machine`, `laser`, `operation`,
+`power` (%), `speed` (mm/s), `passes`, and for `engrave` optionally `line_interval` (mm between lines; the app shows it as lines per cm = 10 / `line_interval`, so 0.1 mm = 100 lines/cm) and `bidirectional`.
 Older files may say `fill`; it reads as `engrave`.
 Only add settings the vendor publishes, with the page in `source`.
 

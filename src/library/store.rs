@@ -123,7 +123,7 @@ mod tests {
         let path = temp("rt");
         let mut lib = merged(LibraryFile::default());
         lib.put_machine(k40());
-        let mut oak = Material { id: "oak".into(), name: "Oak 4 mm".into(), thickness: 4.0, notes: "smoky".into(), source: String::new(), settings: vec![] };
+        let mut oak = Material { id: "oak".into(), name: "Oak 4 mm".into(), category: crate::library::Category::Wood, thickness: 4.0, notes: "smoky".into(), source: String::new(), settings: vec![] };
         let fill = Setting { machine: "k40".into(), laser: "co2".into(), operation: Operation::Engrave, power: 30.0, speed: 200.0, passes: 1, line_interval: Some(0.1), bidirectional: Some(true) };
         oak.put(fill.clone());
         oak.put(Setting { power: 35.0, ..fill });

@@ -1,7 +1,7 @@
 //! MCP tools for machines, the material library and the document's laser setup.
 
 use super::{Server, ToolResult, fail, ok};
-use crate::library::{self, Machine, Material, Operation, Setting};
+use crate::library::{self, Category, Machine, Material, Operation, Setting};
 use crate::model::State;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::schemars::{self, JsonSchema};
@@ -41,6 +41,8 @@ pub struct SaveMaterial {
     pub name: Option<String>,
     /// mm
     pub thickness: Option<f64>,
+    /// What kind of material (for filtering); a new material without one is "other".
+    pub category: Option<Category>,
     pub notes: Option<String>,
 }
 
@@ -87,7 +89,7 @@ impl Server {
         ok(json!(library::get().machines))
     }
 
-    #[tool(description = "List the material library: each material with its thickness and laser settings per machine, laser module and operation (cut, score, engrave): power %, speed mm/s, passes, and for engrave the line interval in mm and bidirectional.")]
+    #[tool(description = "List the material library: each material with its thickness and laser settings per machine, laser module and operation (cut, score, engrave): power %, speed mm/s, passes, and for engrave line_interval (mm between lines; tell people lines per cm = 10 / line_interval) and bidirectional.")]
     fn list_materials(&self, Parameters(p): Parameters<ListMaterials>) -> ToolResult {
         let lib = library::get();
         let Some(machine) = p.machine else { return ok(json!(lib.materials)) };
@@ -175,11 +177,12 @@ impl Server {
                 None => {
                     let name = p.name.clone().ok_or("a new material needs a name")?;
                     let thickness = p.thickness.ok_or("a new material needs a thickness")?;
-                    Material { id: lib.new_id(&name), name, thickness, notes: String::new(), source: String::new(), settings: Vec::new() }
+                    Material { id: lib.new_id(&name), name, category: Category::Other, thickness, notes: String::new(), source: String::new(), settings: Vec::new() }
                 }
             };
             m.name = p.name.unwrap_or(m.name);
             m.thickness = p.thickness.unwrap_or(m.thickness);
+            m.category = p.category.unwrap_or(m.category);
             m.notes = p.notes.unwrap_or(m.notes);
             lib.put_material(m.clone());
             Ok(m)
@@ -190,7 +193,7 @@ impl Server {
         }
     }
 
-    #[tool(description = "Add or replace a material's setting for one machine, laser module and operation (cut, score, engrave; the old \"fill\" means engrave): power 0-100 %, speed mm/s, passes; for engrave also line_interval (mm) and bidirectional.")]
+    #[tool(description = "Add or replace a material's setting for one machine, laser module and operation (cut, score, engrave; the old \"fill\" means engrave): power 0-100 %, speed mm/s, passes; for engrave also line_interval and bidirectional. line_interval is the distance between engraved lines in mm; people think in lines per cm, so convert: line_interval = 10 / lines per cm (100 lines/cm = 0.1 mm), and report it back as lines per cm.")]
     fn set_material_setting(&self, Parameters(p): Parameters<SetMaterialSetting>) -> ToolResult {
         let r = library::update(|lib| {
             let machine = lib.machine(&p.setting.machine).ok_or(format!("no machine with id {}", p.setting.machine))?;

@@ -24,7 +24,7 @@ impl App {
         });
         panel(ui, "Library", |ui| {
             if self.small(ui, false, Icon::Glyph("⚙"), "Machines & materials…", "Your laser cutters and the power and speed to use for each material") {
-                self.library = Some(Editor::new());
+                self.library = Some(Editor::new(&doc.lock().unwrap().s));
             }
         });
     }
