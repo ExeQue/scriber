@@ -513,8 +513,9 @@ pub(super) fn arrow_head(painter: &egui::Painter, tip: Pos2, from: Pos2, color: 
 
 /// A small dark label next to the cursor.
 pub(super) fn tooltip(painter: &egui::Painter, at: Pos2, text: &str) {
-    let pos = at + vec2(16.0, 16.0);
+    // Above-right of the cursor: dynamic input's fields sit below-right.
     let galley = painter.layout_no_wrap(text.to_string(), FontId::proportional(12.0), Color32::WHITE);
+    let pos = at + vec2(16.0, -16.0 - galley.size().y);
     painter.rect_filled(Rect::from_min_size(pos, galley.size()).expand(3.0), 3.0, Color32::from_black_alpha(200));
     painter.galley(pos, galley, Color32::WHITE);
 }
