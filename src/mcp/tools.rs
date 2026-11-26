@@ -2,7 +2,7 @@
 
 use crate::export;
 use crate::model::constraints::attach;
-use crate::model::{BoolOp, Contour, Document, Op, Shape, Shared, Transform, text};
+use crate::model::{BoolOp, Contour, Document, Guide, Op, Shape, Shared, Transform, text};
 use base64::Engine;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
@@ -13,13 +13,14 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+mod editing;
 mod laser;
 
 const INSTRUCTIONS: &str = "Scriber is a 2D CAD program for laser cutters. You edit the document that is open in the user's Scriber window; every change shows there live and the user can undo it.
 Units are millimetres. Origin is the top-left corner of the material, x grows right, y grows DOWN (like SVG). Angles are degrees, positive = clockwise on screen.
 Each item has one op, as in xTool Studio: cut (red, cut through along the line), score (blue, mark a line), engrave (black, burn the whole area inside closed paths, text and images; an open path with engrave is scored) or no_output (grey, notes, dimensions and helpers for people, never lasered). Example: a coaster with an engraved face is two items with the same shape, one engrave and one cut.
 A path holds one or more contours; several contours make a compound path whose holes stay empty when engraved (even-odd). Use combine_items/break_apart to build or split them.
-CAD operations: fillet, chamfer, offset (also kerf compensation), boolean (union/difference/intersection), array_rectangular, array_polar and trim.
+CAD operations: fillet, chamfer, offset (also kerf compensation), boolean (union/difference/intersection), array_rectangular, array_polar, trim, stretch, join, explode, align, break_item, extend, lengthen, match_properties, group/ungroup, select_similar and quick_select. Guide lines (add_items kind xline/ray/centerline/centermark) help placing things and are never lasered or exported.
 Contours are polylines whose segments can be arcs: each vertex has a bulge = tan(sweep/4) for the segment to the next vertex (0 = straight). Prefer add_items with kind rect/circle/arc/polygon/line/polyline over building arcs by hand.
 Constraints (as in AutoCAD) bind geometry: add_constraint (coincident, parallel, tangent, …; the first object stays, the second moves), add_dimensional_constraint (a named parameter like d1 = 40 or d2 = d1 / 2 that drives the size), set_parameter, list_constraints, delete_constraints, auto_constrain. A reference names geometry in a path: {kind: point, item, vertex}, {kind: segment, item, segment} (segment k runs from vertex k to k+1; a circle is segment 0), {kind: centre, item, segment}, {kind: item, item}; contour defaults to 0. After every change the solver keeps all constraints satisfied, moving as little as possible; a change that cannot be satisfied is refused and undone, naming the conflicting constraints.
 Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. Call export_png without a path to look at the result.
@@ -59,6 +60,33 @@ pub enum ShapeInput {
     },
     /// A measurement from point 1 to point 2, drawn offset mm to the left of that direction.
     Dimension { x1: f64, y1: f64, x2: f64, y2: f64, #[serde(default = "default_dim_offset")] offset: f64 },
+    /// Guide line (construction line, never lasered or exported): endless through (x, y) at angle degrees (clockwise, 0 = right).
+    Xline { x: f64, y: f64, angle: f64 },
+    /// Guide ray from (x, y) to infinity at angle degrees.
+    Ray { x: f64, y: f64, angle: f64 },
+    /// Guide centre line between two lines: give `of` (the two line ids; it then follows them) or the end points.
+    Centerline {
+        #[serde(default)]
+        x1: f64,
+        #[serde(default)]
+        y1: f64,
+        #[serde(default)]
+        x2: f64,
+        #[serde(default)]
+        y2: f64,
+        #[serde(default)]
+        of: Vec<u64>,
+    },
+    /// Guide centre mark (cross) on a circle or arc: give `of` (its id; it then follows it) or centre and radius.
+    Centermark {
+        #[serde(default)]
+        cx: f64,
+        #[serde(default)]
+        cy: f64,
+        #[serde(default)]
+        r: f64,
+        of: Option<u64>,
+    },
 }
 
 fn default_dim_offset() -> f64 {
@@ -82,6 +110,10 @@ impl ShapeInput {
                 ("text", Shape::Text { x, y, size, text, rotation, font, bold, italic })
             }
             S::Dimension { x1, y1, x2, y2, offset } => ("dimension", Shape::Dimension { x1, y1, x2, y2, offset }),
+            S::Xline { x, y, angle } => ("guide line", Shape::Guide(Guide::Xline { x, y, angle })),
+            S::Ray { x, y, angle } => ("ray", Shape::Guide(Guide::Ray { x, y, angle })),
+            S::Centerline { x1, y1, x2, y2, of } => ("centre line", Shape::Guide(Guide::Centerline { x1, y1, x2, y2, of })),
+            S::Centermark { cx, cy, r, of } => ("centre mark", Shape::Guide(Guide::Centermark { cx, cy, r, of })),
         }
     }
 
@@ -387,12 +419,13 @@ fn summary(d: &Document) -> Value {
         "notes": d.s.notes, "selection": d.selection,
         "items": items, "images": images,
         "machine": d.s.machine, "laser": d.s.laser, "material": d.s.material,
+        "groups": d.s.groups,
     })
 }
 
 impl Server {
     pub fn new(doc: Shared, repaint: Arc<dyn Fn() + Send + Sync>) -> Self {
-        Self { doc, repaint, tool_router: Self::tool_router() + Self::constraint_router() + Self::laser_router() }
+        Self { doc, repaint, tool_router: Self::tool_router() + Self::constraint_router() + Self::laser_router() + Self::editing_router() }
     }
 
     /// Run `f` on the locked document, then repaint the GUI.
@@ -464,7 +497,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Add items (line, rect, circle, arc, polygon, polyline, path, text, dimension). Returns their ids. One undo step. The old fill: true is still accepted and means op engrave.")]
+    #[tool(description = "Add items (line, rect, circle, arc, polygon, polyline, path, text, dimension) and guide lines (xline, ray, centerline, centermark: construction lines for drawing, never lasered or exported). Returns their ids. One undo step. The old fill: true is still accepted and means op engrave.")]
     fn add_items(&self, Parameters(p): Parameters<AddItems>) -> ToolResult {
         if let Some(e) = p.items.iter().find_map(|it| it.shape.font_error()) {
             return fail(e);
@@ -475,7 +508,7 @@ impl Server {
             for it in p.items {
                 let (kind, shape) = it.shape.build();
                 let default_op = match shape {
-                    Shape::Dimension { .. } => Op::NoOutput,
+                    Shape::Dimension { .. } | Shape::Guide(_) => Op::NoOutput,
                     Shape::Text { .. } => Op::Engrave,
                     _ => Op::Cut,
                 };
