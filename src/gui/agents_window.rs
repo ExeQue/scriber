@@ -32,7 +32,7 @@ impl App {
                 }
                 Some(list) if list.is_empty() => _ = ui.label("No supported agents found."),
                 Some(list) => {
-                    egui::Grid::new("agents").num_columns(4).striped(true).spacing([12.0, 6.0]).show(ui, |ui| {
+                    egui::Grid::new("agents").num_columns(5).striped(true).spacing([12.0, 6.0]).show(ui, |ui| {
                         for t in list {
                             refresh |= self.agent_row(ui, t);
                             ui.end_row();
@@ -69,6 +69,14 @@ impl App {
             Status::Error(e) => (format!("{}: {e}", "Error"), Color32::from_rgb(200, 50, 50)),
         };
         ui.label(RichText::new(text).color(color));
+        let skill = match &t.skill {
+            None => "skill not supported",
+            Some(Status::Installed) => "skill installed",
+            Some(Status::Outdated) => "skill outdated",
+            Some(Status::NotInstalled) => "no skill",
+            Some(Status::Error(_)) => "skill unreadable",
+        };
+        ui.label(RichText::new(skill).small().weak()).on_hover_text("The Scriber skill tells the agent how to work with Scriber; Connect installs it, Remove removes it.");
         let mut changed = false;
         ui.horizontal(|ui| {
             if t.status != Status::Installed && ui.button("Connect").clicked() {

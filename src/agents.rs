@@ -8,6 +8,13 @@ use std::{env, fs, io};
 
 const NAME: &str = "scriber";
 
+/// The Agent Skill installed next to the MCP entry, so agents know how to work with Scriber.
+pub const SKILL: &str = include_str!("../skills/scriber/SKILL.md");
+
+/// Where agents that load Agent Skills keep the user's skills, relative to the home directory.
+/// The skill goes to `<dir>/scriber/SKILL.md`. Agents not listed have no skill support.
+const SKILL_DIRS: &[(&str, &str)] = &[("claude-code", ".claude/skills"), ("codex", ".codex/skills")];
+
 #[derive(Clone, Copy, Debug)]
 enum Base {
     Home,
@@ -89,6 +96,8 @@ pub struct Target {
     pub host: String,
     pub config: String,
     pub status: Status,
+    /// The skill's state; `None` when the agent does not load skills.
+    pub skill: Option<Status>,
     agent: &'static Agent,
     env: Env,
     path: PathBuf,
@@ -132,15 +141,50 @@ pub fn install(t: &Target) -> Result<&'static str> {
         }
         (_, conn) => edit(t, Some(conn))?,
     }
+    install_skill(t)?;
     Ok(if matches!(conn, Conn::Url(_)) { "over HTTP" } else { "through the stdio relay" })
 }
 
 pub fn remove(t: &Target) -> Result<()> {
     match t.agent.kind {
-        ClaudeCli if current(t.agent.kind, &t.path)?.is_none() => Ok(()),
-        ClaudeCli => claude(t, &["mcp", "remove", "-s", "user", NAME]),
-        _ => edit(t, None),
+        ClaudeCli if current(t.agent.kind, &t.path)?.is_none() => {}
+        ClaudeCli => claude(t, &["mcp", "remove", "-s", "user", NAME])?,
+        _ => edit(t, None)?,
     }
+    remove_skill(t)
+}
+
+fn skill_path(agent: &Agent, home: &Path) -> Option<PathBuf> {
+    let (_, dir) = SKILL_DIRS.iter().find(|(id, _)| *id == agent.id)?;
+    Some(dir.split('/').fold(home.to_path_buf(), |p, c| p.join(c)).join(NAME).join("SKILL.md"))
+}
+
+/// Write (or overwrite, so updates ship) the skill for agents that load skills.
+fn install_skill(t: &Target) -> Result<()> {
+    let Some(path) = skill_path(t.agent, &t.env.home) else { return Ok(()) };
+    fs::create_dir_all(path.parent().unwrap())?;
+    fs::write(&path, SKILL).with_context(|| format!("cannot write {}", path.display()))
+}
+
+fn remove_skill(t: &Target) -> Result<()> {
+    let Some(path) = skill_path(t.agent, &t.env.home) else { return Ok(()) };
+    match fs::remove_file(&path) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e).with_context(|| format!("cannot remove {}", path.display())),
+        _ => {}
+    }
+    // Only when empty: the person may keep their own files there.
+    let _ = fs::remove_dir(path.parent().unwrap());
+    Ok(())
+}
+
+fn skill_status(agent: &Agent, home: &Path) -> Option<Status> {
+    let path = skill_path(agent, home)?;
+    Some(match read(&path) {
+        Ok(None) => Status::NotInstalled,
+        Ok(Some(s)) if s == SKILL => Status::Installed,
+        Ok(Some(_)) => Status::Outdated,
+        Err(e) => Status::Error(format!("{e:#}")),
+    })
 }
 
 /// HTTP when the agent takes a URL and (in WSL) reaches the editor's port; the stdio relay otherwise.
@@ -166,14 +210,14 @@ pub fn cli(args: &[String]) -> Result<()> {
     let targets = detect();
     match args.first().map(String::as_str) {
         None | Some("list") => {
-            let rows: Vec<[&str; 5]> = targets
+            let rows: Vec<[&str; 6]> = targets
                 .iter()
-                .map(|t| [&t.id, &t.name, &t.host, label(&t.status), &t.config][..].try_into().unwrap())
+                .map(|t| [t.id.as_str(), &t.name, &t.host, label(&t.status), t.skill.as_ref().map_or("not supported", label), &t.config][..].try_into().unwrap())
                 .collect();
-            let head = ["ID", "AGENT", "HOST", "STATUS", "CONFIG"];
-            let w: Vec<usize> = (0..5).map(|i| rows.iter().map(|r| r[i].len()).chain([head[i].len()]).max().unwrap()).collect();
+            let head = ["ID", "AGENT", "HOST", "STATUS", "SKILL", "CONFIG"];
+            let w: Vec<usize> = (0..6).map(|i| rows.iter().map(|r| r[i].len()).chain([head[i].len()]).max().unwrap()).collect();
             for r in std::iter::once(&head).chain(&rows) {
-                println!("{:<a$}  {:<b$}  {:<c$}  {:<d$}  {}", r[0], r[1], r[2], r[3], r[4], a = w[0], b = w[1], c = w[2], d = w[3]);
+                println!("{:<a$}  {:<b$}  {:<c$}  {:<d$}  {:<e$}  {}", r[0], r[1], r[2], r[3], r[4], r[5], a = w[0], b = w[1], c = w[2], d = w[3], e = w[4]);
             }
             for t in &targets {
                 if let Status::Error(e) = &t.status {
@@ -232,6 +276,7 @@ fn detect_in(env: &Env) -> Vec<Target> {
                 ClaudeCli => env.claude.is_some() || path.exists(),
                 _ => path.parent().is_some_and(Path::is_dir),
             };
+            let skill = skill_status(a, &env.home);
             present.then(|| Target {
                 id: env.distro.as_ref().map_or(a.id.to_owned(), |d| format!("wsl:{d}:{}", a.id)),
                 name: a.name.to_owned(),
@@ -239,10 +284,13 @@ fn detect_in(env: &Env) -> Vec<Target> {
                 config: path.display().to_string(),
                 status: match current(a.kind, &path) {
                     Ok(None) => Status::NotInstalled,
-                    Ok(Some(c)) if ours(&c, a.kind, env) => Status::Installed,
+                    // A missing or older skill makes the agent outdated, so Connect installs the current one.
+                    Ok(Some(c)) if ours(&c, a.kind, env) && skill.as_ref().is_none_or(|s| *s == Status::Installed) => Status::Installed,
+                    Ok(Some(c)) if ours(&c, a.kind, env) => Status::Outdated,
                     Ok(Some(_)) => Status::Outdated,
                     Err(e) => Status::Error(format!("{e:#}")),
                 },
+                skill,
                 agent: a,
                 env: env.clone(),
                 path,
@@ -532,7 +580,8 @@ mod tests {
         let status = |env: &Env, id: &str| detect_in(env).into_iter().find(|t| t.id == id).map(|t| t.status);
         let ids: Vec<String> = detect_in(&env).into_iter().map(|t| t.id).collect();
         assert_eq!(ids, ["claude-code", "claude-desktop", "cursor", "gemini", "codex", "opencode", "zed"]);
-        assert_eq!(status(&env, "claude-code"), Some(Status::Installed));
+        // The MCP entry is current, but the skill is missing.
+        assert_eq!(status(&env, "claude-code"), Some(Status::Outdated));
         // Stdio entries of HTTP-capable agents are upgraded by Connect.
         assert_eq!(status(&env, "gemini"), Some(Status::Outdated));
         assert_eq!(status(&env, "codex"), Some(Status::Outdated));
@@ -580,6 +629,65 @@ mod tests {
         assert_eq!(status(&wsl, "wsl:scriber-test-no-such-distro:cursor"), Some(Status::Installed));
         assert_eq!(status(&env, "cursor"), Some(Status::Outdated));
         fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn skill_installs_and_removes_with_the_entry() {
+        let home = env::temp_dir().join(format!("scriber-skill-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(home.join(".codex")).unwrap();
+        fs::create_dir_all(home.join(".cursor")).unwrap();
+        fs::write(home.join(".claude.json"), r#"{"mcpServers":{"scriber":{"type":"http","url":"http://127.0.0.1:47999/mcp"}}}"#).unwrap();
+        fs::create_dir_all(home.join(".claude/skills/scriber")).unwrap();
+        fs::write(home.join(".claude/skills/scriber/SKILL.md"), "old").unwrap();
+        let env = Env { config: home.join(".config"), home: home.clone(), exe: "/opt/scriber".into(), port: 47999, distro: None, claude: None };
+        let find = |id: &str| detect_in(&env).into_iter().find(|t| t.id == id).unwrap();
+        let claude_skill = home.join(".claude/skills/scriber/SKILL.md");
+        let codex_skill = home.join(".codex/skills/scriber/SKILL.md");
+
+        assert_eq!(find("cursor").skill, None);
+        let cc = find("claude-code");
+        assert_eq!((cc.status, cc.skill), (Status::Outdated, Some(Status::Outdated)));
+        // Claude Code's entry goes through the `claude` CLI, so try the skill part on its own.
+        install_skill(&find("claude-code")).unwrap();
+        assert_eq!(fs::read_to_string(&claude_skill).unwrap(), SKILL);
+        let cc = find("claude-code");
+        assert_eq!((cc.status.clone(), cc.skill.clone()), (Status::Installed, Some(Status::Installed)));
+        fs::write(home.join(".claude/skills/scriber/notes.txt"), "mine").unwrap();
+        remove_skill(&cc).unwrap();
+        assert!(!claude_skill.exists() && home.join(".claude/skills/scriber/notes.txt").exists());
+
+        assert_eq!(find("codex").skill, Some(Status::NotInstalled));
+        install(&find("codex")).unwrap();
+        assert_eq!(fs::read_to_string(&codex_skill).unwrap(), SKILL);
+        assert_eq!(find("codex").status, Status::Installed);
+        remove(&find("codex")).unwrap();
+        assert!(!codex_skill.exists() && !codex_skill.parent().unwrap().exists());
+        assert_eq!(find("codex").skill, Some(Status::NotInstalled));
+        fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn skill_has_front_matter_and_only_real_tool_names() {
+        use rmcp::ServerHandler;
+        let body = SKILL.strip_prefix("---\n").expect("front matter");
+        let (front, text) = body.split_once("\n---\n").expect("front matter end");
+        let field = |k: &str| front.lines().find_map(|l| l.strip_prefix(k)?.strip_prefix(':')).map(str::trim).unwrap_or_default();
+        assert_eq!(field("name"), NAME);
+        assert!(field("description").len() > 40);
+
+        let doc = std::sync::Arc::new(std::sync::Mutex::new(crate::model::Document::new(100.0, 100.0)));
+        let server = crate::mcp::Server::new(doc, std::sync::Arc::new(|| {}));
+        // Backticked snake_case words are tool names, apart from these arguments and values.
+        let not_tools = ["no_output", "use_work_area", "line_interval", "timed_out"];
+        let mut tools = 0;
+        for word in text.replace("```", "").split('`').skip(1).step_by(2) {
+            if word.contains('_') && word.chars().all(|c| c.is_ascii_lowercase() || c == '_') && !not_tools.contains(&word) {
+                assert!(server.get_tool(word).is_some(), "SKILL.md names `{word}`, which is not a Scriber tool");
+                tools += 1;
+            }
+        }
+        assert!(tools > 20, "{tools}");
     }
 }
 
