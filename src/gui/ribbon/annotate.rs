@@ -8,7 +8,7 @@ impl App {
     pub(super) fn annotate(&mut self, ui: &mut Ui) {
         panel(ui, "Text and sizes", |ui| {
             self.large(ui, Some(Cmd::Text), "Text");
-            self.large(ui, Some(Cmd::DimLinear), "Dimension");
+            self.large(ui, Some(Cmd::DimLinear), "Note dimension");
             self.large(ui, Some(Cmd::Dist), "Measure");
         });
         panel(ui, "Guides", |ui| {
