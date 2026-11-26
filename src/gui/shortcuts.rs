@@ -105,7 +105,7 @@ impl App {
     /// Help > Keyboard shortcuts.
     pub(super) fn shortcuts_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_shortcuts;
-        egui::Window::new("Keyboard shortcuts").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+        egui::Window::new("Keyboard shortcuts").id(self.popouts.id("shortcuts")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
             ui.label(RichText::new("Tools (when the command line is hidden)").strong());
             egui::Grid::new("shortcut_keys").num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
                 for &(k, a) in KEYS {

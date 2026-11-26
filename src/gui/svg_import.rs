@@ -37,7 +37,7 @@ impl App {
         let Some(s) = &mut self.svg_dialog else { return };
         let (mut open, mut import) = (true, false);
         let file = s.path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
-        egui::Window::new("Import SVG").pivot(egui::Align2::CENTER_CENTER).default_pos(ctx.content_rect().center()).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+        egui::Window::new("Import SVG").id(self.popouts.id("svg")).pivot(egui::Align2::CENTER_CENTER).default_pos(ctx.content_rect().center()).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
             ui.label(file);
             ui.add_space(4.0);
             egui::Grid::new("svg-import").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {

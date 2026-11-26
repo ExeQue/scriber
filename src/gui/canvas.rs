@@ -201,9 +201,9 @@ impl App {
         self.view.fit_size = rect.size();
     }
 
-    /// Double-click with the wheel: show the whole material (AutoCAD's zoom extents).
+    /// Double-click with the wheel: show the selection, or the whole material when nothing is selected.
     fn zoom_extents_on_wheel_double_click(&mut self, response: &egui::Response) {
-        if response.double_clicked_by(PointerButton::Middle) {
+        if response.double_clicked_by(PointerButton::Middle) && !self.zoom_selection() {
             self.view.zoom_extents();
         }
     }

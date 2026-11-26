@@ -132,7 +132,7 @@ fn machines_tab(ui: &mut egui::Ui, ed: &mut Editor) {
         ed.machine = ed.machine.min(lib.machines.len().saturating_sub(1));
         ui.separator();
         if let Some(m) = lib.machines.get_mut(ed.machine) {
-            egui::ScrollArea::vertical().id_salt("machine").show(ui, |ui| machine_form(ui, m));
+            egui::ScrollArea::vertical().id_salt("machine").show(ui, |ui| ui.vertical(|ui| machine_form(ui, m)));
         }
     });
 }
@@ -203,9 +203,9 @@ fn machine_form(ui: &mut egui::Ui, m: &mut Machine) {
     }
     ui.add_space(6.0);
     ui.label("Notes");
-    ui.text_edit_multiline(&mut m.notes);
+    ui.add(egui::TextEdit::multiline(&mut m.notes).desired_width(f32::INFINITY).desired_rows(3));
     ui.label("Where the numbers come from");
-    ui.text_edit_multiline(&mut m.source);
+    ui.add(egui::TextEdit::multiline(&mut m.source).desired_width(f32::INFINITY).desired_rows(3));
 }
 
 fn materials_tab(ui: &mut egui::Ui, ed: &mut Editor) {
@@ -236,7 +236,7 @@ fn materials_tab(ui: &mut egui::Ui, ed: &mut Editor) {
         ui.separator();
         let Library { machines, materials, .. } = lib;
         if let Some(m) = materials.get_mut(ed.material) {
-            egui::ScrollArea::vertical().id_salt("material").show(ui, |ui| material_form(ui, m, machines));
+            egui::ScrollArea::vertical().id_salt("material").show(ui, |ui| ui.vertical(|ui| material_form(ui, m, machines)));
         }
     });
 }
@@ -277,9 +277,9 @@ fn material_form(ui: &mut egui::Ui, m: &mut Material, machines: &[Machine]) {
     }
     ui.add_space(6.0);
     ui.label("Notes");
-    ui.text_edit_multiline(&mut m.notes);
+    ui.add(egui::TextEdit::multiline(&mut m.notes).desired_width(f32::INFINITY).desired_rows(3));
     ui.label("Where the settings come from");
-    ui.text_edit_multiline(&mut m.source);
+    ui.add(egui::TextEdit::multiline(&mut m.source).desired_width(f32::INFINITY).desired_rows(3));
 }
 
 /// Eight grid cells for one setting.

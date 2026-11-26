@@ -1,5 +1,5 @@
-//! Laser: what new or selected shapes do on the laser, the machine and material, the pre-flight
-//! check, export, and the machines & materials library.
+//! Laser: the machine and material, export, and the machines & materials library. The operation
+//! and the preview/check panels are used often, so they sit on the Home tab (built here).
 
 use super::{App, Icon, panel};
 use crate::gui::icons::pill;
@@ -11,7 +11,38 @@ use eframe::egui::{RichText, Ui};
 impl App {
     pub(super) fn laser(&mut self, ui: &mut Ui) {
         let doc = self.doc.clone();
-        let mut d = doc.lock().unwrap();
+        panel(ui, "Machine & material", |ui| pickers(ui, &mut doc.lock().unwrap()));
+        panel(ui, "Export", |ui| {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                if self.small(ui, false, Icon::Glyph("💾"), "SVG for the laser", "Save the drawing as an SVG file for the laser software") {
+                    self.export_svg();
+                }
+                if self.small(ui, false, Icon::Glyph("🖼"), "PNG picture", "Save a picture of the drawing") {
+                    self.export_png();
+                }
+            });
+        });
+        panel(ui, "Library", |ui| {
+            if self.small(ui, false, Icon::Glyph("⚙"), "Machines & materials…", "Your laser cutters and the power and speed to use for each material") {
+                self.library = Some(Editor::new());
+            }
+        });
+    }
+
+    /// Preview and the pre-flight check (Home tab).
+    pub(super) fn check_panel(&mut self, ui: &mut Ui) {
+        let doc = self.doc.clone();
+        let d = doc.lock().unwrap();
+        panel(ui, "Laser", |ui| {
+            ui.vertical(|ui| self.preview_and_check_buttons(ui, &d));
+        });
+    }
+
+    /// What new or selected shapes do on the laser (Home tab).
+    pub(super) fn operation_panel(&mut self, ui: &mut Ui) {
+        let doc = self.doc.clone();
+        let d = doc.lock().unwrap();
         let sel = d.selection.clone();
         let items: Vec<(Op, bool)> = d.s.items.iter().filter(|i| sel.contains(&i.id)).map(|i| (i.op, i.shape.has_area())).collect();
         // Show the selection's op when they agree; otherwise the default for new shapes.
@@ -37,27 +68,7 @@ impl App {
                 }
             });
         });
-        panel(ui, "Machine & material", |ui| pickers(ui, &mut d));
-        panel(ui, "Check", |ui| {
-            ui.vertical(|ui| self.preview_and_check_buttons(ui, &d));
-        });
         drop(d);
-        panel(ui, "Export", |ui| {
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 2.0;
-                if self.small(ui, false, Icon::Glyph("💾"), "SVG for the laser", "Save the drawing as an SVG file for the laser software") {
-                    self.export_svg();
-                }
-                if self.small(ui, false, Icon::Glyph("🖼"), "PNG picture", "Save a picture of the drawing") {
-                    self.export_png();
-                }
-            });
-        });
-        panel(ui, "Library", |ui| {
-            if self.small(ui, false, Icon::Glyph("⚙"), "Machines & materials…", "Your laser cutters and the power and speed to use for each material") {
-                self.library = Some(Editor::new());
-            }
-        });
         let Some(set_op) = set_op else { return };
         if items.is_empty() {
             self.new_op = set_op;

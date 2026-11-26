@@ -114,7 +114,8 @@ impl App {
             && let Some(r) = raw
             && let Some(Drag::Grip { grip, at, base, bbox, hot }) = self.drag.take_if(|d| matches!(d, Drag::Grip { .. }))
         {
-            let p = self.aim(&base, r, Some(at));
+            // The rotate handle turns; POLAR snaps its angle instead of tracking lines from the handle.
+            let p = if grip == Grip::Rotate { r } else { self.aim(&base, r, Some(at)) };
             self.drag = Some(Drag::Grip { grip, at, base, bbox, hot });
             // Locked values typed on dynamic input win over the mouse.
             let p = self.dyn_point(p).unwrap_or(p);
@@ -238,7 +239,10 @@ impl App {
                 item.shape = grips::drag_item(if from_now { &item.shape } else { &b.shape }, grip, at, p);
             }
             d.touch();
-        } else if let Some(t) = grips::box_transform(bbox, grip, at, p, shift, alt) {
+        } else if let Some(mut t) = grips::box_transform(bbox, grip, at, p, shift, alt) {
+            if grip == Grip::Rotate && !shift && self.aids.polar {
+                t.rotate = snap_angle(t.rotate, &self.aids.polar_angles(), 4.0);
+            }
             // ponytail: linear lookup per selected item; index `base` by id if huge selections get slow.
             for item in d.s.items.iter_mut().filter(|i| ids.contains(&i.id)) {
                 if let Some(b) = base.iter().find(|b| b.id == item.id) {
@@ -389,4 +393,18 @@ mod tests {
         assert!(touches([-1.0, -1.0, 2.0, 2.0], &square), "corner inside the box");
         assert!(contains_box([-1.0, -1.0, 12.0, 12.0], [0.0, 0.0, 10.0, 10.0]));
     }
+}
+
+/// `a` (degrees) moved onto the nearest of `angles` when within `tol` degrees.
+fn snap_angle(a: f64, angles: &[f64], tol: f64) -> f64 {
+    let diff = |x: f64| ((a - x + 180.0).rem_euclid(360.0) - 180.0).abs();
+    angles.iter().copied().filter(|x| diff(*x) <= tol).min_by(|x, y| diff(*x).total_cmp(&diff(*y))).map_or(a, |x| a - ((a - x + 180.0).rem_euclid(360.0) - 180.0))
+}
+
+#[test]
+fn rotation_snaps_to_polar_angles() {
+    let angles = [0.0, 15.0, 30.0, 345.0];
+    assert!((snap_angle(16.38, &angles, 4.0) - 15.0).abs() < 1e-9);
+    assert!((snap_angle(-14.0, &angles, 4.0) + 15.0).abs() < 1e-9);
+    assert_eq!(snap_angle(22.0, &angles, 4.0), 22.0);
 }

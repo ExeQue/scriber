@@ -33,6 +33,8 @@ impl App {
             );
         });
         panel(ui, "Combine", |ui| self.smalls(ui, &[(Some(Cmd::Union), "Merge"), (Some(Cmd::Subtract), "Cut out"), (Some(Cmd::Intersect), "Keep overlap")]));
+        self.operation_panel(ui);
+        self.check_panel(ui);
         panel(ui, "Undo", |ui| self.smalls(ui, &[(Some(Cmd::Undo), "Undo"), (Some(Cmd::Redo), "Redo")]));
     }
 }

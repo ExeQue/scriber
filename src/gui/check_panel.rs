@@ -57,7 +57,7 @@ impl App {
         }
         let mut open = true;
         let mut pick = None;
-        egui::Window::new("Check before lasering")
+        egui::Window::new("Check before lasering").id(self.popouts.id("check"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)

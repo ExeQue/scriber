@@ -24,6 +24,7 @@ mod overrides;
 mod panels;
 mod parameters;
 mod picked;
+mod popouts;
 mod preview;
 mod ribbon;
 mod select;
@@ -141,6 +142,7 @@ struct App {
     check: check_panel::Check,
     /// Shift is held (over the canvas): flips ORTHO while a command runs.
     shift: bool,
+    popouts: popouts::Popouts,
     /// OTRACK, Extension and Parallel: what was acquired for the running command.
     tracker: tracking::Tracker,
     /// The one-shot object snap override for the next point (Shift+right-click).
@@ -253,6 +255,7 @@ impl App {
             preview: None,
             check: check_panel::Check::default(),
             shift: false,
+            popouts: popouts::Popouts::default(),
             tracker: tracking::Tracker::default(),
             once: None,
             osnap_menu_open: false,
@@ -533,6 +536,8 @@ impl eframe::App for App {
         self.override_window(&ctx);
 
 
+        let svg = self.svg_dialog.is_some();
+        self.popouts.track(&[("parameters", self.show_parameters), ("agents", self.show_agents), ("check", self.check.open), ("shortcuts", self.show_shortcuts), ("svg", svg)]);
         if self.show_parameters {
             self.parameters_window(&ctx);
         }
