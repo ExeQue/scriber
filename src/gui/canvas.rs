@@ -23,6 +23,7 @@ impl App {
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
         self.canvas_rect = rect;
         let ctx = ui.ctx().clone();
+        self.zoom_extents_on_wheel_double_click(&response);
         self.fit_if_needed(rect);
         self.pan_and_zoom(ui, &response);
         if response.hovered() {
@@ -121,7 +122,8 @@ impl App {
 
     /// Show the whole material, once at start and after "Show whole material".
     fn fit_if_needed(&mut self, rect: Rect) {
-        if self.view.fitted || rect.width() < 10.0 {
+        // On the first frames the panels are still settling; wait for a real canvas size.
+        if !self.view.auto_fit || rect.size() == self.view.fit_size || rect.width() < 100.0 || rect.height() < 100.0 {
             return;
         }
         let (w, h) = {
@@ -131,7 +133,14 @@ impl App {
         let z = ((rect.width() - 60.0) / w).min((rect.height() - 60.0) / h).max(0.05);
         self.view.zoom = z;
         self.view.offset = (rect.size() - vec2(w, h) * z) / 2.0;
-        self.view.fitted = true;
+        self.view.fit_size = rect.size();
+    }
+
+    /// Double-click with the wheel: show the whole material (AutoCAD's zoom extents).
+    fn zoom_extents_on_wheel_double_click(&mut self, response: &egui::Response) {
+        if response.double_clicked_by(PointerButton::Middle) {
+            self.view.zoom_extents();
+        }
     }
 
     /// Middle drag pans, and so does a right drag (egui only reports a drag once the pointer moved,
@@ -139,6 +148,7 @@ impl App {
     fn pan_and_zoom(&mut self, ui: &egui::Ui, response: &egui::Response) {
         if response.dragged_by(PointerButton::Middle) || response.dragged_by(PointerButton::Secondary) {
             self.view.offset += response.drag_delta();
+            self.view.auto_fit = false;
         }
         let Some(hover) = response.hover_pos() else { return };
         let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
@@ -147,6 +157,7 @@ impl App {
             let before = self.s2w(hover);
             self.view.zoom = (self.view.zoom * factor).clamp(0.05, 400.0);
             self.view.offset += hover - self.w2s(before);
+            self.view.auto_fit = false;
         }
     }
 

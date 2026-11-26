@@ -3,7 +3,6 @@
 use super::App;
 use super::snap::Aid;
 use super::labels::{fill_help, op_color, op_help, op_label};
-use super::tools::Tool;
 use crate::model::{BBox, Op, Shape, State, Transform};
 use eframe::egui::{self, Color32, RichText};
 
@@ -64,7 +63,7 @@ impl App {
             });
             ui.menu_button("View", |ui| {
                 if ui.button("Show whole material").clicked() {
-                    self.view.fitted = false;
+                    self.view.zoom_extents();
                 }
                 ui.checkbox(&mut self.snap, "Snap to grid");
             });
@@ -74,32 +73,6 @@ impl App {
                 }
             });
         });
-    }
-
-    pub(super) fn toolbar(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(6.0);
-        for t in Tool::ALL {
-            let text = RichText::new(format!("{}  {}", t.icon(), t.label())).size(15.0);
-            let hover = format!("{}\n\nCommand: {}", t.help(), t.command());
-            if ui.add_sized([ui.available_width(), 30.0], egui::Button::selectable(self.tool == t, text)).on_hover_text(hover).clicked() {
-                self.set_tool(t);
-            }
-        }
-        ui.separator();
-        ui.label(RichText::new("New shapes").strong());
-        for op in [Op::Cut, Op::Score, Op::Engrave, Op::NoLine] {
-            ui.radio_value(&mut self.new_op, op, RichText::new(format!("■ {}", op_label(op))).color(op_color(op))).on_hover_text(op_help(op));
-        }
-        ui.checkbox(&mut self.new_fill, "Fill (engrave area)").on_hover_text(fill_help());
-        if self.tool == Tool::Polygon {
-            ui.separator();
-            ui.horizontal(|ui| {
-                ui.label("Sides");
-                ui.add(egui::DragValue::new(&mut self.sides).range(3..=64));
-            });
-        }
-        ui.separator();
-        ui.checkbox(&mut self.snap, "Snap to grid");
     }
 
     pub(super) fn properties(&mut self, ui: &mut egui::Ui) {
@@ -235,29 +208,25 @@ impl App {
     }
 
     pub(super) fn status_bar(&mut self, ui: &mut egui::Ui, pointer: Option<[f64; 2]>) {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(self.tool.hint(self.draft.len())).strong());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                match &self.mcp {
-                    Ok(port) => ui.label(RichText::new(format!("● MCP :{port}")).color(Color32::from_rgb(40, 160, 70))).on_hover_text("AI agents can connect."),
-                    Err(e) => ui.label(RichText::new("● MCP").color(Color32::from_rgb(200, 50, 50))).on_hover_text(format!(
-                        "{}: {e}",
-                        "AI agents cannot connect (is Scriber already running?)"
-                    )),
-                };
-                for a in Aid::ALL.into_iter().rev() {
-                    if ui.selectable_label(self.aid_on(a), RichText::new(a.label()).monospace()).on_hover_text(a.help()).clicked() {
-                        self.toggle(a);
-                    }
+        // Right side first (fixed width), then the hint in whatever space is left, cut off if too long.
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            match &self.mcp {
+                Ok(port) => ui.label(RichText::new(format!("● MCP :{port}")).color(Color32::from_rgb(40, 160, 70))).on_hover_text("AI agents can connect."),
+                Err(e) => ui.label(RichText::new("● MCP").color(Color32::from_rgb(200, 50, 50))).on_hover_text(format!("AI agents cannot connect (is Scriber already running?): {e}")),
+            };
+            for a in Aid::ALL.into_iter().rev() {
+                if ui.selectable_label(self.aid_on(a), RichText::new(a.label()).monospace()).on_hover_text(a.help()).clicked() {
+                    self.toggle(a);
                 }
-                // 96 DPI screen: 3.78 px per mm is 100 %.
-                ui.label(format!("{:.0} %", self.view.zoom / 3.78 * 100.0));
-                if let Some(p) = pointer {
-                    ui.label(format!("x {:.1}  y {:.1} mm", p[0], p[1]));
-                }
-                if !self.message.is_empty() {
-                    ui.label(RichText::new(&self.message).weak());
-                }
+            }
+            // 96 DPI screen: 3.78 px per mm is 100 %.
+            ui.label(format!("{:.0} %", self.view.zoom / 3.78 * 100.0));
+            if let Some(p) = pointer {
+                ui.label(RichText::new(format!("{:>8.2}, {:>8.2}", p[0], p[1])).monospace());
+            }
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                let text = if self.message.is_empty() { self.tool.hint(self.draft.len()).to_string() } else { self.message.clone() };
+                ui.add(egui::Label::new(RichText::new(text).weak()).truncate());
             });
         });
     }

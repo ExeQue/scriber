@@ -1,9 +1,8 @@
-//! The canvas tools: their names, help texts, and the shape the placed points make. Commands
+//! The canvas tools: hints and the shape the placed points make. Commands
 //! (see `command.rs`) switch between them.
 
 use crate::model::geom::distance;
 use crate::model::{Contour, Point, Shape};
-use super::command::Cmd;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tool {
@@ -22,72 +21,6 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Tool; 10] = [
-        Tool::Select,
-        Tool::Line,
-        Tool::Rect,
-        Tool::Circle,
-        Tool::Arc,
-        Tool::Polygon,
-        Tool::Polyline,
-        Tool::Text,
-        Tool::Dimension,
-        Tool::Measure,
-    ];
-
-    pub fn icon(self) -> &'static str {
-        match self {
-            Tool::Select => "⬉",
-            Tool::Line => "╱",
-            Tool::Rect => "▭",
-            Tool::Circle => "◯",
-            Tool::Arc => "◠",
-            Tool::Polygon => "⬡",
-            Tool::Polyline => "〰",
-            Tool::Text => "T",
-            Tool::Dimension => "↔",
-            Tool::Measure => "📏",
-            Tool::Pick => "+",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Tool::Select => "Select",
-            Tool::Line => "Line",
-            Tool::Rect => "Rectangle",
-            Tool::Circle => "Circle",
-            Tool::Arc => "Arc",
-            Tool::Polygon => "Polygon",
-            Tool::Polyline => "Polyline",
-            Tool::Text => "Text",
-            Tool::Dimension => "Dimension",
-            Tool::Measure => "Measure",
-            Tool::Pick => "Point",
-        }
-    }
-
-    pub fn help(self) -> &'static str {
-        match self {
-            Tool::Select => "Click a shape to select it, drag to move it. Drag on empty space to select several.",
-            Tool::Line => "A straight line between two points.",
-            Tool::Rect => "A rectangle from one corner to the opposite corner.",
-            Tool::Circle => "A circle from its centre out to the edge.",
-            Tool::Arc => "Part of a circle: centre, start, end.",
-            Tool::Polygon => "A shape with equal sides, e.g. a hexagon.",
-            Tool::Polyline => "Connected lines. Double-click or press Enter to finish; click the first point to close it.",
-            Tool::Text => "Text you can engrave or cut.",
-            Tool::Dimension => "A measurement shown on the drawing.",
-            Tool::Measure => "Measure a distance without drawing anything.",
-            Tool::Pick => "A point for the running command.",
-        }
-    }
-
-    /// The command a toolbar button runs, as shown in its tooltip.
-    pub fn command(self) -> String {
-        Cmd::for_tool(self).map_or("Esc".into(), |c| format!("{} ({})", c.name(), c.alias()))
-    }
-
     /// What to do next, given how many points are placed.
     pub fn hint(self, placed: usize) -> &'static str {
         match (self, placed) {

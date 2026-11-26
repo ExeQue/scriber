@@ -9,6 +9,7 @@ mod labels;
 mod panels;
 mod select;
 mod snap;
+mod toolbar;
 mod tools;
 
 use crate::model::{Document, Op, Point, Shape, Shared, Transform};
@@ -25,7 +26,18 @@ struct View {
     offset: Vec2,
     /// Pixels per mm.
     zoom: f32,
-    fitted: bool,
+    /// Keep the whole material in view (until the user pans or zooms).
+    auto_fit: bool,
+    /// Canvas size the last fit was made for.
+    fit_size: Vec2,
+}
+
+impl View {
+    /// Show the whole material again, and keep it in view when the window changes size.
+    fn zoom_extents(&mut self) {
+        self.auto_fit = true;
+        self.fit_size = Vec2::ZERO;
+    }
 }
 
 struct App {
@@ -111,7 +123,7 @@ impl App {
             drag: None,
             cmdline: command::CommandLine::new(),
             measured: None,
-            view: View { offset: Vec2::ZERO, zoom: 3.0, fitted: false },
+            view: View { offset: Vec2::ZERO, zoom: 3.0, auto_fit: true, fit_size: Vec2::ZERO },
             canvas_rect: Rect::NOTHING,
             textures: HashMap::new(),
             panel_editing: false,
@@ -143,7 +155,7 @@ impl App {
             Ok(d) => {
                 *self.doc.lock().unwrap() = d;
                 self.textures.clear();
-                self.view.fitted = false;
+                self.view.zoom_extents();
                 self.message = format!("{} {}", "Opened", path.display());
             }
             Err(e) => self.message = format!("{}: {e}", "Could not open the file"),
@@ -364,11 +376,12 @@ impl eframe::App for App {
         let pointer = hover.map(|p| self.snap(self.s2w(p)));
 
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
+        egui::Panel::top("laser").show(ui, |ui| self.laser_bar(ui));
         self.aid_keys(&ctx);
         self.keys(&ctx, pointer);
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui, pointer));
         egui::Panel::bottom("command").show(ui, |ui| self.command_line(ui));
-        egui::Panel::left("tools").exact_size(160.0).show(ui, |ui| self.toolbar(ui));
+        egui::Panel::left("tools").exact_size(126.0).show(ui, |ui| self.toolbar(ui));
         egui::Panel::right("props").default_size(290.0).show(ui, |ui| self.properties(ui));
         egui::CentralPanel::no_frame().show(ui, |ui| self.canvas(ui));
 

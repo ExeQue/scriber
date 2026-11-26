@@ -241,6 +241,11 @@ impl App {
         }
     }
 
+    /// The command that is running, for highlighting its toolbar button.
+    pub(super) fn active_cmd(&self) -> Option<Cmd> {
+        self.cmdline.active.map(|(c, _)| c)
+    }
+
     /// The prompt asks for free text, so Space types a space instead of acting as Enter.
     pub(super) fn takes_text(&self) -> bool {
         matches!(self.cmdline.active, Some((_, Step::Content)))
