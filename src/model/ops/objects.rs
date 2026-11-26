@@ -58,7 +58,7 @@ fn nearest(contours: &[Contour], at: Point) -> Result<(usize, usize, Point), Str
         .enumerate()
         .filter_map(|(i, c)| c.pline().closest_point(pick, EPS).map(|r| (i, r)))
         .min_by(|a, b| a.1.distance.total_cmp(&b.1.distance))
-        .map(|(i, r)| (i, r.seg_start_index, [r.seg_point.x, r.seg_point.y]))
+        .map(|(i, r)| (i, contours[i].segment_of_pline(r.seg_start_index), [r.seg_point.x, r.seg_point.y]))
         .ok_or_else(|| "the item has no outline to pick".into())
 }
 

@@ -107,8 +107,7 @@ pub fn push(v: &mut Vec<Vertex>, to: Point, bulge: f64) {
     v.push(Vertex::new(to[0], to[1], 0.0));
 }
 
-/// Runs of arcs on one circle (within `tol`) become one arc, split into equal parts of at most
-/// 270° (a full circle: two halves). ponytail: a run that wraps past the start of a closed contour stays split there.
+/// Runs of arcs on one circle (within `tol`) become one arc (a full circle or more: halves). ponytail: a run that wraps past the start of a closed contour stays split there.
 pub fn merge_arcs(v: Vec<Vertex>, closed: bool, tol: f64) -> Vec<Vertex> {
     let n = v.len();
     if n < 2 {
@@ -134,7 +133,7 @@ pub fn merge_arcs(v: Vec<Vertex>, closed: bool, tol: f64) -> Vec<Vertex> {
             sweep += s2;
             j += 1;
         }
-        let parts = (sweep.abs() / (1.5 * PI) - 1e-9).ceil().max(1.0);
+        let parts = if sweep.abs() < 2.0 * PI - 1e-9 { 1.0 } else { (sweep.abs() / PI - 1e-9).ceil() };
         let bulge = (sweep / parts / 4.0).tan();
         for k in 0..parts as usize {
             let t = start + sweep * k as f64 / parts;

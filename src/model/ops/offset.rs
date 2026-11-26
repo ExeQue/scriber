@@ -47,6 +47,26 @@ mod tests {
     }
 
     #[test]
+    fn offsets_a_270_degree_arc_as_one_arc() {
+        let big = Contour::arc(0.0, 0.0, 10.0, 0.0, 270.0);
+        let pac = Contour { vertices: vec![big.vertices[0], big.vertices[1], crate::model::geom::Vertex::new(0.0, 0.0, 0.0)], closed: true };
+        let out = offset(&[pac], 1.0);
+        assert_eq!(out.len(), 1);
+        let b = out[0].bbox().map(|v| (v * 1e6).round() / 1e6);
+        assert_eq!(b, [-11.0, -11.0, 22.0, 22.0]);
+        let c = &out[0];
+        let n = c.vertices.len();
+        let arcs: Vec<f64> = (0..n)
+            .filter(|&k| c.vertices[k].bulge != 0.0)
+            .map(|k| crate::model::geom::arc_params([c.vertices[k].x, c.vertices[k].y], [c.vertices[(k + 1) % n].x, c.vertices[(k + 1) % n].y], c.vertices[k].bulge))
+            .filter(|a| (a.1 - 11.0).abs() < 1e-9)
+            .map(|a| a.3.abs())
+            .collect();
+        assert_eq!(arcs.len(), 1, "{c:?}");
+        assert!((arcs[0] - 1.5 * PI).abs() < 1e-9, "{arcs:?}");
+    }
+
+    #[test]
     fn open_contours_move_to_their_left_on_screen() {
         // Walking right along y = 0, left on screen (y down) is towards negative y.
         let out = offset(&[Contour::line([0.0, 0.0], [10.0, 0.0])], 3.0);

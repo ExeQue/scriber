@@ -113,12 +113,36 @@ impl Contour {
         Self { vertices: points.iter().map(|p| Vertex::new(p[0], p[1], 0.0)).collect(), closed }
     }
 
+    /// The contour for cavalier_contours, which only handles arcs up to a half circle: a larger arc goes
+    /// in as two halves (see [`Self::segment_of_pline`]; `ops::merge_arcs` joins them again).
     pub(crate) fn pline(&self) -> Polyline<f64> {
-        let mut p = Polyline::with_capacity(self.vertices.len(), self.closed);
-        for v in &self.vertices {
-            p.add(v.x, v.y, v.bulge);
+        let n = self.vertices.len();
+        let mut p = Polyline::with_capacity(n, self.closed);
+        for (i, v) in self.vertices.iter().enumerate() {
+            if v.bulge.abs() > 1.0 && (self.closed || i + 1 < n) {
+                let b = self.vertices[(i + 1) % n];
+                let (c, r, start, sweep) = arc_params([v.x, v.y], [b.x, b.y], v.bulge);
+                let (half, m) = ((sweep / 8.0).tan(), start + sweep / 2.0);
+                p.add(v.x, v.y, half);
+                p.add(c[0] + r * m.cos(), c[1] + r * m.sin(), half);
+            } else {
+                p.add(v.x, v.y, v.bulge);
+            }
         }
         p
+    }
+
+    /// The segment of this contour that segment `i` of [`Self::pline`] is (part of).
+    pub(crate) fn segment_of_pline(&self, i: usize) -> usize {
+        let mut left = i;
+        for (k, v) in self.vertices.iter().enumerate() {
+            let parts = if v.bulge.abs() > 1.0 { 2 } else { 1 };
+            if left < parts {
+                return k;
+            }
+            left -= parts;
+        }
+        self.vertices.len().saturating_sub(1)
     }
 
     pub fn bbox(&self) -> BBox {
@@ -357,6 +381,19 @@ mod tests {
         let a = Contour::arc(0.0, 0.0, 10.0, 0.0, 90.0);
         assert!(a.vertices[1].x.abs() < 1e-9 && (a.vertices[1].y - 10.0).abs() < 1e-9);
         assert!(a.flatten(0.01).iter().all(|p| (p[0].hypot(p[1]) - 10.0).abs() < 1e-6 && p[0] >= -1e-9 && p[1] >= -1e-9));
+
+        // A 270° arc (one segment, bulge > 1): from the right round the bottom and left to the top.
+        let big = Contour::arc(0.0, 0.0, 10.0, 0.0, 270.0);
+        assert_eq!(big.vertices.len(), 2);
+        assert_eq!(big.bbox(), [-10.0, -10.0, 20.0, 20.0]);
+        assert!((big.length() - 15.0 * PI).abs() < 1e-9);
+        let outline = big.flatten(0.001);
+        assert!(outline.iter().all(|p| (p[0].hypot(p[1]) - 10.0).abs() < 1e-6 && !(p[0] > 1e-6 && p[1] < -1e-6)), "skips the top right quarter");
+        // Closed with the centre: three quarters of the disc.
+        let pac = Contour { vertices: vec![big.vertices[0], big.vertices[1], Vertex::new(0.0, 0.0, 0.0)], closed: true };
+        assert!((pac.area() - 75.0 * PI).abs() < 1e-9 && (pac.length() - (15.0 * PI + 20.0)).abs() < 1e-9);
+        assert_eq!(pac.pline().vertex_count(), 4, "cavalier sees two halves");
+        assert_eq!((0..4).map(|i| pac.segment_of_pline(i)).collect::<Vec<_>>(), [0, 0, 1, 2]);
     }
 
     #[test]

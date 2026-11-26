@@ -167,7 +167,7 @@ impl Document {
             let Ok(contours) = path_contours(&self.s, item) else { continue };
             for (contour, c) in contours.iter().enumerate() {
                 if let Some(r) = c.pline().closest_point(Vector2::new(p[0], p[1]), 1e-9).filter(|r| r.distance < TOL) {
-                    let segment = if c.as_circle().is_some() { 0 } else { r.seg_start_index };
+                    let segment = if c.as_circle().is_some() { 0 } else { c.segment_of_pline(r.seg_start_index) };
                     return Some(Ref::Segment { item, contour, segment });
                 }
             }

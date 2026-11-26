@@ -91,7 +91,7 @@ fn our_own_svg_export_round_trips() {
     d.add("coaster", Op::Cut, Shape::path(Contour::rect(50.0, 10.0, 40.0, 40.0, 6.0)));
     d.add("coaster face", Op::Engrave, Shape::path(Contour::rect(50.0, 10.0, 40.0, 40.0, 6.0)));
     d.add("circle", Op::Score, Shape::path(Contour::circle(120.0, 30.0, 15.0)));
-    d.add("arc", Op::Engrave, Shape::path(Contour::arc(30.0, 80.0, 12.0, 30.0, 250.0)));
+    d.add("arc", Op::Engrave, Shape::path(Contour::arc(30.0, 80.0, 12.0, 30.0, 330.0)));
     let plate = Shape::Path { contours: vec![Contour::rect(60.0, 70.0, 50.0, 30.0, 0.0), Contour::circle(85.0, 85.0, 7.0)] };
     d.add("face", Op::Engrave, plate);
     d.add("helper", Op::NoOutput, Shape::path(Contour::line([10.0, 140.0], [50.0, 140.0])));

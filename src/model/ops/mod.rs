@@ -33,8 +33,11 @@ use cavalier_contours::polyline::{PlineOrientation, PlineSource, PlineSourceMut,
 /// Distances below this (mm) count as zero.
 const EPS: f64 = 1e-9;
 
+/// A cavalier result as a contour, the arcs it split (see `Contour::pline`) or cut up merged again.
 fn to_contour(p: &impl PlineSource<Num = f64>) -> Contour {
-    Contour { vertices: p.iter_vertexes().map(|v| Vertex::new(v.x, v.y, v.bulge)).collect(), closed: p.is_closed() }
+    let mut c = Contour { vertices: p.iter_vertexes().map(|v| Vertex::new(v.x, v.y, v.bulge)).collect(), closed: p.is_closed() };
+    merge_arcs(&mut c);
+    c
 }
 
 /// The closed contour as a polyline wound the given way (cavalier's counter-clockwise = positive area).

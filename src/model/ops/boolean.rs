@@ -308,7 +308,7 @@ mod circle_tests {
         assert!(!cs.is_empty(), "{name}: empty");
         for c in cs {
             assert!(c.closed, "{name}: open {c:?}");
-            assert!(c.vertices.iter().all(|v| v.x.is_finite() && v.y.is_finite() && v.bulge.abs() <= 1.0 + 1e-9), "{name}: {c:?}");
+            assert!(c.vertices.iter().all(|v| v.x.is_finite() && v.y.is_finite() && v.bulge.is_finite()), "{name}: {c:?}");
             let n = c.vertices.len();
             for k in 0..n {
                 let (a, b) = (c.vertices[k], c.vertices[(k + 1) % n]);
@@ -328,6 +328,18 @@ mod circle_tests {
 
     fn discs(ds: &[Disc]) -> Vec<Vec<Contour>> {
         ds.iter().map(|d| vec![Contour::circle(d.0, d.1, d.2)]).collect()
+    }
+
+    #[test]
+    fn union_of_two_circles_is_one_arc_per_circle() {
+        // Both pieces sweep over a half circle; each stays one arc between the two crossings.
+        for (big, small) in [((0.0, 0.0, 30.0), (35.0, 5.0, 12.0)), ((0.0, 0.0, 10.0), (12.0, 0.0, 10.0))] {
+            let u = boolean(BoolOp::Union, &discs(&[big, small]));
+            assert_eq!(u.len(), 1);
+            assert_eq!(u[0].vertices.len(), 2, "one vertex per crossing: {u:?}");
+            let (area, length) = expected(&[big, small]);
+            check("union", &u, area, length);
+        }
     }
 
     #[test]

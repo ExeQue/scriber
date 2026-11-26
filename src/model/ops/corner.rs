@@ -1,9 +1,9 @@
 //! Corner editing shared by fillet and chamfer: a sharp corner between two straight segments is
 //! replaced by a new segment (an arc for fillet, a line for chamfer).
 
-use super::{EPS, to_contour};
+use super::EPS;
+use crate::model::chain::reversed;
 use crate::model::geom::{Contour, Point, Vertex, distance};
-use cavalier_contours::polyline::PlineSourceMut;
 
 /// A sharp corner between two straight segments.
 pub(super) struct Corner {
@@ -139,12 +139,6 @@ pub fn join_ends(a: &Contour, b: &Contour) -> Result<(Contour, usize), String> {
     vertices.push(p);
     vertices.extend_from_slice(&b.vertices[1..]);
     Ok((Contour { vertices, closed: false }, n - 1))
-}
-
-fn reversed(c: &Contour) -> Contour {
-    let mut p = c.pline();
-    p.invert_direction_mut();
-    to_contour(&p)
 }
 
 #[cfg(test)]

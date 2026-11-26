@@ -416,6 +416,8 @@ impl Document {
         }
         let keep = items[0].id;
         self.item_mut(keep).unwrap().shape = Shape::Path { contours };
+        // Constraints on the kept item follow its geometry into the result (segments are renumbered).
+        self.remap_constraints(keep, items[0].shape.contours(), false);
         let rest: Vec<u64> = items[1..].iter().map(|i| i.id).collect();
         self.delete(&rest);
         self.selection = vec![keep];

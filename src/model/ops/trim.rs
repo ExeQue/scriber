@@ -104,4 +104,15 @@ mod tests {
         assert!(b[0].abs() < 1e-9 && (b[2] - 10.0).abs() < 1e-9 && (b[3] - 20.0).abs() < 1e-9);
         assert!((out[0].length() - std::f64::consts::PI * 10.0).abs() < 1e-6);
     }
+
+    #[test]
+    fn trimming_a_small_piece_off_a_circle_leaves_one_big_arc() {
+        // A line crossing the circle at ±30°: trimming the right piece keeps a 300° arc.
+        let circle = vec![Contour::circle(0.0, 0.0, 10.0)];
+        let x = 10.0 * (std::f64::consts::PI / 6.0).cos();
+        let out = trim(&circle, &[Contour::line([x, -20.0], [x, 20.0])], [10.0, 0.0]).unwrap();
+        assert_eq!(out[0].vertices.len(), 2, "one 300° arc: {:?}", out[0]);
+        assert!((out[0].length() - 10.0 * 5.0 * std::f64::consts::PI / 3.0).abs() < 1e-6);
+        assert!(out[0].bbox().iter().zip([-10.0, -10.0, 10.0 + x, 20.0]).all(|(v, e)| (v - e).abs() < 1e-6), "{:?}", out[0].bbox());
+    }
 }
