@@ -18,17 +18,17 @@ hero:
 
 features:
   - title: Ask an agent, watch it draw
-    details: Claude Code, Codex and other agents draw, add constraints, set up layers and laser settings and check the design over MCP. Every change shows live in your window.
+    details: Agents draw, constrain and check your design over MCP, live in your window.
   - title: Step in any time
-    details: Pin review comments on the canvas and the agent picks them up. Edit by hand, undo any change, or take over entirely.
-  - title: Precise CAD
-    details: Dimensions that lock a length, radius or angle, named parameters and formulas, object snaps and grips.
-  - title: Feels familiar if you know AutoCAD or DraftSight
-    details: The ribbon, an optional command line (View tab), OSNAP, OTRACK, POLAR and ORTHO, dynamic input, grips, constraints and DIM work the way you expect. See [Coming from AutoCAD or DraftSight](/guide/the-screen#coming-from-autocad-or-draftsight).
+    details: Comment on the canvas, edit by hand, undo, or take over.
+  - title: Precise CAD, familiar controls
+    details: Dimensions, snaps and grips, at home if you know AutoCAD or DraftSight.
+    link: /guide/the-screen#coming-from-autocad-or-draftsight
+    linkText: Coming from AutoCAD or DraftSight
   - title: Ready for the laser
-    details: Every shape sits on a layer that says what the laser does with it - cut, score, engrave or nothing. Preview and Check catch open cut lines, double lines and missing settings before you burn.
+    details: Layers say cut, score or engrave, and Check catches problems first.
   - title: xTool import and export
-    details: Import your material settings and projects from xTool Studio, and export an xTool Studio project, SVG or PNG.
+    details: Import xTool materials and projects, export .xs, SVG and PNG.
   - title: Your material library
-    details: Keep power, speed and passes per machine, laser module and operation, and share them as a file.
+    details: Power, speed and passes per machine and module, to share or subscribe to.
 ---
