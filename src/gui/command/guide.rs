@@ -51,7 +51,10 @@ impl App {
             Cmd::Centerline => {
                 let id = self.item_at(p)?;
                 match self.cmdline.ux.pick.take() {
-                    None => self.cmdline.ux.pick = Some((id, p)),
+                    None => {
+                        self.cmdline.ux.pick = Some((id, p));
+                        self.mark_picked(id, p);
+                    }
                     Some((first, _)) if first == id => return Err("Pick a second, different line.".into()),
                     Some((first, _)) => {
                         let ok = {
@@ -128,7 +131,9 @@ impl App {
     /// XLINE Offset: first click picks the line, the second the side.
     fn xline_offset(&mut self, p: Point) -> Result<(), String> {
         let Some((id, at)) = self.cmdline.ux.pick.take() else {
-            self.cmdline.ux.pick = Some((self.item_at(p)?, p));
+            let id = self.item_at(p)?;
+            self.cmdline.ux.pick = Some((id, p));
+            self.mark_picked(id, p);
             return Ok(());
         };
         let seg = {

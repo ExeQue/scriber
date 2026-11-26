@@ -344,6 +344,7 @@ impl App {
 
     /// The command is done: back to selecting.
     fn end(&mut self) {
+        self.clear_picked();
         self.cmdline.active = None;
         self.tool = Tool::Select;
         self.draft.clear();

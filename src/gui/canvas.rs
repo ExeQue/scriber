@@ -341,6 +341,7 @@ impl App {
         self.paint_selection(&painter, &state.items, &selection, pointer);
         self.paint_hover(&painter, &state, pointer);
         self.paint_hover_measure(&painter, &state.items, pointer);
+        self.paint_picked(&painter, tol);
         self.paint_draft(&painter, pointer, tol);
         self.paint_aids(&painter, rect, pointer);
     }

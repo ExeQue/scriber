@@ -21,6 +21,7 @@ mod library_window;
 mod overrides;
 mod panels;
 mod parameters;
+mod picked;
 mod preview;
 mod select;
 mod settings;
@@ -88,6 +89,8 @@ struct App {
     pointer_mm: Option<Point>,
     /// Tab presses taken for dynamic input before egui could use them for focus.
     dyn_tabs: usize,
+    /// What the running command has picked so far, numbered on the canvas.
+    picked: Vec<picked::Picked>,
     view: View,
     canvas_rect: Rect,
     textures: HashMap<u64, egui::TextureHandle>,
@@ -212,6 +215,7 @@ impl App {
             measured: None,
             pointer_mm: None,
             dyn_tabs: 0,
+            picked: Vec::new(),
             view: View { offset: Vec2::ZERO, zoom: 3.0, auto_fit: true, fit_size: Vec2::ZERO, history: Vec::new(), wheeling: false },
             canvas_rect: Rect::NOTHING,
             textures: HashMap::new(),

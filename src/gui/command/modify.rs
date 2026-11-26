@@ -193,6 +193,7 @@ impl App {
                 }
                 self.cmdline.modify.target = Some(id);
                 self.cmdline.modify.target_at = Some(p);
+                self.mark_picked(id, p);
                 Ok(())
             }
             (Cmd::Trim, Entry::Point(p)) => {
@@ -200,7 +201,9 @@ impl App {
                 self.apply_to(&[id], |d, ids| d.trim(ids[0], p, &[]))
             }
             (Cmd::Offset, Entry::Point(p)) if step == Step::Pick => {
-                self.cmdline.modify.target = Some(self.item_at(p)?);
+                let id = self.item_at(p)?;
+                self.cmdline.modify.target = Some(id);
+                self.mark_picked(id, p);
                 self.set_step(Step::Side);
                 Ok(())
             }

@@ -178,6 +178,7 @@ impl App {
             (Step::Constrain, Entry::Point(p)) => {
                 let n = self.cmdline.constrain.refs.len();
                 let r = self.pick_ref(p, takes_point(cmd, n))?;
+                self.mark_picked(r.item(), p);
                 self.cmdline.constrain.refs.push(r);
                 if !complete(cmd, &self.cmdline.constrain.refs) {
                     return Ok(());

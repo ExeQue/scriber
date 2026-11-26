@@ -54,8 +54,14 @@ impl App {
             Cmd::MatchProp => {
                 let id = self.item_at(p)?;
                 match self.cmdline.ux.pick {
-                    None => self.cmdline.ux.pick = Some((id, p)),
-                    Some((source, _)) => self.apply_ids(&[id], |d, ids| d.match_properties(source, ids))?,
+                    None => {
+                        self.cmdline.ux.pick = Some((id, p));
+                        self.mark_picked(id, p);
+                    }
+                    Some((source, _)) => {
+                        self.apply_ids(&[id], |d, ids| d.match_properties(source, ids))?;
+                        self.mark_picked(id, p);
+                    }
                 }
                 Ok(())
             }
@@ -64,6 +70,7 @@ impl App {
                     let id = self.item_at(p)?;
                     if self.cmdline.ux.break_two {
                         self.cmdline.ux.pick = Some((id, p));
+                        self.mark_picked(id, p);
                         self.draft = vec![p];
                         return Ok(());
                     }
