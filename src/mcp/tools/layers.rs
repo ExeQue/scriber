@@ -30,6 +30,8 @@ pub struct UpdateLayer {
     /// Replaces the layer's own power (%), speed (mm/s) and passes; a missing one (or {}) uses the
     /// material library's preset for the layer's op.
     pub settings: Option<Overrides>,
+    /// The material's profile for the layer's op (a setting's name, see list_materials); "" = the default one.
+    pub profile: Option<String>,
     /// Hidden layers are not drawn, lasered or exported.
     pub visible: Option<bool>,
     /// Items on a locked layer cannot be selected or edited.
@@ -105,6 +107,9 @@ impl Server {
             l.op = p.op.unwrap_or(l.op);
             l.color = color.unwrap_or(l.color);
             l.settings = p.settings.unwrap_or(l.settings);
+            if let Some(name) = p.profile {
+                l.profile = (!name.is_empty()).then_some(name);
+            }
             l.visible = p.visible.unwrap_or(l.visible);
             l.locked = p.locked.unwrap_or(l.locked);
             if let Some(k) = p.order {

@@ -36,6 +36,10 @@ pub struct Setting {
     /// Laser module id of that machine.
     pub laser: String,
     pub operation: Operation,
+    /// Profile name, e.g. "Light" or "Photo": a material can have several settings per machine,
+    /// laser and operation. "" (missing in older files) is the default one.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
     /// Power in percent (0–100).
     pub power: f64,
     /// Speed in mm/s.
@@ -55,6 +59,27 @@ fn one() -> u32 {
 }
 
 impl Setting {
+    /// A default profile: full power, 10 mm/s, one pass (engrave: 100 lines per cm, one way).
+    pub fn new(machine: &str, laser: &str, operation: Operation) -> Self {
+        let engrave = operation == Operation::Engrave;
+        Setting {
+            machine: machine.into(),
+            laser: laser.into(),
+            operation,
+            name: String::new(),
+            power: 100.0,
+            speed: 10.0,
+            passes: 1,
+            line_interval: engrave.then_some(0.1),
+            bidirectional: engrave.then_some(false),
+        }
+    }
+
+    /// Whether it is for this machine, laser and operation (any profile).
+    pub fn is_for(&self, machine: &str, laser: &str, op: Operation) -> bool {
+        self.machine == machine && self.laser == laser && self.operation == op
+    }
+
     /// e.g. "100 % · 8 mm/s · 2×".
     pub fn hint(&self) -> String {
         let mut s = format!("{} % · {} mm/s · {}×", self.power, self.speed, self.passes);
@@ -134,14 +159,31 @@ pub struct Material {
 }
 
 impl Material {
-    /// The setting for an operation on a machine; without a laser module, the first module that has one.
+    /// The default setting for an operation on a machine (the unnamed profile, else the first one);
+    /// without a laser module, the first module that has one.
     pub fn setting(&self, machine: &str, laser: Option<&str>, op: Operation) -> Option<&Setting> {
-        self.settings.iter().find(|s| s.machine == machine && s.operation == op && laser.is_none_or(|l| s.laser == l))
+        self.profile(machine, laser, op, None)
     }
 
-    /// Add or replace the setting for the same machine, laser module and operation.
+    /// The profile with this name, falling back to the default one when there is none by that name.
+    pub fn profile(&self, machine: &str, laser: Option<&str>, op: Operation, name: Option<&str>) -> Option<&Setting> {
+        let mut list = self.settings.iter().filter(|s| s.machine == machine && s.operation == op && laser.is_none_or(|l| s.laser == l));
+        let laser = list.next()?.laser.clone();
+        let list: Vec<&Setting> = self.settings.iter().filter(|s| s.is_for(machine, &laser, op)).collect();
+        name.and_then(|n| list.iter().find(|s| s.name == n)).or_else(|| list.iter().find(|s| s.name.is_empty())).or(list.first()).copied()
+    }
+
+    /// The profile names for a machine, laser and operation, the default first ("" when unnamed).
+    pub fn profile_names(&self, machine: &str, laser: Option<&str>, op: Operation) -> Vec<String> {
+        let Some(default) = self.setting(machine, laser, op) else { return Vec::new() };
+        let mut names = vec![default.name.clone()];
+        names.extend(self.settings.iter().filter(|s| s.is_for(machine, &default.laser, op) && s.name != default.name).map(|s| s.name.clone()));
+        names
+    }
+
+    /// Add or replace the setting for the same machine, laser module, operation and profile name.
     pub fn put(&mut self, setting: Setting) {
-        match self.settings.iter_mut().find(|s| s.machine == setting.machine && s.laser == setting.laser && s.operation == setting.operation) {
+        match self.settings.iter_mut().find(|s| s.is_for(&setting.machine, &setting.laser, setting.operation) && s.name == setting.name) {
             Some(s) => *s = setting,
             None => self.settings.push(setting),
         }
@@ -162,7 +204,14 @@ impl Material {
         if self.thickness < 0.0 {
             return Err(format!("{}: thickness cannot be negative", self.name));
         }
-        self.settings.iter().try_for_each(|s| s.check().map_err(|e| format!("{}: {e}", self.name)))
+        for (i, s) in self.settings.iter().enumerate() {
+            s.check().map_err(|e| format!("{}: {e}", self.name))?;
+            if self.settings[..i].iter().any(|t| t.is_for(&s.machine, &s.laser, s.operation) && t.name.trim() == s.name.trim()) {
+                let name = if s.name.trim().is_empty() { "unnamed (default)".to_string() } else { format!("\"{}\"", s.name.trim()) };
+                return Err(format!("{}: two {} profiles named {name} for the same laser", self.name, s.operation.label().to_lowercase()));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -172,9 +221,31 @@ mod tests {
 
     #[test]
     fn hint_shows_lines_per_cm() {
-        let mut s = Setting { machine: "m".into(), laser: "l".into(), operation: Operation::Engrave, power: 30.0, speed: 200.0, passes: 1, line_interval: Some(0.1), bidirectional: Some(true) };
+        let mut s = Setting { power: 30.0, speed: 200.0, bidirectional: Some(true), ..Setting::new("m", "l", Operation::Engrave) };
         assert_eq!(s.hint(), "30 % · 200 mm/s · 1× · 100 lines/cm · both ways");
         s.line_interval = Some(0.07);
         assert_eq!(s.hint(), "30 % · 200 mm/s · 1× · 142.9 lines/cm · both ways");
+    }
+
+    #[test]
+    fn named_profiles() {
+        let engrave = |name: &str, power: f64| Setting { name: name.into(), power, ..Setting::new("m", "l", Operation::Engrave) };
+        let mut m = Material { id: "oak".into(), name: "Oak".into(), category: Category::Wood, thickness: 3.0, notes: String::new(), source: String::new(), settings: vec![engrave("Photo", 20.0)] };
+        assert_eq!(m.setting("m", None, Operation::Engrave).unwrap().name, "Photo", "without an unnamed one the first is the default");
+        m.put(engrave("", 30.0));
+        m.put(engrave("Dark", 60.0));
+        m.put(engrave("Dark", 70.0));
+        assert_eq!(m.settings.len(), 3, "put replaces the same name");
+        assert_eq!(m.setting("m", Some("l"), Operation::Engrave).unwrap().power, 30.0, "the unnamed one is the default");
+        assert_eq!(m.profile("m", None, Operation::Engrave, Some("Dark")).unwrap().power, 70.0);
+        assert_eq!(m.profile("m", None, Operation::Engrave, Some("gone")).unwrap().power, 30.0, "an unknown name falls back to the default");
+        assert_eq!(m.profile_names("m", None, Operation::Engrave), ["", "Photo", "Dark"]);
+        assert!(m.check().is_ok());
+        m.settings.push(engrave("Dark", 10.0));
+        assert!(m.check().unwrap_err().contains("two engrave profiles named \"Dark\""));
+        // Old files have no names and load as the default profile.
+        let old: Setting = serde_json::from_str(r#"{"machine":"m","laser":"l","operation":"cut","power":100,"speed":8}"#).unwrap();
+        assert_eq!((old.name.as_str(), old.passes), ("", 1));
+        assert!(!serde_json::to_string(&old).unwrap().contains("name"));
     }
 }

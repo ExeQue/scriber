@@ -78,16 +78,29 @@ impl App {
         let current = d.current_layer();
         let used: Vec<u64> = d.s.items.iter().map(|i| i.layer).collect();
         // The material library's preset per layer, to show and to start an override from.
-        let presets: Vec<Option<Setting>> = {
+        // And the material's profiles for the layer's op on the document's machine and laser.
+        let (presets, profiles): (Vec<Option<Setting>>, Vec<Vec<String>>) = {
             let lib = library::get();
-            d.s.layers.iter().map(|l| op_operation(l.op).and_then(|op| Layer { settings: Overrides::default(), ..l.clone() }.setting(&d.s, &lib, op))).collect()
+            let material = d.s.material.as_deref().and_then(|id| lib.material(id));
+            d.s.layers
+                .iter()
+                .map(|l| {
+                    let op = op_operation(l.op);
+                    let preset = op.and_then(|op| Layer { settings: Overrides::default(), ..l.clone() }.setting(&d.s, &lib, op));
+                    let names = match (op, material, d.s.machine.as_deref()) {
+                        (Some(op), Some(m), Some(machine)) => m.profile_names(machine, d.s.laser.as_deref(), op),
+                        _ => Vec::new(),
+                    };
+                    (preset, names)
+                })
+                .unzip()
         };
         let count = d.s.layers.len();
         let mut changed = false;
         let mut action = None;
-        for (k, (layer, preset)) in d.s.layers.iter_mut().zip(presets).enumerate() {
+        for (k, ((layer, preset), names)) in d.s.layers.iter_mut().zip(presets).zip(profiles).enumerate() {
             ui.push_id(layer.id, |ui| {
-                changed |= if full { layer_row(ui, layer, preset, current, used.contains(&layer.id), k, count, &mut action) } else { short_row(ui, layer, current, &mut action) };
+                changed |= if full { layer_row(ui, layer, preset, &names, current, used.contains(&layer.id), k, count, &mut action) } else { short_row(ui, layer, current, &mut action) };
             });
         }
 
@@ -142,7 +155,7 @@ impl App {
 
 /// One layer: returns whether it changed; buttons that need the whole document set `action`.
 #[allow(clippy::too_many_arguments)]
-fn layer_row(ui: &mut egui::Ui, layer: &mut Layer, preset: Option<Setting>, current: u64, used: bool, k: usize, count: usize, action: &mut Option<Action>) -> bool {
+fn layer_row(ui: &mut egui::Ui, layer: &mut Layer, preset: Option<Setting>, profiles: &[String], current: u64, used: bool, k: usize, count: usize, action: &mut Option<Action>) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
         if ui.radio(layer.id == current, "").on_hover_text("Current layer: new shapes go here").clicked() {
@@ -174,6 +187,7 @@ fn layer_row(ui: &mut egui::Ui, layer: &mut Layer, preset: Option<Setting>, curr
     if op_operation(layer.op).is_some() {
         ui.horizontal(|ui| {
             ui.add_space(22.0);
+            changed |= profile_combo(ui, layer, profiles);
             egui::CollapsingHeader::new(RichText::new(settings_title(layer, preset.as_ref())).small()).id_salt("settings").show(ui, |ui| {
                 changed |= settings_ui(ui, &mut layer.settings, preset.as_ref());
             });
@@ -244,6 +258,33 @@ fn settings_title(layer: &Layer, preset: Option<&Setting>) -> String {
     let passes = num(o.passes.map(|p| p.to_string()), preset.map(|p| p.passes.to_string()));
     let own = if o.is_empty() { "" } else { " (own)" };
     format!("{power} % · {speed} mm/s · {passes}×{own}")
+}
+
+/// The material's profile for this layer (e.g. "Light", "Photo"), when it has more than one.
+fn profile_combo(ui: &mut egui::Ui, layer: &mut Layer, profiles: &[String]) -> bool {
+    if profiles.len() < 2 {
+        return false;
+    }
+    let label = |name: &str, first: bool| match (name.is_empty(), first) {
+        (true, _) => "Default".to_string(),
+        (false, true) => format!("{name} (default)"),
+        (false, false) => name.to_string(),
+    };
+    // A missing or unknown name means the default, the first one.
+    let chosen = layer.profile.as_deref().and_then(|p| profiles.iter().position(|n| n == p)).unwrap_or(0);
+    let mut pick = chosen;
+    egui::ComboBox::from_id_salt("profile").width(110.0).selected_text(label(&profiles[chosen], chosen == 0)).show_ui(ui, |ui| {
+        for (k, name) in profiles.iter().enumerate() {
+            ui.selectable_value(&mut pick, k, label(name, k == 0));
+        }
+    })
+    .response
+    .on_hover_text("Which of the material's settings this layer uses");
+    if pick == chosen {
+        return false;
+    }
+    layer.profile = (pick > 0).then(|| profiles[pick].clone());
+    true
 }
 
 fn settings_ui(ui: &mut egui::Ui, o: &mut Overrides, preset: Option<&Setting>) -> bool {

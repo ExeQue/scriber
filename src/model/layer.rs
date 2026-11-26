@@ -48,6 +48,9 @@ pub struct Layer {
     /// Power, speed and passes for this layer; missing ones come from the material library.
     #[serde(default, skip_serializing_if = "Overrides::is_empty")]
     pub settings: Overrides,
+    /// The material's profile to use (e.g. "Photo"); missing or unknown = the default one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
     /// Hidden layers are not drawn, lasered or exported.
     #[serde(default = "yes")]
     pub visible: bool,
@@ -62,7 +65,7 @@ fn yes() -> bool {
 
 impl Layer {
     pub fn new(id: u64, name: &str, op: Op) -> Self {
-        Self { id, name: name.into(), op, color: None, settings: Overrides::default(), visible: true, locked: false }
+        Self { id, name: name.into(), op, color: None, settings: Overrides::default(), profile: None, visible: true, locked: false }
     }
 
     pub fn rgb(&self) -> [u8; 3] {
@@ -73,20 +76,20 @@ impl Layer {
     /// top (only for the layer's own operation: open shapes on an Engrave layer use the score preset).
     /// None when they do not give all of power, speed and passes.
     pub fn setting(&self, s: &State, lib: &Library, operation: Operation) -> Option<Setting> {
+        let own = op_operation(self.op) == Some(operation);
+        let profile = self.profile.as_deref().filter(|_| own);
         let preset = match (&s.machine, &s.material) {
-            (Some(m), Some(mat)) => lib.setting(m, s.laser.as_deref(), mat, operation).cloned(),
+            (Some(m), Some(mat)) => lib.profile(m, s.laser.as_deref(), mat, operation, profile).cloned(),
             _ => None,
         };
-        let o = if op_operation(self.op) == Some(operation) { self.settings } else { Overrides::default() };
+        let o = if own { self.settings } else { Overrides::default() };
         let mut out = preset.unwrap_or_else(|| Setting {
-            machine: s.machine.clone().unwrap_or_default(),
-            laser: s.laser.clone().unwrap_or_default(),
-            operation,
             power: f64::NAN,
             speed: f64::NAN,
             passes: 0,
             line_interval: None,
             bidirectional: None,
+            ..Setting::new(s.machine.as_deref().unwrap_or_default(), s.laser.as_deref().unwrap_or_default(), operation)
         });
         out.power = o.power.unwrap_or(out.power);
         out.speed = o.speed.unwrap_or(out.speed);
@@ -296,6 +299,13 @@ mod tests {
         layer.settings.passes = Some(3);
         let s = layer.setting(&d.s, &lib, Operation::Cut).unwrap();
         assert_eq!((s.power, s.speed, s.passes), (100.0, 4.0, 3));
+        // A named profile of the material, with the layer's own numbers still on top.
+        let mut lib = lib;
+        lib.material_mut("black-acrylic-3mm").unwrap().put(Setting { name: "Fast".into(), speed: 9.0, ..preset.clone() });
+        layer.profile = Some("Fast".into());
+        assert_eq!(layer.setting(&d.s, &lib, Operation::Cut).unwrap().speed, 9.0);
+        layer.profile = Some("Gone".into());
+        assert_eq!(layer.setting(&d.s, &lib, Operation::Cut).unwrap().speed, 4.0, "an unknown profile uses the default");
         // No preset for engrave: only a full override gives a setting.
         layer.op = Op::Engrave;
         assert_eq!(layer.setting(&d.s, &lib, Operation::Engrave), None);

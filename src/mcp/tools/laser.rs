@@ -50,7 +50,7 @@ pub struct SaveMaterial {
 pub struct SetMaterialSetting {
     /// Material id.
     pub material: String,
-    /// Replaces the setting for the same machine, laser and operation.
+    /// Replaces the setting for the same machine, laser, operation and profile name (name "" or missing = the default profile).
     #[serde(flatten)]
     pub setting: Setting,
 }
@@ -74,7 +74,7 @@ fn setup(s: &State) -> Value {
         "material": s.material.as_deref().and_then(|id| lib.material(id)).map(|m| json!({"id": m.id, "name": m.name, "thickness": m.thickness, "notes": m.notes})),
         "settings": settings,
         "layers": s.layers.iter().map(|l| json!({
-            "id": l.id, "name": l.name, "op": l.op, "visible": l.visible,
+            "id": l.id, "name": l.name, "op": l.op, "visible": l.visible, "profile": l.profile,
             "setting": crate::model::layer::op_operation(l.op).and_then(|op| l.setting(s, &lib, op)),
         })).collect::<Vec<_>>(),
         "material_size": [s.width, s.height],

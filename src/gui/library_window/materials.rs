@@ -1,12 +1,12 @@
 //! The Materials page: the list of materials and the form for the selected one,
-//! with its laser settings grouped by machine and laser module.
+//! with its laser settings for one machine and laser at a time, as named profiles per operation.
 
 use super::Editor;
 use super::material_list::{category_combo, rows, search_box};
-use super::widgets::{Confirm, ListAction, column_title, field_label, form_column, notes_section, remove_button, section, sidebar};
+use super::widgets::{Confirm, ListAction, column_title, field_label, form_column, natural_cmp, notes_section, remove_button, section, sidebar};
 use crate::gui::lucide;
 use crate::library::{Category, Library, Machine, Material, Operation, Setting};
-use eframe::egui::{self, Align, Button, Checkbox, ComboBox, DragValue, Layout, RichText};
+use eframe::egui::{self, Align, Checkbox, ComboBox, DragValue, Layout, RichText};
 
 const LINES_HELP: &str = "How many engraved lines fit in 1 cm. More lines look darker and smoother but take longer. 100 lines per cm means the lines are 0.1 mm apart.";
 
@@ -55,15 +55,15 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
         }
         ed.material = ed.material.min(lib.materials.len().saturating_sub(1));
         let Library { machines, materials, .. } = lib;
-        let (index, confirm) = (ed.material, &mut ed.confirm);
+        let (index, confirm, view) = (ed.material, &mut ed.confirm, &mut ed.settings_view);
         form_column(ui, "material", |ui| match materials.get_mut(index) {
-            Some(m) => form(ui, m, machines, index, confirm),
+            Some(m) => form(ui, m, machines, index, confirm, view),
             None => _ = ui.label(RichText::new(super::material_list::NO_MATERIALS).weak()),
         });
     });
 }
 
-fn form(ui: &mut egui::Ui, m: &mut Material, machines: &[Machine], index: usize, confirm: &mut Option<Confirm>) {
+fn form(ui: &mut egui::Ui, m: &mut Material, machines: &[Machine], index: usize, confirm: &mut Option<Confirm>, view: &mut SettingsView) {
     section(ui, "General", "What the material is called, what kind it is and how thick it is.", |ui| {
         egui::Grid::new("material_general").num_columns(2).spacing([8.0, 8.0]).show(ui, |ui| {
             field_label(ui, "Name");
@@ -81,129 +81,192 @@ fn form(ui: &mut egui::Ui, m: &mut Material, machines: &[Machine], index: usize,
             ui.end_row();
         });
     });
-    section(ui, "Laser settings", "Power, speed and passes that work for this material, per machine and laser. Try them on a scrap piece first.", |ui| {
-        settings(ui, &mut m.settings, machines, index, confirm);
+    section(ui, "Laser settings", "Power, speed and passes that work for this material, per machine and laser; several named profiles per operation. Try them on a scrap piece first.", |ui| {
+        settings(ui, &mut m.settings, machines, index, confirm, view);
     });
     notes_section(ui, &mut m.notes, &mut m.source);
 }
 
-/// One box per machine and laser module, in the order they first appear.
-fn settings(ui: &mut egui::Ui, settings: &mut Vec<Setting>, machines: &[Machine], index: usize, confirm: &mut Option<Confirm>) {
-    let mut groups: Vec<(String, String)> = Vec::new();
+/// A machine and one of its laser modules: (machine id, laser id).
+type Key = (String, String);
+
+/// Which machine and laser the material page shows settings for, and the search in its picker.
+#[derive(Default)]
+pub(super) struct SettingsView {
+    pub key: Option<Key>,
+    pub search: String,
+}
+
+/// "xTool M2 · 10 W diode", or only the machine's name when it has one laser.
+fn key_name(machines: &[Machine], key: &Key) -> String {
+    match machines.iter().find(|m| m.id == key.0) {
+        Some(m) if m.lasers.len() == 1 => m.name.clone(),
+        Some(m) => format!("{} · {}", m.name, m.laser(&key.1).map_or(key.1.as_str(), |l| &l.name)),
+        None => format!("{} · {}", key.0, key.1),
+    }
+}
+
+/// The settings for one machine and laser at a time (there can be dozens of machines): a picker
+/// that lists the machines with settings first, which others have settings, and per operation its
+/// profiles as rows.
+fn settings(ui: &mut egui::Ui, settings: &mut Vec<Setting>, machines: &[Machine], index: usize, confirm: &mut Option<Confirm>, view: &mut SettingsView) {
+    let mut with: Vec<Key> = Vec::new();
     for s in settings.iter() {
         let key = (s.machine.clone(), s.laser.clone());
-        if !groups.contains(&key) {
-            groups.push(key);
+        if !with.contains(&key) {
+            with.push(key);
         }
     }
-    for (g, key) in groups.iter().enumerate() {
-        ui.push_id(g, |ui| group(ui, settings, key, machines, index, confirm));
-        ui.add_space(8.0);
-    }
-    if groups.is_empty() {
-        ui.label(RichText::new("No settings yet.").weak());
-    }
-    let free = machines.iter().flat_map(|mc| mc.lasers.iter().map(|l| (mc.id.clone(), l.id.clone()))).find(|k| !groups.contains(k));
-    let add = ui.add_enabled(free.is_some(), Button::new(format!("{} Add settings for a machine or laser", lucide::PLUS)));
-    if add.on_disabled_hover_text("Every laser already has settings here").clicked()
-        && let Some((machine, laser)) = free
-    {
-        settings.push(new_setting(machine, laser, Operation::Cut));
-    }
-}
+    with.sort_by(|a, b| natural_cmp(&key_name(machines, a), &key_name(machines, b)));
+    let all: Vec<Key> = machines.iter().flat_map(|m| m.lasers.iter().map(|l| (m.id.clone(), l.id.clone()))).collect();
+    let known = |k: &Key| all.contains(k) || with.contains(k);
+    let Some(key) = view.key.clone().filter(known).or_else(|| with.first().cloned()).or_else(|| all.first().cloned()) else {
+        ui.label(RichText::new("Add a machine on the Machines page first.").weak());
+        return;
+    };
+    view.key = Some(key.clone());
 
-fn new_setting(machine: String, laser: String, operation: Operation) -> Setting {
-    Setting { machine, laser, operation, power: 100.0, speed: 10.0, passes: 1, line_interval: None, bidirectional: None }
-}
-
-/// The settings for one machine and laser: which ones on top, then a row per operation.
-fn group(ui: &mut egui::Ui, settings: &mut Vec<Setting>, key: &(String, String), machines: &[Machine], index: usize, confirm: &mut Option<Confirm>) {
-    let in_group = |s: &Setting| (&s.machine, &s.laser) == (&key.0, &key.1);
-    let (mut machine, mut laser) = key.clone();
-    let (mut remove, mut remove_all, mut add) = (None, false, None);
-    egui::Frame::group(ui.style()).inner_margin(10).show(ui, |ui| {
-        ui.set_min_width(ui.available_width());
-        ui.horizontal(|ui| {
-            machine_and_laser(ui, &mut machine, &mut laser, machines);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| remove_all = remove_button(ui, "all settings for this laser"));
-        });
-        ui.add_space(4.0);
-        egui::Grid::new("operations").num_columns(7).striped(true).spacing([14.0, 6.0]).show(ui, |ui| {
-            for title in ["Operation", "Power", "Speed", "Passes", "Lines per cm"] {
-                column_title(ui, title);
-            }
-            ui.vertical_centered(|ui| column_title(ui, "Both ways"));
-            ui.label(""); // the remove column
-            ui.end_row();
-            for (i, s) in settings.iter_mut().enumerate().filter(|(_, s)| in_group(s)) {
-                setting_row(ui, i, s);
-                if remove_button(ui, "this setting") {
-                    remove = Some(i);
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Machine").weak());
+        machine_picker(ui, view, machines, &with, &all);
+        let others: Vec<&Key> = with.iter().filter(|k| **k != key).collect();
+        if !others.is_empty() {
+            ui.menu_button(format!("{} Copy from…", lucide::COPY), |ui| {
+                ui.label(RichText::new("Copy all profiles from:").weak());
+                for k in &others {
+                    if ui.button(key_name(machines, k)).clicked() {
+                        for mut s in settings.iter().filter(|s| (&s.machine, &s.laser) == (&k.0, &k.1)).cloned().collect::<Vec<_>>() {
+                            (s.machine, s.laser) = key.clone();
+                            settings.retain(|t| !(t.is_for(&s.machine, &s.laser, s.operation) && t.name == s.name));
+                            settings.push(s);
+                        }
+                    }
                 }
-                ui.end_row();
-            }
-        });
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            for op in Operation::ALL.into_iter().filter(|op| !settings.iter().any(|s| in_group(s) && s.operation == *op)) {
-                if ui.button(format!("{} Add {}", lucide::PLUS, op.label().to_lowercase())).clicked() {
-                    add = Some(op);
+            })
+            .response
+            .on_hover_text("Start from another machine's or laser's numbers");
+        }
+        if with.contains(&key) {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if remove_button(ui, "all settings for this machine and laser") {
+                    let (key, name) = (key.clone(), key_name(machines, &key));
+                    *confirm = Confirm::ask(format!("Delete all settings for \"{name}\"?"), move |lib| {
+                        lib.materials[index].settings.retain(|s| (&s.machine, &s.laser) != (&key.0, &key.1));
+                    });
                 }
-            }
-        });
+            });
+        }
     });
-    let laser_name = machines.iter().find(|m| m.id == key.0).and_then(|m| m.laser(&key.1)).map_or(key.1.as_str(), |l| &l.name);
-    if remove_all {
-        let key = key.clone();
-        *confirm = Confirm::ask(format!("Delete all settings for \"{laser_name}\"?"), move |lib| {
-            lib.materials[index].settings.retain(|s| (&s.machine, &s.laser) != (&key.0, &key.1));
+    // Which other machines have settings; a click shows them.
+    let others: Vec<&Key> = with.iter().filter(|k| **k != key).collect();
+    if !others.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new("Also set up for:").weak());
+            for k in others.iter().take(4) {
+                if ui.small_button(key_name(machines, k)).clicked() {
+                    view.key = Some((*k).clone());
+                }
+            }
+            if others.len() > 4 {
+                ui.label(RichText::new(format!("(+{} more in the list)", others.len() - 4)).weak());
+            }
         });
+    }
+    ui.add_space(6.0);
+
+    let laser = machines.iter().find(|m| m.id == key.0).and_then(|m| m.laser(&key.1));
+    let mut remove = None;
+    for op in Operation::ALL {
+        ui.push_id(op.label(), |ui| {
+            egui::Frame::group(ui.style()).inner_margin(8).show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(op.label()).strong());
+                    if laser.is_some_and(|l| !l.ops.contains(&op)) {
+                        ui.label(RichText::new(format!("(this laser is not set up to {})", op.label().to_lowercase())).weak().small());
+                    }
+                });
+                let rows: Vec<usize> = (0..settings.len()).filter(|i| settings[*i].is_for(&key.0, &key.1, op)).collect();
+                if !rows.is_empty() {
+                    egui::Grid::new("profiles").num_columns(7).striped(true).spacing([12.0, 6.0]).show(ui, |ui| {
+                        let titles: &[&str] = if op == Operation::Engrave { &["Profile", "Power", "Speed", "Passes", "Lines per cm", "Both ways"] } else { &["Profile", "Power", "Speed", "Passes"] };
+                        for t in titles {
+                            column_title(ui, t);
+                        }
+                        ui.label(""); // the remove column
+                        ui.end_row();
+                        for (n, &i) in rows.iter().enumerate() {
+                            setting_row(ui, i, &mut settings[i], n == 0);
+                            if remove_button(ui, "this profile") {
+                                remove = Some(i);
+                            }
+                            ui.end_row();
+                        }
+                    });
+                }
+                let add = if rows.is_empty() { format!("{} Add {} setting", lucide::PLUS, op.label().to_lowercase()) } else { format!("{} Add profile", lucide::PLUS) };
+                if ui.button(add).on_hover_text("Profiles are named settings, e.g. Light, Dark or Photo; layers choose one").clicked() {
+                    // The first is the default one and needs no name.
+                    let name = if rows.is_empty() { String::new() } else { (rows.len() + 1..).map(|n| format!("Profile {n}")).find(|n| !rows.iter().any(|i| settings[*i].name == *n)).unwrap() };
+                    let copy = rows.last().map(|i| settings[*i].clone());
+                    settings.push(Setting { name, ..copy.unwrap_or_else(|| Setting::new(&key.0, &key.1, op)) });
+                }
+            });
+        });
+        ui.add_space(6.0);
     }
     if let Some(i) = remove {
-        *confirm = Confirm::ask(format!("Delete the {} setting for \"{laser_name}\"?", settings[i].operation.label().to_lowercase()), move |lib| {
+        let s = &settings[i];
+        let what = if s.name.is_empty() { format!("the default {} setting", s.operation.label().to_lowercase()) } else { format!("the profile \"{}\"", s.name) };
+        *confirm = Confirm::ask(format!("Delete {what} for \"{}\"?", key_name(machines, &key)), move |lib| {
             lib.materials[index].settings.remove(i);
         });
     }
-    if let Some(op) = add {
-        settings.push(new_setting(key.0.clone(), key.1.clone(), op));
-    }
-    // A different machine or laser moves the whole group.
-    if (&machine, &laser) != (&key.0, &key.1) {
-        for s in settings.iter_mut().filter(|s| in_group(s)) {
-            (s.machine, s.laser) = (machine.clone(), laser.clone());
-        }
-    }
 }
 
-fn machine_and_laser(ui: &mut egui::Ui, machine_id: &mut String, laser_id: &mut String, machines: &[Machine]) {
-    let machine = machines.iter().find(|m| m.id == *machine_id);
-    ui.label(RichText::new("Machine").weak());
-    ComboBox::from_id_salt("machine").selected_text(machine.map_or(machine_id.as_str(), |m| &m.name)).show_ui(ui, |ui| {
-        for m in machines {
-            if ui.selectable_label(*machine_id == m.id, &m.name).clicked() && *machine_id != m.id {
-                *machine_id = m.id.clone();
-                *laser_id = m.lasers.first().map(|l| l.id.clone()).unwrap_or_default();
+/// The machine and laser to show, with a search box: those with settings first, then the rest.
+fn machine_picker(ui: &mut egui::Ui, view: &mut SettingsView, machines: &[Machine], with: &[Key], all: &[Key]) {
+    let key = view.key.clone().unwrap_or_default();
+    let mut rest: Vec<&Key> = all.iter().filter(|k| !with.contains(k)).collect();
+    rest.sort_by(|a, b| natural_cmp(&key_name(machines, a), &key_name(machines, b)));
+    ComboBox::from_id_salt("settings_machine").selected_text(key_name(machines, &key)).width(260.0).height(420.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show_ui(ui, |ui| {
+        ui.add(egui::TextEdit::singleline(&mut view.search).hint_text("Search machines").desired_width(f32::INFINITY));
+        let words = view.search.to_lowercase();
+        let shows = |k: &Key| {
+            let name = key_name(machines, k).to_lowercase();
+            words.split_whitespace().all(|w| name.contains(w))
+        };
+        let mut pick = None;
+        ui.label(RichText::new("With settings for this material").small().weak());
+        let mut any = false;
+        for k in with.iter().filter(|k| shows(k)) {
+            any = true;
+            if ui.selectable_label(*k == key, key_name(machines, k)).clicked() {
+                pick = Some(k.clone());
             }
         }
-    });
-    ui.add_space(8.0);
-    let lasers = machine.map(|m| m.lasers.as_slice()).unwrap_or_default();
-    let name = lasers.iter().find(|l| l.id == *laser_id).map_or(laser_id.as_str(), |l| &l.name);
-    ui.label(RichText::new("Laser").weak());
-    ComboBox::from_id_salt("laser").selected_text(name).show_ui(ui, |ui| {
-        for l in lasers {
-            ui.selectable_value(laser_id, l.id.clone(), &l.name);
+        if !any {
+            ui.label(RichText::new("None").weak());
+        }
+        ui.separator();
+        ui.label(RichText::new("Add for another machine…").small().weak());
+        for k in rest.into_iter().filter(|k| shows(k)) {
+            if ui.selectable_label(*k == key, key_name(machines, k)).clicked() {
+                pick = Some(k.clone());
+            }
+        }
+        if let Some(k) = pick {
+            view.key = Some(k);
+            view.search.clear();
+            ui.close();
         }
     });
 }
 
-/// Six grid cells for one setting. Engrave line spacing is stored in mm but shown as lines per cm.
-fn setting_row(ui: &mut egui::Ui, i: usize, s: &mut Setting) {
-    ComboBox::from_id_salt(("op", i)).selected_text(s.operation.label()).show_ui(ui, |ui| {
-        for op in Operation::ALL {
-            ui.selectable_value(&mut s.operation, op, op.label());
-        }
-    });
+/// One profile's grid cells. Engrave line spacing is stored in mm but shown as lines per cm.
+fn setting_row(ui: &mut egui::Ui, i: usize, s: &mut Setting, first: bool) {
+    let hint = if first { "Default" } else { "Name" };
+    ui.add(egui::TextEdit::singleline(&mut s.name).id_salt(("name", i)).hint_text(hint).desired_width(110.0)).on_hover_text("e.g. Light, Dark, Photo. The first one is the default; layers can choose another.");
     ui.add(DragValue::new(&mut s.power).range(0.0..=100.0).suffix(" %"));
     ui.add(DragValue::new(&mut s.speed).range(0.1..=2000.0).suffix(" mm/s"));
     ui.add(DragValue::new(&mut s.passes).range(1..=50).suffix("×"));
@@ -216,9 +279,5 @@ fn setting_row(ui: &mut egui::Ui, i: usize, s: &mut Setting) {
         ui.vertical_centered(|ui| ui.add(Checkbox::without_text(s.bidirectional.get_or_insert(false))))
             .inner
             .on_hover_text("Engrave in both directions: faster, sometimes a little less crisp");
-    } else {
-        (s.line_interval, s.bidirectional) = (None, None);
-        ui.label("");
-        ui.label("");
     }
 }

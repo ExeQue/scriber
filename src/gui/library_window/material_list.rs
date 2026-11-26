@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn filter_by_words_kind_and_settings() {
-        let cut = Setting { machine: "m2".into(), laser: "d10".into(), operation: Operation::Cut, power: 100.0, speed: 8.0, passes: 1, line_interval: None, bidirectional: None };
+        let cut = Setting { speed: 8.0, ..Setting::new("m2", "d10", Operation::Cut) };
         let m = Material { id: "ply".into(), name: "Basswood plywood 3 mm".into(), category: Category::Plywood, thickness: 3.0, notes: String::new(), source: String::new(), settings: vec![cut] };
         let f = |search: &str, category, only_ready| Filter { search: search.into(), category, only_ready };
         assert!(f("ply 3", None, false).shows(&m, None, None));

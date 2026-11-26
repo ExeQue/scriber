@@ -33,6 +33,8 @@ pub(super) struct Editor {
     filter: Filter,
     /// A delete waiting for "yes".
     confirm: Option<Confirm>,
+    /// The machine and laser whose settings the material page shows.
+    settings_view: materials::SettingsView,
 }
 
 impl Editor {
@@ -42,7 +44,7 @@ impl Editor {
         let index = |list: Vec<&String>, id: &Option<String>| list.iter().position(|i| Some(*i) == id.as_ref()).unwrap_or(0);
         let machine = index(lib.machines.iter().map(|m| &m.id).collect(), &s.machine);
         let material = index(lib.materials.iter().map(|m| &m.id).collect(), &s.material);
-        Self { lib, tab: Tab::Machines, machine, material, error: String::new(), doc_machine: s.machine.clone(), doc_laser: s.laser.clone(), filter: Filter::default(), confirm: None }
+        Self { lib, tab: Tab::Machines, machine, material, error: String::new(), doc_machine: s.machine.clone(), doc_laser: s.laser.clone(), filter: Filter::default(), confirm: None, settings_view: materials::SettingsView { key: s.machine.clone().zip(s.laser.clone()), search: String::new() } }
     }
 
     /// Opens on the Materials page instead.

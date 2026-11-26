@@ -63,6 +63,11 @@ impl Library {
         self.material(material)?.setting(machine, laser, op)
     }
 
+    /// The named profile (the default one when the name is missing or unknown).
+    pub fn profile(&self, machine: &str, laser: Option<&str>, material: &str, op: Operation, name: Option<&str>) -> Option<&Setting> {
+        self.material(material)?.profile(machine, laser, op, name)
+    }
+
     /// Add a machine, or replace the one with the same id.
     pub fn put_machine(&mut self, m: Machine) {
         put(&mut self.machines, m, |m| &m.id);
