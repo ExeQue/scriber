@@ -821,7 +821,8 @@ impl Server {
     fn export_xs(&self, Parameters(p): Parameters<ExportXs>) -> ToolResult {
         let state = self.doc.lock().unwrap().s.clone();
         let name = PathBuf::from(&p.path).file_stem().map_or("Scriber".into(), |s| s.to_string_lossy().into_owned());
-        let x = match export::xs(&state, &crate::library::get(), &name) {
+        let lib = crate::library::get().clone(); // not locked while xs renders the cover (it locks the library)
+        let x = match export::xs(&state, &lib, &name) {
             Ok(x) => x,
             Err(e) => return fail(e.to_string()),
         };

@@ -95,7 +95,7 @@ pub struct Outline {
 /// A `PATH` display in world coordinates (identity transform), with every field xTool writes.
 pub fn display(id: &str, tag: &str, rgb: [u8; 3], z: usize, area: bool, o: Outline) -> Value {
     let color = (rgb[0] as u32) << 16 | (rgb[1] as u32) << 8 | rgb[2] as u32;
-    let r6 = |v: f64| (v * 1e6).round() / 1e6;
+    let r6 = |v: f64| (v * 1e6).round() / 1e6 + 0.0; // + 0.0 turns -0 into 0
     let [x, y, w, h] = o.bbox.map(r6);
     let mut d = json!({"id": id, "name": null, "type": "PATH", "x": x, "y": y, "angle": 0,
         "scale": {"x": 1, "y": 1}, "skew": {"x": 0, "y": 0}, "pivot": {"x": 0, "y": 0}, "localSkew": {"x": 0, "y": 0},
