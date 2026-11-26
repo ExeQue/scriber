@@ -18,6 +18,7 @@ Each item has an op for its lines: cut (red, cut through), score (blue, mark a l
 A path holds one or more contours; several contours make a compound path whose holes stay empty when filled (even-odd). Use combine_items/break_apart to build or split them.
 CAD operations: fillet, chamfer, offset (also kerf compensation), boolean (union/difference/intersection), array_rectangular, array_polar and trim.
 Contours are polylines whose segments can be arcs: each vertex has a bulge = tan(sweep/4) for the segment to the next vertex (0 = straight). Prefer add_items with kind rect/circle/arc/polygon/line/polyline over building arcs by hand.
+Constraints (as in AutoCAD) bind geometry: add_constraint (coincident, parallel, tangent, …; the first object stays, the second moves), add_dimensional_constraint (a named parameter like d1 = 40 or d2 = d1 / 2 that drives the size), set_parameter, list_constraints, delete_constraints, auto_constrain. A reference names geometry in a path: {kind: point, item, vertex}, {kind: segment, item, segment} (segment k runs from vertex k to k+1; a circle is segment 0), {kind: centre, item, segment}, {kind: item, item}; contour defaults to 0. After every change the solver keeps all constraints satisfied, moving as little as possible; a change that cannot be satisfied is refused and undone, naming the conflicting constraints.
 Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. Call export_png without a path to look at the result.";
 
 // ---------- parameters ----------
@@ -318,18 +319,18 @@ pub struct Trim {
 
 #[derive(Clone)]
 pub struct Server {
-    doc: Shared,
+    pub(super) doc: Shared,
     repaint: Arc<dyn Fn() + Send + Sync>,
     tool_router: ToolRouter<Self>,
 }
 
-type ToolResult = Result<CallToolResult, McpError>;
+pub(super) type ToolResult = Result<CallToolResult, McpError>;
 
-fn ok(v: Value) -> ToolResult {
+pub(super) fn ok(v: Value) -> ToolResult {
     Ok(CallToolResult::success(vec![ContentBlock::text(v.to_string())]))
 }
 
-fn fail(msg: impl std::fmt::Display) -> ToolResult {
+pub(super) fn fail(msg: impl std::fmt::Display) -> ToolResult {
     Ok(CallToolResult::error(vec![ContentBlock::text(msg.to_string())]))
 }
 
@@ -355,14 +356,22 @@ fn summary(d: &Document) -> Value {
 
 impl Server {
     pub fn new(doc: Shared, repaint: Arc<dyn Fn() + Send + Sync>) -> Self {
-        Self { doc, repaint, tool_router: Self::tool_router() }
+        Self { doc, repaint, tool_router: Self::tool_router() + Self::constraint_router() }
     }
 
     /// Run `f` on the locked document, then repaint the GUI.
-    fn with(&self, f: impl FnOnce(&mut Document) -> ToolResult) -> ToolResult {
-        let r = f(&mut self.doc.lock().unwrap());
+    /// The document settles its constraints afterwards; a change that breaks them is undone and
+    /// the tool fails with the conflicting constraints.
+    pub(super) fn with(&self, f: impl FnOnce(&mut Document) -> ToolResult) -> ToolResult {
+        let mut d = self.doc.lock().unwrap();
+        let r = f(&mut d);
+        let settled = d.settle(true);
+        drop(d);
         (self.repaint)();
-        r
+        match settled {
+            Ok(()) => r,
+            Err(e) => fail(format!("refused: {e}; the change was undone")),
+        }
     }
 
     /// Run a two-object fillet or chamfer.
@@ -378,7 +387,7 @@ impl Server {
     }
 
     /// Like `with`, for commands that act on ids (empty = selection) and change the document.
-    fn edit_ids(&self, ids: &[u64], f: impl FnOnce(&mut Document, Vec<u64>) -> ToolResult) -> ToolResult {
+    pub(super) fn edit_ids(&self, ids: &[u64], f: impl FnOnce(&mut Document, Vec<u64>) -> ToolResult) -> ToolResult {
         self.with(|d| {
             let ids = if ids.is_empty() { d.selection.clone() } else { ids.to_vec() };
             if ids.is_empty() {

@@ -1,5 +1,6 @@
 //! The agent side: a localhost listener inside the GUI, and `scriber mcp`, the stdio relay agents start.
 
+mod constraint_tools;
 mod tools;
 
 pub use tools::Server;
