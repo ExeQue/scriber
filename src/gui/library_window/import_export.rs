@@ -6,6 +6,7 @@ use super::{Editor, Tab, material_list};
 use crate::library::exchange::{self, Bundle, OnConflict};
 use crate::library::xtool::{self, XtoolGroup, XtoolMaterial};
 use crate::library::{LaserKind, Library, Operation};
+use crate::gui::file_dialog::Pending;
 use eframe::egui::{self, RichText};
 use std::sync::Mutex;
 
@@ -29,13 +30,47 @@ struct State {
     /// A library file waiting for the answer to "what about ids that are taken?".
     pending: Option<(Bundle, usize)>,
     status: String,
+    /// The open file dialog (it runs on its own thread) and what it is for.
+    dialog: Pending<Want>,
+}
+
+/// What the library's file dialog was opened for.
+enum Want {
+    XtoolProject,
+    Library,
+    Export(Bundle),
 }
 
 // One window at a time, so one state; it lives here so the window's own struct stays untouched.
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 
-fn pick(name: &str, ext: &[&str]) -> Option<std::path::PathBuf> {
-    rfd::FileDialog::new().add_filter(name, ext).pick_file()
+fn filter(name: &str, ext: &[&str]) -> rfd::FileDialog {
+    rfd::FileDialog::new().add_filter(name, ext)
+}
+
+/// A file dialog's answer: import or export.
+fn answer(st: &mut State, ed: &mut Editor) {
+    let Some((want, path)) = st.dialog.poll() else { return };
+    match want {
+        Want::XtoolProject => {
+            let origin = format!("project {}", path.file_name().unwrap_or_default().to_string_lossy());
+            match xtool::read_project(&path) {
+                Ok(list) => st.status = import_xtool(ed, &list, &origin, false),
+                Err(e) => ed.error = e,
+            }
+        }
+        Want::Library => match exchange::read(&path) {
+            Ok(b) => match exchange::conflicts(&ed.lib, &b) {
+                0 => st.status = exchange::import(&mut ed.lib, b, OnConflict::Skip).summary(),
+                n => st.pending = Some((b, n)),
+            },
+            Err(e) => ed.error = e,
+        },
+        Want::Export(b) => match exchange::write(&b, &path) {
+            Ok(()) => st.status = format!("Exported {} machine(s) and {} material(s)", b.machines.len(), b.materials.len()),
+            Err(e) => ed.error = e,
+        },
+    }
 }
 
 /// The menus and their dialogs; call once per frame while the window is open.
@@ -43,6 +78,8 @@ pub(super) fn menus(ui: &mut egui::Ui, ed: &mut Editor) {
     let mut guard = STATE.lock().unwrap();
     let st = guard.get_or_insert_with(State::default);
     let before = ed.lib.materials.len();
+    answer(st, ed);
+    let ctx = ui.ctx().clone();
     ui.menu_button("Import ▾", |ui| {
         if ui.button("From xTool Studio…").on_hover_text(XTOOL_HELP).clicked() {
             match xtool::read_cache(None) {
@@ -53,25 +90,11 @@ pub(super) fn menus(ui: &mut egui::Ui, ed: &mut Editor) {
                 Err(e) => ed.error = e,
             }
         }
-        if ui.button("xTool project (.xs)…").on_hover_text("The laser settings of an xTool Studio project, as a material named after the file").clicked()
-            && let Some(path) = pick("xTool Studio project", &["xs"])
-        {
-            let origin = format!("project {}", path.file_name().unwrap_or_default().to_string_lossy());
-            match xtool::read_project(&path) {
-                Ok(list) => st.status = import_xtool(ed, &list, &origin, false),
-                Err(e) => ed.error = e,
-            }
+        if ui.button("xTool project (.xs)…").on_hover_text("The laser settings of an xTool Studio project, as a material named after the file").clicked() {
+            st.dialog.pick(&ctx, Want::XtoolProject, filter("xTool Studio project", &["xs"]));
         }
-        if ui.button("Scriber library file…").on_hover_text("Machines and materials another Scriber user exported").clicked()
-            && let Some(path) = pick("Scriber library", &[exchange::EXTENSION])
-        {
-            match exchange::read(&path) {
-                Ok(b) => match exchange::conflicts(&ed.lib, &b) {
-                    0 => st.status = exchange::import(&mut ed.lib, b, OnConflict::Skip).summary(),
-                    n => st.pending = Some((b, n)),
-                },
-                Err(e) => ed.error = e,
-            }
+        if ui.button("Scriber library file…").on_hover_text("Machines and materials another Scriber user exported").clicked() {
+            st.dialog.pick(&ctx, Want::Library, filter("Scriber library", &[exchange::EXTENSION]));
         }
     });
     ui.menu_button("Export ▾", |ui| {
@@ -93,13 +116,8 @@ pub(super) fn menus(ui: &mut egui::Ui, ed: &mut Editor) {
         }
         if let Some((machines, materials, name)) = choice {
             let file = format!("{}.{}", ed.lib.new_id(&name), exchange::EXTENSION);
-            let result = exchange::bundle(&ed.lib, machines.as_deref(), materials.as_deref()).and_then(|b| {
-                let Some(path) = rfd::FileDialog::new().add_filter("Scriber library", &[exchange::EXTENSION]).set_file_name(file).save_file() else { return Ok(String::new()) };
-                exchange::write(&b, &path)?;
-                Ok(format!("Exported {} machine(s) and {} material(s)", b.machines.len(), b.materials.len()))
-            });
-            match result {
-                Ok(s) => st.status = s,
+            match exchange::bundle(&ed.lib, machines.as_deref(), materials.as_deref()) {
+                Ok(b) => st.dialog.save(&ctx, Want::Export(b), filter("Scriber library", &[exchange::EXTENSION]).set_file_name(file)),
                 Err(e) => ed.error = e,
             }
         }

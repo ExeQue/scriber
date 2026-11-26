@@ -17,10 +17,10 @@ impl App {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
                 if self.small(ui, false, Icon::Glyph("💾"), "SVG for the laser", "Save the drawing as an SVG file for the laser software") {
-                    self.export_svg();
+                    self.export_svg(ui.ctx());
                 }
                 if self.small(ui, false, Icon::Glyph("🖼"), "PNG picture", "Save a picture of the drawing") {
-                    self.export_png();
+                    self.export_png(ui.ctx());
                 }
             });
         });

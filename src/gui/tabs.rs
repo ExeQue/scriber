@@ -98,46 +98,45 @@ impl App {
 
     /// The strip of tabs above the canvas.
     pub(super) fn tab_strip(&mut self, ui: &mut egui::Ui) {
-        let tabs: Vec<(u64, String, bool)> = self
+        let tabs: Vec<(u64, String, bool, Option<PathBuf>)> = self
             .ws
             .docs()
             .iter()
             .map(|(id, d)| {
                 let d = d.lock().unwrap();
-                (*id, title(&d), d.dirty)
+                (*id, title(&d), d.dirty, d.path.clone())
             })
             .collect();
         let (mut show, mut close) = (None, None);
         egui::ScrollArea::horizontal().scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
-                for (id, name, dirty) in tabs {
+                for (id, name, dirty, path) in tabs {
                     let active = id == self.doc_id;
                     let frame = egui::Frame::new()
                         .inner_margin(egui::Margin::symmetric(8, 3))
                         .corner_radius(egui::CornerRadius { nw: 4, ne: 4, sw: 0, se: 0 })
                         .fill(if active { ui.visuals().extreme_bg_color } else { ui.visuals().faint_bg_color })
                         .stroke(if active { Stroke::new(1.0, ui.visuals().widgets.active.bg_stroke.color) } else { Stroke::NONE });
-                    let inner = frame.show(ui, |ui| {
+                    frame.show(ui, |ui| {
                         ui.horizontal(|ui| {
                             let label = if dirty { format!("{name} •") } else { name.clone() };
                             let text = if active { RichText::new(label).strong() } else { RichText::new(label).color(ui.visuals().weak_text_color()) };
-                            ui.add(egui::Label::new(text).selectable(false).sense(Sense::click()));
+                            let r = ui.add(egui::Label::new(text).selectable(false).sense(Sense::click()));
+                            if r.middle_clicked() {
+                                close = Some(id);
+                            } else if r.clicked() {
+                                show = Some(id);
+                            }
+                            if let Some(path) = &path {
+                                r.on_hover_text(path.display().to_string());
+                            }
                             let x = ui.add(egui::Button::new(RichText::new("✕").size(11.0)).frame(false).fill(Color32::TRANSPARENT));
-                            if x.on_hover_text("Close (Ctrl+W)").clicked() {
+                            if x.middle_clicked() || x.on_hover_text("Close (Ctrl+W)").clicked() {
                                 close = Some(id);
                             }
                         });
                     });
-                    let r = ui.interact(inner.response.rect, ui.scope_id().with(("doc-tab", id)), Sense::click());
-                    if r.middle_clicked() {
-                        close = Some(id);
-                    } else if r.clicked() || inner.response.clicked() {
-                        show = Some(id);
-                    }
-                    if let Some(path) = &self.ws.get(id).and_then(|d| d.lock().unwrap().path.clone()) {
-                        r.on_hover_text(path.display().to_string());
-                    }
                 }
                 if ui.add(egui::Button::new("+").frame(false)).on_hover_text("New drawing (Ctrl+N)").clicked() {
                     self.new_tab();
@@ -165,7 +164,7 @@ impl App {
             ui.horizontal(|ui| {
                 if ui.button("Save").clicked() {
                     self.closing = None;
-                    self.save_then(id, false, super::AfterSave::CloseTab);
+                    self.save_then(ctx, id, false, super::AfterSave::CloseTab);
                 }
                 if ui.button("Don't save").clicked() {
                     self.closing = None;

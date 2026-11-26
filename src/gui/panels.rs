@@ -16,7 +16,7 @@ impl App {
                     self.new_tab();
                 }
                 if ui.button("Open…  (Ctrl+O)").clicked() {
-                    self.open_dialog();
+                    self.open_dialog(ui.ctx());
                 }
                 let recent = self.ws.recent();
                 ui.add_enabled_ui(!recent.is_empty(), |ui| {
@@ -34,23 +34,23 @@ impl App {
                     self.close_tab(self.doc_id);
                 }
                 if ui.button("Save  (Ctrl+S)").clicked() {
-                    self.save(false);
+                    self.save(ui.ctx(), false);
                 }
                 if ui.button("Save as…").clicked() {
-                    self.save(true);
+                    self.save(ui.ctx(), true);
                 }
                 ui.separator();
                 if ui.button("Import image…").clicked() {
-                    self.import_image_dialog();
+                    self.import_image_dialog(ui.ctx());
                 }
                 if ui.button("Import SVG…").clicked() {
-                    self.import_svg_dialog();
+                    self.import_svg_dialog(ui.ctx());
                 }
                 if ui.button("Export SVG for the laser…").clicked() {
-                    self.export_svg();
+                    self.export_svg(ui.ctx());
                 }
                 if ui.button("Export PNG…").clicked() {
-                    self.export_png();
+                    self.export_png(ui.ctx());
                 }
                 ui.separator();
                 if ui.button("Quit").clicked() {

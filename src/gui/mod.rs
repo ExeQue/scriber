@@ -12,6 +12,7 @@ mod constraint_list;
 mod cycle;
 mod dimensions;
 mod fonts;
+mod file_dialog;
 mod geometry_cache;
 mod glyphs;
 mod grip_menu;
@@ -50,6 +51,16 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use select::Drag;
 use tools::Tool;
+
+/// What a file dialog was opened for; the document ids are the tab it was opened from.
+enum Want {
+    Open,
+    Save(u64, AfterSave),
+    ImportImage(u64),
+    ImportSvg,
+    ExportSvg(u64),
+    ExportPng(u64),
+}
 
 /// What to do once a save is done.
 #[derive(Clone, Copy)]
@@ -94,6 +105,8 @@ struct App {
     closing: Option<u64>,
     /// Quit once the save that was asked for is done.
     quit_after_save: bool,
+    /// The file dialog that is open (it runs on its own thread) and what it is for.
+    dialog: file_dialog::Pending<Want>,
     mcp: Result<u16, String>,
     tool: Tool,
     sides: u32,
@@ -206,9 +219,8 @@ pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
     detach_console();
     let saved = settings::load();
     let ws = Workspace::new(Document::new(300.0, 200.0));
-    match &file {
-        Some(f) => _ = ws.open(f, true)?,
-        None => {}
+    if let Some(f) = &file {
+        ws.open(f, true)?;
     }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -264,6 +276,7 @@ impl App {
             views: HashMap::new(),
             closing: None,
             quit_after_save: false,
+            dialog: file_dialog::Pending::default(),
             mcp,
             tool: Tool::Select,
             sides: 6,
@@ -332,28 +345,35 @@ impl App {
 
     // ---------- files ----------
 
-    fn open_dialog(&mut self) {
-        if let Some(path) = rfd::FileDialog::new().add_filter("Scriber", &["scrbr"]).pick_file() {
-            self.open_path(&path);
+    fn open_dialog(&mut self, ctx: &egui::Context) {
+        self.dialog.pick(ctx, Want::Open, rfd::FileDialog::new().add_filter("Scriber", &["scrbr"]));
+    }
+
+    /// A file dialog's answer: carry on with what it was opened for.
+    fn dialog_answer(&mut self) {
+        let Some((want, path)) = self.dialog.poll() else { return };
+        match want {
+            Want::Open => self.open_path(&path),
+            Want::Save(id, after) => self.save_to(id, path.with_extension("scrbr"), after),
+            Want::ImportImage(id) => self.import_image_into(id, &path, [10.0, 10.0]),
+            Want::ImportSvg => self.svg_file_chosen(path),
+            Want::ExportSvg(id) => self.export_svg_to(id, &path),
+            Want::ExportPng(id) => self.export_png_to(id, &path),
         }
     }
 
     /// Save the active tab (asking for a file name when needed).
-    fn save(&mut self, save_as: bool) {
-        self.save_then(self.doc_id, save_as, AfterSave::Nothing);
+    fn save(&mut self, ctx: &egui::Context, save_as: bool) {
+        self.save_then(ctx, self.doc_id, save_as, AfterSave::Nothing);
     }
 
     /// Save a tab, asking for a file name when it has none (or `save_as`), then do `after`.
-    fn save_then(&mut self, id: u64, save_as: bool, after: AfterSave) {
+    fn save_then(&mut self, ctx: &egui::Context, id: u64, save_as: bool, after: AfterSave) {
         let Some(doc) = self.ws.get(id) else { return };
         let current = doc.lock().unwrap().path.clone();
         match current {
             Some(p) if !save_as => self.save_to(id, p, after),
-            _ => {
-                if let Some(p) = rfd::FileDialog::new().add_filter("Scriber", &["scrbr"]).set_file_name("design.scrbr").save_file() {
-                    self.save_to(id, p.with_extension("scrbr"), after);
-                }
-            }
+            _ => self.dialog.save(ctx, Want::Save(id, after), rfd::FileDialog::new().add_filter("Scriber", &["scrbr"]).set_file_name("design.scrbr")),
         }
     }
 
@@ -376,7 +396,7 @@ impl App {
 
     /// Quit with unsaved tabs: save those with a file, then ask for a name for the first without
     /// one (showing it); the quit comes back here until nothing is left unsaved.
-    fn save_all_and_quit(&mut self) {
+    fn save_all_and_quit(&mut self, ctx: &egui::Context) {
         for (id, doc) in self.ws.docs() {
             let (dirty, path) = {
                 let d = doc.lock().unwrap();
@@ -387,17 +407,23 @@ impl App {
                 (true, Some(p)) => self.save_to(id, p, AfterSave::Nothing),
                 (true, None) => {
                     self.ws.activate(id);
-                    return self.save_then(id, false, AfterSave::Quit);
+                    return self.save_then(ctx, id, false, AfterSave::Quit);
                 }
             }
         }
         self.quit_after_save = true;
     }
 
-    fn import_image_dialog(&mut self) {
+    fn import_image_dialog(&mut self, ctx: &egui::Context) {
         let exts = ["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff"];
-        if let Some(path) = rfd::FileDialog::new().add_filter("Images", &exts).pick_file() {
-            self.import_image(&path, [10.0, 10.0]);
+        self.dialog.pick(ctx, Want::ImportImage(self.doc_id), rfd::FileDialog::new().add_filter("Images", &exts));
+    }
+
+    /// Import an image into a tab (it becomes the tab shown).
+    fn import_image_into(&mut self, id: u64, path: &Path, at: Point) {
+        if self.ws.activate(id) {
+            self.follow_active();
+            self.import_image(path, at);
         }
     }
 
@@ -418,19 +444,27 @@ impl App {
         }
     }
 
-    fn export_svg(&mut self) {
-        let Some(path) = rfd::FileDialog::new().add_filter("SVG", &["svg"]).set_file_name("design.svg").save_file() else { return };
-        let svg = export::svg(&self.doc.lock().unwrap().s, false);
-        self.message = match std::fs::write(&path, svg) {
+    fn export_svg(&mut self, ctx: &egui::Context) {
+        self.dialog.save(ctx, Want::ExportSvg(self.doc_id), rfd::FileDialog::new().add_filter("SVG", &["svg"]).set_file_name("design.svg"));
+    }
+
+    fn export_svg_to(&mut self, id: u64, path: &Path) {
+        let Some(doc) = self.ws.get(id) else { return };
+        let svg = export::svg(&doc.lock().unwrap().s, false);
+        self.message = match std::fs::write(path, svg) {
             Ok(()) => format!("{} {}", "Exported", path.display()),
             Err(e) => format!("{}: {e}", "Export failed"),
         };
     }
 
-    fn export_png(&mut self) {
-        let Some(path) = rfd::FileDialog::new().add_filter("PNG", &["png"]).set_file_name("design.png").save_file() else { return };
-        let state = self.doc.lock().unwrap().s.clone();
-        self.message = match export::png(&state, 254.0, false).and_then(|png| Ok(std::fs::write(&path, png)?)) {
+    fn export_png(&mut self, ctx: &egui::Context) {
+        self.dialog.save(ctx, Want::ExportPng(self.doc_id), rfd::FileDialog::new().add_filter("PNG", &["png"]).set_file_name("design.png"));
+    }
+
+    fn export_png_to(&mut self, id: u64, path: &Path) {
+        let Some(doc) = self.ws.get(id) else { return };
+        let state = doc.lock().unwrap().s.clone();
+        self.message = match export::png(&state, 254.0, false).and_then(|png| Ok(std::fs::write(path, png)?)) {
             Ok(()) => format!("{} {} (254 DPI)", "Exported", path.display()),
             Err(e) => format!("{}: {e}", "Export failed"),
         };
@@ -515,9 +549,9 @@ impl App {
             _ if consume(ctrl_shift, Key::Z) => _ = self.doc.lock().unwrap().redo(),
             _ if consume(ctrl, Key::Z) => _ = self.doc.lock().unwrap().undo(),
             _ if consume(ctrl, Key::Y) => _ = self.doc.lock().unwrap().redo(),
-            _ if consume(ctrl_shift, Key::S) => _ = self.save(true),
-            _ if consume(ctrl, Key::S) => _ = self.save(false),
-            _ if consume(ctrl, Key::O) => self.open_dialog(),
+            _ if consume(ctrl_shift, Key::S) => self.save(ctx, true),
+            _ if consume(ctrl, Key::S) => self.save(ctx, false),
+            _ if consume(ctrl, Key::O) => self.open_dialog(ctx),
             _ if consume(ctrl_shift, Key::V) => self.request_paste(ctx, None, true),
             _ if consume(ctrl, Key::D) => self.duplicate_selection(),
             _ if consume(ctrl, Key::A) => self.select_all(),
@@ -559,7 +593,7 @@ impl App {
             ui.horizontal(|ui| {
                 if ui.button(if unsaved > 1 { "Save all" } else { "Save" }).clicked() {
                     self.confirm_close = false;
-                    self.save_all_and_quit();
+                    self.save_all_and_quit(ctx);
                 }
                 if ui.button("Don't save").clicked() {
                     self.allow_close = true;
@@ -580,6 +614,7 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.dialog_answer();
         self.follow_active();
         let title = {
             let d = self.doc.lock().unwrap();

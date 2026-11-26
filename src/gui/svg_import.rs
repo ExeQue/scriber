@@ -26,11 +26,14 @@ fn mm(v: &mut f64) -> egui::DragValue<'_> {
 }
 
 impl App {
-    pub(super) fn import_svg_dialog(&mut self) {
-        if let Some(path) = rfd::FileDialog::new().add_filter("SVG", &["svg", "svgz"]).pick_file() {
-            let d = ImportOptions::default();
-            self.svg_dialog = Some(SvgDialog { path, place: false, x: 10.0, y: 10.0, fit: false, width: 100.0, scale: d.scale, tolerance: d.tolerance });
-        }
+    pub(super) fn import_svg_dialog(&mut self, ctx: &egui::Context) {
+        self.dialog.pick(ctx, super::Want::ImportSvg, rfd::FileDialog::new().add_filter("SVG", &["svg", "svgz"]));
+    }
+
+    /// The SVG file was chosen: ask how to place it.
+    pub(super) fn svg_file_chosen(&mut self, path: std::path::PathBuf) {
+        let d = ImportOptions::default();
+        self.svg_dialog = Some(SvgDialog { path, place: false, x: 10.0, y: 10.0, fit: false, width: 100.0, scale: d.scale, tolerance: d.tolerance });
     }
 
     pub(super) fn svg_import_window(&mut self, ctx: &egui::Context) {
