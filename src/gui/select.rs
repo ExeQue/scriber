@@ -115,7 +115,7 @@ impl App {
             && let Some(Drag::Grip { grip, at, base, bbox, hot }) = self.drag.take_if(|d| matches!(d, Drag::Grip { .. }))
         {
             // The rotate handle turns; POLAR snaps its angle instead of tracking lines from the handle.
-            let p = if grip == Grip::Rotate { r } else { self.aim(&base, r, Some(at)) };
+            let p = if grip == Grip::Rotate { r } else { self.aim(&base, r, tracks_from(grip, &base).then_some(at)) };
             self.drag = Some(Drag::Grip { grip, at, base, bbox, hot });
             // Locked values typed on dynamic input win over the mouse.
             let p = self.dyn_point(p).unwrap_or(p);
@@ -392,6 +392,23 @@ mod tests {
         assert!(!touches([2.0, 2.0, 1.0, 1.0], &square), "box inside, touching no line");
         assert!(touches([-1.0, -1.0, 2.0, 2.0], &square), "corner inside the box");
         assert!(contains_box([-1.0, -1.0, 12.0, 12.0], [0.0, 0.0, 10.0, 10.0]));
+    }
+}
+
+/// Whether POLAR and tracking measure from the grip's start: they do for grips that move a point or
+/// a straight edge, not for bending an arc (its middle grip) or a circle's radius.
+fn tracks_from(grip: Grip, items: &[Item]) -> bool {
+    match grip {
+        Grip::Radius { .. } => false,
+        Grip::Mid { id, contour, segment } => !items
+            .iter()
+            .find(|i| i.id == id)
+            .and_then(|i| match &i.shape {
+                crate::model::Shape::Path { contours } => contours.get(contour).and_then(|c| c.vertices.get(segment)),
+                _ => None,
+            })
+            .is_some_and(|v| v.bulge != 0.0),
+        _ => true,
     }
 }
 

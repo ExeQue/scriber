@@ -9,9 +9,10 @@ impl App {
         panel(ui, "Draw", |ui| {
             self.large(ui, Some(Cmd::Line), "Line");
             self.large(ui, Some(Cmd::Pline), "Polyline");
-            for (cmd, label) in [(Cmd::Rectang, "Rectangle"), (Cmd::Circle, "Circle"), (Cmd::Arc, "Arc"), (Cmd::Polygon, "Polygon")] {
+            for (cmd, label) in [(Cmd::Rectang, "Rectangle"), (Cmd::Circle, "Circle"), (Cmd::Arc, "Arc")] {
                 self.split(ui, cmd, label);
             }
+            self.large(ui, Some(Cmd::Polygon), "Polygon");
             self.smalls(ui, &[(Some(Cmd::Text), "Text"), (None, "Select")]);
         });
         panel(ui, "Modify", |ui| {

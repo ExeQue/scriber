@@ -9,6 +9,7 @@ mod arrange;
 mod home;
 mod laser;
 mod parametric;
+mod variant_icons;
 mod view;
 
 use super::App;
@@ -65,6 +66,8 @@ const LARGE_ICON: f32 = 28.0;
 pub(super) enum Icon {
     Cmd(Option<Cmd>),
     Glyph(&'static str),
+    /// One way a tool draws (split buttons).
+    Variant(Cmd, usize),
 }
 
 impl App {
@@ -92,6 +95,8 @@ impl App {
         self.ribbon.compact = self.ribbon.full_width[n].is_some_and(|w| w > ui.available_width());
         let width = egui::ScrollArea::horizontal()
             .id_salt("ribbon")
+            // Dragging belongs to the buttons (split buttons open their list on press and drag).
+            .scroll_source(egui::scroll_area::ScrollSource::SCROLL_BAR | egui::scroll_area::ScrollSource::MOUSE_WHEEL)
             .show(ui, |ui| {
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
@@ -127,19 +132,15 @@ impl App {
     fn split(&mut self, ui: &mut Ui, cmd: Cmd, label: &str) {
         let (names, chosen) = self.variants(cmd);
         let on = self.active_cmd() == Some(cmd);
-        let response = button(ui, true, false, on, Icon::Cmd(Some(cmd)), &format!("{label}  ")).on_hover_text(format!(
-            "{}\n\nNow: {}\nClick ▾ or press and hold for the other ways.",
-            cmd_tip(Some(cmd), label),
-            names[chosen]
-        ));
+        let open = self.ribbon.flyout.is_some_and(|f| f.cmd == cmd);
+        let response = sensed_button(ui, Sense::click_and_drag(), true, false, on, Icon::Variant(cmd, chosen), &format!("{label}  "));
         let rect = response.rect;
-        let arrow = Rect::from_min_max(pos2(rect.left(), rect.bottom() - 18.0), rect.max);
         let c = if ui.is_enabled() { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
         let (x, y) = (rect.right() - 9.0, rect.top() + 12.0 + LARGE_ICON + 7.0);
         ui.painter().add(egui::Shape::convex_polygon(vec![pos2(x - 3.5, y - 2.0), pos2(x + 3.5, y - 2.0), pos2(x, y + 2.0)], c, Stroke::NONE));
 
-        let open = self.ribbon.flyout.is_some_and(|f| f.cmd == cmd);
-        if !open && response.is_pointer_button_down_on() {
+        let down = response.is_pointer_button_down_on();
+        if !open && down {
             let (held, moved) = ui.input(|i| {
                 let held = i.pointer.press_start_time().map_or(0.0, |t| i.time - t);
                 let moved = i.pointer.press_origin().zip(i.pointer.interact_pos()).map_or(0.0, |(a, b)| a.distance(b));
@@ -151,14 +152,18 @@ impl App {
                 ui.ctx().request_repaint();
             }
         } else if !open && response.clicked() {
-            if response.interact_pointer_pos().is_some_and(|p| arrow.contains(p) && p.x > rect.right() - 18.0) {
+            if response.interact_pointer_pos().is_some_and(|p| p.x > rect.right() - 18.0 && p.y > rect.bottom() - 18.0) {
                 self.ribbon.flyout = Some(Flyout { cmd, hold: false });
             } else {
                 self.start_variant(cmd, chosen);
             }
         }
-        if self.ribbon.flyout.is_some_and(|f| f.cmd == cmd) {
+        let open = self.ribbon.flyout.is_some_and(|f| f.cmd == cmd);
+        if open {
             self.flyout(ui.ctx(), rect, &names, chosen);
+        } else if !down {
+            // No tooltip while pressing or while the list is open: it would cover the list.
+            response.on_hover_text(format!("{}\n\nNow: {}\nClick ▾ or press and hold for the other ways.", cmd_tip(Some(cmd), label), names[chosen]));
         }
     }
 
@@ -167,12 +172,23 @@ impl App {
         let Some(f) = self.ribbon.flyout else { return };
         let (pointer, pressed, released) = ctx.input(|i| (i.pointer.interact_pos(), i.pointer.any_pressed(), i.pointer.any_released()));
         let mut pick = None;
+        let cmd = f.cmd;
         let area = egui::Area::new(egui::Id::NULL.with("ribbon-flyout")).order(egui::Order::Foreground).fixed_pos(under.left_bottom()).show(ctx, |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_min_width(170.0);
                 for (n, name) in names.iter().enumerate() {
-                    let r = ui.add(egui::Button::selectable(n == chosen, *name).min_size(vec2(170.0, 0.0)));
-                    let over = pointer.is_some_and(|p| r.rect.contains(p));
+                    let (rect, r) = ui.allocate_exact_size(vec2(190.0, 26.0), Sense::click());
+                    let over = pointer.is_some_and(|p| rect.contains(p));
+                    let v = ui.visuals();
+                    let (bg, fg) = match (n == chosen, over) {
+                        (_, true) => (v.widgets.hovered.bg_fill, v.strong_text_color()),
+                        (true, false) => (v.selection.bg_fill.gamma_multiply(0.5), v.strong_text_color()),
+                        _ => (Color32::TRANSPARENT, v.text_color()),
+                    };
+                    ui.painter().rect_filled(rect, CornerRadius::same(3), bg);
+                    let icon = Rect::from_min_size(rect.min + vec2(5.0, 3.0), vec2(20.0, 20.0));
+                    variant_icons::paint_variant(ui.painter(), icon, fg, cmd, n);
+                    ui.painter().text(pos2(icon.right() + 8.0, rect.center().y), egui::Align2::LEFT_CENTER, *name, FontId::proportional(13.0), fg);
                     if r.clicked() || (f.hold && released && over) {
                         pick = Some(n);
                     }
@@ -249,6 +265,11 @@ fn panel<R>(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
 
 /// A ribbon button. Large: icon over label. Small: icon and label side by side, or the icon alone.
 fn button(ui: &mut Ui, large: bool, icon_only: bool, on: bool, icon: Icon, label: &str) -> egui::Response {
+    sensed_button(ui, Sense::click(), large, icon_only, on, icon, label)
+}
+
+/// `button` with its own sense (split buttons also take drags).
+fn sensed_button(ui: &mut Ui, sense: Sense, large: bool, icon_only: bool, on: bool, icon: Icon, label: &str) -> egui::Response {
     let font = FontId::proportional(if large { 12.0 } else { 13.0 });
     let galley = ui.painter().layout_no_wrap(label.to_string(), font, Color32::PLACEHOLDER);
     let size = if large {
@@ -258,7 +279,7 @@ fn button(ui: &mut Ui, large: bool, icon_only: bool, on: bool, icon: Icon, label
     } else {
         vec2(SMALL + galley.size().x + 6.0, SMALL)
     };
-    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let (rect, response) = ui.allocate_exact_size(size, sense);
     let visuals = ui.visuals();
     let (bg, mut fg) = match (on, response.hovered()) {
         (true, _) => (ACCENT, Color32::WHITE),
@@ -277,6 +298,7 @@ fn button(ui: &mut Ui, large: bool, icon_only: bool, on: bool, icon: Icon, label
     };
     match icon {
         Icon::Cmd(cmd) => paint_icon(painter, icon_rect, fg, cmd),
+        Icon::Variant(cmd, n) => variant_icons::paint_variant(painter, icon_rect, fg, cmd, n),
         Icon::Glyph(g) => _ = painter.text(icon_rect.center(), egui::Align2::CENTER_CENTER, g, FontId::proportional(icon_rect.height()), fg),
     }
     if large {

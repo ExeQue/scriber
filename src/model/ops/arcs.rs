@@ -4,7 +4,8 @@
 use crate::model::geom::{Contour, Vertex, arc_params, distance};
 
 /// The bulge of one arc from `a` over `b` to `c` when the arcs `a`→`b` and `b`→`c` lie on one
-/// circle, turn the same way and sweep less than a full turn together.
+/// circle, turn the same way and sweep at most a half turn together (|bulge| ≤ 1: cavalier_contours
+/// and the rest of the geometry code assume that, e.g. bounding boxes of larger arcs come out wrong).
 fn merged(a: Vertex, b: Vertex, c: Vertex) -> Option<f64> {
     if a.bulge == 0.0 || b.bulge == 0.0 || a.bulge.signum() != b.bulge.signum() {
         return None;
@@ -12,9 +13,9 @@ fn merged(a: Vertex, b: Vertex, c: Vertex) -> Option<f64> {
     let (ca, ra, ..) = arc_params([a.x, a.y], [b.x, b.y], a.bulge);
     let (cb, rb, ..) = arc_params([b.x, b.y], [c.x, c.y], b.bulge);
     let tol = 1e-6 * ra.max(1.0);
-    // A quarter of the sweep each: together under a quarter turn = under a full circle.
+    // A quarter of the sweep each: together at most an eighth turn = at most a half circle.
     let quarter = a.bulge.atan() + b.bulge.atan();
-    (distance(ca, cb) < tol && (ra - rb).abs() < tol && quarter.abs() < std::f64::consts::FRAC_PI_2 - 1e-9).then(|| quarter.tan())
+    (distance(ca, cb) < tol && (ra - rb).abs() < tol && quarter.abs() <= std::f64::consts::FRAC_PI_4 + 1e-9).then(|| quarter.tan())
 }
 
 /// Merge every run of consecutive arcs of `c` that lie on one circle into one arc. A closed
@@ -46,14 +47,15 @@ mod tests {
 
     #[test]
     fn merges_co_circular_arcs_only() {
-        // Three quarter arcs of one circle, then a line: one 270° arc and the line.
+        // Three quarter arcs of one circle, then a line: a half circle, a quarter and the line.
         let b = (std::f64::consts::PI / 8.0).tan();
         let v = Vertex::new;
         let mut c = Contour { vertices: vec![v(10.0, 0.0, b), v(0.0, 10.0, b), v(-10.0, 0.0, b), v(0.0, -10.0, 0.0), v(20.0, -10.0, 0.0)], closed: false };
         let length = c.length();
         merge_arcs(&mut c);
-        assert_eq!(c.vertices.len(), 3, "{c:?}");
-        assert!((c.vertices[0].bulge - (3.0 * std::f64::consts::PI / 8.0).tan()).abs() < 1e-9);
+        assert_eq!(c.vertices.len(), 4, "{c:?}");
+        assert!((c.vertices[0].bulge - 1.0).abs() < 1e-9);
+        assert!(c.vertices.iter().all(|v| v.bulge.abs() <= 1.0 + 1e-9));
         assert!((c.length() - length).abs() < 1e-9);
         // A full circle stays as it is; so do arcs of different circles.
         let mut circle = Contour::circle(0.0, 0.0, 5.0);
