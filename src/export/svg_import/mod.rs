@@ -38,12 +38,14 @@ impl Default for ImportOptions {
 
 /// Stroke colour → laser operation, as laser software reads colours. The nearest reference colour
 /// within `NEAR` wins (so #e00, #c00 and #f33 are cut, #333 is engraved); any other colour is cut.
-/// A fill (any paint) on a closed shape means "engrave the area"; a shape without a stroke gets op none.
-const STROKE_OPS: [([u8; 3], Op); 4] = [
-    ([255, 0, 0], Op::Cut),       // red
-    ([0, 0, 255], Op::Score),     // blue
-    ([0, 0, 0], Op::Engrave),     // black and dark greys
-    ([0, 150, 70], Op::Annotate), // Scriber's own annotation green
+/// A fill (any paint) on a closed shape means "engrave the area"; a path with both a fill and a stroke
+/// becomes two items (engrave, then the stroke's op).
+const STROKE_OPS: [([u8; 3], Op); 5] = [
+    ([255, 0, 0], Op::Cut),           // red
+    ([0, 0, 255], Op::Score),         // blue
+    ([0, 0, 0], Op::Engrave),         // black and dark greys
+    ([150, 150, 150], Op::NoOutput),  // Scriber's no-output grey
+    ([0, 150, 70], Op::NoOutput),     // Scriber's old annotation green
 ];
 const NEAR: f64 = 100.0;
 
@@ -58,7 +60,7 @@ fn stroke_op(paint: &Paint) -> Op {
 
 /// Something to add to the document.
 enum Piece {
-    Path { name: String, op: Op, fill: bool, contours: Vec<Contour> },
+    Path { name: String, op: Op, contours: Vec<Contour> },
     /// A picture; (x, y) is its top-left corner before rotating `rotation`° around its centre.
     Image { name: String, img: Img, x: f64, y: f64, w: f64, h: f64, rotation: f64 },
 }
@@ -91,7 +93,7 @@ impl Document {
         let mut ids = Vec::new();
         for piece in parse(svg, opts)? {
             ids.push(match piece {
-                Piece::Path { name, op, fill, contours } => self.add(&name, op, fill, Shape::Path { contours }),
+                Piece::Path { name, op, contours } => self.add(&name, op, Shape::Path { contours }),
                 Piece::Image { name, img, x, y, w, h, rotation } => {
                     let id = self.place_image(img, [x, y], Some(w), &name);
                     if let Some(Shape::Image { h: ih, rotation: r, .. }) = self.item_mut(id).map(|i| &mut i.shape) {
@@ -124,7 +126,7 @@ fn parse(svg: &[u8], opts: &ImportOptions) -> Result<Vec<Piece>, String> {
     if pieces.is_empty() {
         return Err("the SVG has no paths or images to import".into());
     }
-    Ok(merge_fill_and_stroke(pieces))
+    Ok(pieces)
 }
 
 fn walk(group: &usvg::Group, map: Map, tol: f64, out: &mut Vec<Piece>) -> Result<(), String> {
@@ -135,10 +137,18 @@ fn walk(group: &usvg::Group, map: Map, tol: f64, out: &mut Vec<Piece>) -> Result
             Node::Path(p) if p.is_visible() && (p.fill().is_some() || p.stroke().is_some()) => {
                 let contours = contours(p.data(), map.with(p.abs_transform()), tol);
                 if !contours.is_empty() {
-                    let op = p.stroke().map_or(Op::NoLine, |s| stroke_op(s.paint()));
                     // An open line has no area to engrave, even with SVG's default black fill.
-                    let fill = p.fill().is_some() && contours.iter().any(|c| c.closed);
-                    out.push(Piece::Path { name: name(p.id()), op, fill, contours });
+                    let area = p.fill().is_some() && contours.iter().any(|c| c.closed);
+                    let line = p.stroke().map(|s| stroke_op(s.paint())).filter(|op| !(area && *op == Op::Engrave));
+                    if area {
+                        out.push(Piece::Path { name: name(p.id()), op: Op::Engrave, contours: contours.clone() });
+                    }
+                    // A black stroke on an engraved area adds nothing; a lone fill on open lines is not lasered.
+                    match line {
+                        Some(op) => out.push(Piece::Path { name: name(p.id()), op, contours }),
+                        None if !area => out.push(Piece::Path { name: name(p.id()), op: Op::NoOutput, contours }),
+                        None => {}
+                    }
                 }
             }
             Node::Path(_) => {}
@@ -213,42 +223,6 @@ fn image(i: &usvg::Image, map: Map) -> Result<Piece, String> {
     let (mw, mh) = (distance(o, right), distance(o, down));
     let rotation = (right[1] - o[1]).atan2(right[0] - o[0]).to_degrees();
     Ok(Piece::Image { name: name(i.id()), img, x: centre[0] - mw / 2.0, y: centre[1] - mh / 2.0, w: mw, h: mh, rotation })
-}
-
-/// Laser SVGs (ours included) often draw one shape twice: a fill-only copy and a stroke-only copy.
-/// Join such pairs back into one item with both the line op and the fill.
-fn merge_fill_and_stroke(pieces: Vec<Piece>) -> Vec<Piece> {
-    let fill_only = |op: Op, fill: bool| op == Op::NoLine && fill;
-    let stroke_only = |op: Op, fill: bool| op != Op::NoLine && !fill;
-    let mut out: Vec<Piece> = Vec::new();
-    for piece in pieces {
-        if let Piece::Path { name, op, fill, contours } = &piece {
-            let twin = out.iter_mut().find(|p| match p {
-                Piece::Path { op: o, fill: f, contours: c, .. } => {
-                    ((fill_only(*o, *f) && stroke_only(*op, *fill)) || (stroke_only(*o, *f) && fill_only(*op, *fill))) && same(c, contours)
-                }
-                Piece::Image { .. } => false,
-            });
-            if let Some(Piece::Path { name: n, op: o, fill: f, .. }) = twin {
-                if *op != Op::NoLine {
-                    (*n, *o) = (name.clone(), *op);
-                }
-                *f = true;
-                continue;
-            }
-        }
-        out.push(piece);
-    }
-    out
-}
-
-fn same(a: &[Contour], b: &[Contour]) -> bool {
-    a.len() == b.len()
-        && a.iter().zip(b).all(|(a, b)| {
-            a.closed == b.closed
-                && a.vertices.len() == b.vertices.len()
-                && a.vertices.iter().zip(&b.vertices).all(|(p, q)| distance(xy(p), xy(q)) < 1e-6 && (p.bulge - q.bulge).abs() < 1e-6)
-        })
 }
 
 #[cfg(test)]

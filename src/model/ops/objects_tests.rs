@@ -209,8 +209,8 @@ fn chamfer_lines_and_arcs() {
 #[test]
 fn document_fillet_objects_ids_chains_and_errors() {
     let mut d = Document::new(200.0, 200.0);
-    let l = d.add("l", Op::Cut, false, Shape::path(Contour::line([0.0, 0.0], [30.0, 0.0])));
-    let c = d.add("c", Op::Score, false, Shape::path(Contour::circle(20.0, 10.0, 5.0)));
+    let l = d.add("l", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [30.0, 0.0])));
+    let c = d.add("c", Op::Score, Shape::path(Contour::circle(20.0, 10.0, 5.0)));
     let ids = d.fillet_objects((l, [5.0, 0.0]), (c, [20.0, 5.0]), 3.0).unwrap();
     assert_eq!(ids.len(), 2);
     assert_eq!(ids[0], l);
@@ -222,8 +222,8 @@ fn document_fillet_objects_ids_chains_and_errors() {
 
     // Two lines drawn as one L (a chain): the corner between them is rounded and they become one path.
     let mut d = Document::new(200.0, 200.0);
-    let a = d.add("a", Op::Cut, false, Shape::path(Contour::line([0.0, 0.0], [20.0, 0.0])));
-    let b = d.add("b", Op::Cut, false, Shape::path(Contour::line([20.0, 20.0], [20.0, 0.0])));
+    let a = d.add("a", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [20.0, 0.0])));
+    let b = d.add("b", Op::Cut, Shape::path(Contour::line([20.0, 20.0], [20.0, 0.0])));
     let ids = d.chamfer_objects((a, [10.0, 0.0]), (b, [20.0, 10.0]), 2.0, 3.0).unwrap();
     assert_eq!(ids, vec![a]);
     assert_eq!(d.s.items.len(), 1);

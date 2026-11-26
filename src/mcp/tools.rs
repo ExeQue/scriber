@@ -17,8 +17,8 @@ mod laser;
 
 const INSTRUCTIONS: &str = "Scriber is a 2D CAD program for laser cutters. You edit the document that is open in the user's Scriber window; every change shows there live and the user can undo it.
 Units are millimetres. Origin is the top-left corner of the material, x grows right, y grows DOWN (like SVG). Angles are degrees, positive = clockwise on screen.
-Each item has an op for its lines: cut (red, cut through), score (blue, mark a line), engrave (black line), none (lines ignored) or annotate (notes and dimensions for people, never lasered). Separately, fill: true engraves the enclosed area (closed paths and text). Example: a coaster with an engraved face is op cut + fill true.
-A path holds one or more contours; several contours make a compound path whose holes stay empty when filled (even-odd). Use combine_items/break_apart to build or split them.
+Each item has one op, as in xTool Studio: cut (red, cut through along the line), score (blue, mark a line), engrave (black, burn the whole area inside closed paths, text and images; an open path with engrave is scored) or no_output (grey, notes, dimensions and helpers for people, never lasered). Example: a coaster with an engraved face is two items with the same shape, one engrave and one cut.
+A path holds one or more contours; several contours make a compound path whose holes stay empty when engraved (even-odd). Use combine_items/break_apart to build or split them.
 CAD operations: fillet, chamfer, offset (also kerf compensation), boolean (union/difference/intersection), array_rectangular, array_polar and trim.
 Contours are polylines whose segments can be arcs: each vertex has a bulge = tan(sweep/4) for the segment to the next vertex (0 = straight). Prefer add_items with kind rect/circle/arc/polygon/line/polyline over building arcs by hand.
 Constraints (as in AutoCAD) bind geometry: add_constraint (coincident, parallel, tangent, …; the first object stays, the second moves), add_dimensional_constraint (a named parameter like d1 = 40 or d2 = d1 / 2 that drives the size), set_parameter, list_constraints, delete_constraints, auto_constrain. A reference names geometry in a path: {kind: point, item, vertex}, {kind: segment, item, segment} (segment k runs from vertex k to k+1; a circle is segment 0), {kind: centre, item, segment}, {kind: item, item}; contour defaults to 0. After every change the solver keeps all constraints satisfied, moving as little as possible; a change that cannot be satisfied is refused and undone, naming the conflicting constraints.
@@ -97,9 +97,9 @@ impl ShapeInput {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NewItem {
     pub shape: ShapeInput,
-    /// Line operation. Default cut; annotate for dimensions; none for text.
+    /// Default cut; engrave for text; no_output for dimensions.
     pub op: Option<Op>,
-    /// Engrave the enclosed area. Default false; true for text.
+    /// Deprecated, kept for old clients: true means op engrave.
     pub fill: Option<bool>,
     pub name: Option<String>,
     pub note: Option<String>,
@@ -121,6 +121,7 @@ pub struct UpdateItem {
     pub id: u64,
     pub name: Option<String>,
     pub op: Option<Op>,
+    /// Deprecated, kept for old clients: true means op engrave.
     pub fill: Option<bool>,
     pub note: Option<String>,
     /// Replace the geometry.
@@ -216,7 +217,7 @@ pub struct ImportSvg {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ExportSvg {
     pub path: String,
-    /// Include annotate items. Default false, because laser software would burn them.
+    /// Include no_output items (notes, dimensions, helpers). Default false, because laser software would burn them.
     #[serde(default)]
     pub include_annotations: bool,
 }
@@ -463,7 +464,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Add items (line, rect, circle, arc, polygon, polyline, path, text, dimension). Returns their ids. One undo step.")]
+    #[tool(description = "Add items (line, rect, circle, arc, polygon, polyline, path, text, dimension). Returns their ids. One undo step. The old fill: true is still accepted and means op engrave.")]
     fn add_items(&self, Parameters(p): Parameters<AddItems>) -> ToolResult {
         if let Some(e) = p.items.iter().find_map(|it| it.shape.font_error()) {
             return fail(e);
@@ -473,12 +474,13 @@ impl Server {
             let mut ids = Vec::new();
             for it in p.items {
                 let (kind, shape) = it.shape.build();
-                let (default_op, default_fill) = match shape {
-                    Shape::Dimension { .. } => (Op::Annotate, false),
-                    Shape::Text { .. } => (Op::NoLine, true),
-                    _ => (Op::Cut, false),
+                let default_op = match shape {
+                    Shape::Dimension { .. } => Op::NoOutput,
+                    Shape::Text { .. } => Op::Engrave,
+                    _ => Op::Cut,
                 };
-                let id = d.add(it.name.as_deref().unwrap_or(kind), it.op.unwrap_or(default_op), it.fill.unwrap_or(default_fill), shape);
+                let op = if it.fill == Some(true) { Op::Engrave } else { it.op.unwrap_or(default_op) };
+                let id = d.add(it.name.as_deref().unwrap_or(kind), op, shape);
                 d.item_mut(id).unwrap().note = it.note.unwrap_or_default();
                 ids.push(id);
             }
@@ -494,7 +496,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Change an item's name, op, fill, note, geometry or (text only) font.")]
+    #[tool(description = "Change an item's name, op, note, geometry or (text only) font. The old fill: true is still accepted and means op engrave.")]
     fn update_item(&self, Parameters(p): Parameters<UpdateItem>) -> ToolResult {
         if let Some(e) = p.shape.as_ref().and_then(ShapeInput::font_error).or_else(|| p.font.as_deref().and_then(text::font_error)) {
             return fail(e);
@@ -511,8 +513,8 @@ impl Server {
             if let Some(op) = p.op {
                 item.op = op;
             }
-            if let Some(f) = p.fill {
-                item.fill = f;
+            if p.fill == Some(true) {
+                item.op = Op::Engrave;
             }
             if let Some(n) = p.note {
                 item.note = n;
@@ -551,7 +553,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Combine paths into one compound path (empty ids = the selection). Holes stay empty when filled. Keeps the first item's name, op and fill.")]
+    #[tool(description = "Combine paths into one compound path (empty ids = the selection). Holes stay empty when engraved. Keeps the first item's name and op.")]
     fn combine_items(&self, Parameters(p): Parameters<Ids>) -> ToolResult {
         self.edit_ids(&p.ids, |d, ids| match d.combine(&ids) {
             Ok(id) => ok(json!({"id": id})),
@@ -590,16 +592,18 @@ impl Server {
             .filter(|i| ids.contains(&i.id))
             .map(|i| {
                 let m = i.shape.metrics();
-                if i.op.burns_lines() && matches!(i.shape, Shape::Path { .. } | Shape::Text { .. }) {
-                    let key = format!("{}_length", serde_json::to_value(i.op).unwrap().as_str().unwrap());
+                // Open engrave paths are scored, so they count as score length.
+                let op = i.effective_op();
+                if matches!(op, Op::Cut | Op::Score) && matches!(i.shape, Shape::Path { .. } | Shape::Text { .. }) {
+                    let key = format!("{}_length", serde_json::to_value(op).unwrap().as_str().unwrap());
                     let t = totals.get(&key).and_then(Value::as_f64).unwrap_or(0.0);
                     totals.insert(key, json!(t + m.length));
                 }
                 if i.engraves_area() {
-                    let t = totals.get("fill_area").and_then(Value::as_f64).unwrap_or(0.0);
-                    totals.insert("fill_area".into(), json!(t + m.area.unwrap_or(0.0)));
+                    let t = totals.get("engrave_area").and_then(Value::as_f64).unwrap_or(0.0);
+                    totals.insert("engrave_area".into(), json!(t + m.area.unwrap_or(0.0)));
                 }
-                json!({"id": i.id, "name": i.name, "op": i.op, "fill": i.fill, "metrics": m})
+                json!({"id": i.id, "name": i.name, "op": i.op, "metrics": m})
             })
             .collect();
         let mut out = json!({"items": items, "bbox": d.bbox(&ids), "totals": totals});
@@ -767,7 +771,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Union, difference or intersection of two or more closed paths (empty ids = the selection). Difference subtracts the others from the first id. The result replaces the first item (keeping its name, op and fill); holes become contours of a compound path; the other items are deleted.")]
+    #[tool(description = "Union, difference or intersection of two or more closed paths (empty ids = the selection). Difference subtracts the others from the first id. The result replaces the first item (keeping its name and op); holes become contours of a compound path; the other items are deleted.")]
     fn boolean(&self, Parameters(p): Parameters<BooleanItems>) -> ToolResult {
         self.edit_ids(&p.ids, |d, ids| match d.boolean(&ids, p.operation) {
             Ok(id) => ok(serde_json::to_value(d.item(id).unwrap()).unwrap()),
@@ -809,7 +813,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Import an SVG file (path) or SVG text/base64 (data). Each path becomes an item (subpaths stay one compound path), curves become arcs, text becomes outlines and raster images greyscale images. Stroke colour sets the op: red = cut, blue = score, black/dark = engrave, other colours = cut; a fill engraves the area (no stroke = op none). Units in the file (mm, cm, in) are honoured; plain numbers are px at 96 per inch. The new items become the selection; returns their ids.")]
+    #[tool(description = "Import an SVG file (path) or SVG text/base64 (data). Each path becomes an item (subpaths stay one compound path), curves become arcs, text becomes outlines and raster images greyscale images. Stroke colour sets the op: red = cut, blue = score, black/dark = engrave, grey or green = no_output, other colours = cut; a filled closed path becomes an engrave item, so a path with both a fill and a stroke becomes two items (engrave, then the stroke's op). Units in the file (mm, cm, in) are honoured; plain numbers are px at 96 per inch. The new items become the selection; returns their ids.")]
     fn import_svg(&self, Parameters(p): Parameters<ImportSvg>) -> ToolResult {
         let bytes = match (&p.path, &p.data) {
             (Some(path), _) => std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}")),

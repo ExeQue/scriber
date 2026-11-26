@@ -300,7 +300,7 @@ fn setting_row(ui: &mut egui::Ui, s: &mut Setting, machines: &[Machine]) {
     ui.add(DragValue::new(&mut s.power).range(0.0..=100.0).suffix(" %"));
     ui.add(DragValue::new(&mut s.speed).range(0.1..=2000.0).suffix(" mm/s"));
     ui.add(DragValue::new(&mut s.passes).range(1..=50).suffix("×"));
-    if s.operation == Operation::Fill {
+    if s.operation == Operation::Engrave {
         let interval = s.line_interval.get_or_insert(0.1);
         ui.add(DragValue::new(interval).range(0.01..=2.0).speed(0.005).suffix(" mm"))
             .on_hover_text(format!("Distance between engraved lines: {:.0} lines per cm", 10.0 / *interval));

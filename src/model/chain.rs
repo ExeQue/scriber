@@ -100,7 +100,7 @@ impl Document {
     }
 
     /// Merge every chain among `ids` (and the items they connect to) into one path each, keeping
-    /// the first item's name, op and fill. Returns the ids that remain for the given items.
+    /// the first item's name and op. Returns the ids that remain for the given items.
     pub fn join_chains(&mut self, ids: &[u64]) -> Vec<u64> {
         let mut out: Vec<u64> = Vec::new();
         for &id in ids {
@@ -131,7 +131,7 @@ mod tests {
     use crate::model::{Op, Shape};
 
     fn line(d: &mut Document, a: [f64; 2], b: [f64; 2]) -> u64 {
-        d.add("line", Op::Cut, false, Shape::path(Contour::line(a, b)))
+        d.add("line", Op::Cut, Shape::path(Contour::line(a, b)))
     }
 
     #[test]

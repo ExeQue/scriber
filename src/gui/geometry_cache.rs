@@ -34,14 +34,14 @@ impl GeometryCache {
         let fresh = self.items.get(&item.id).is_some_and(|g| g.tol == tol && g.shape == item.shape);
         if !fresh {
             let outline = item.shape.outline(tol);
-            let fill = item.fill.then(|| tessellate(&outline)).flatten();
+            let fill = item.engraves_area().then(|| tessellate(&outline)).flatten();
             self.items.insert(item.id, Geometry { shape: item.shape.clone(), tol, outline, fill });
         }
         let g = self.items.get_mut(&item.id).unwrap();
-        // The fill switch can change without the shape changing.
-        if item.fill && g.fill.is_none() {
+        // The op can change without the shape changing.
+        if item.engraves_area() && g.fill.is_none() {
             g.fill = tessellate(&g.outline);
-        } else if !item.fill {
+        } else if !item.engraves_area() {
             g.fill = None;
         }
         g
@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn fill_keeps_holes_and_cache_is_reused() {
         let shape = Shape::Path { contours: vec![Contour::rect(0.0, 0.0, 10.0, 10.0, 0.0), Contour::rect(3.0, 3.0, 4.0, 4.0, 0.0)] };
-        let item = Item { id: 1, name: String::new(), op: Op::Cut, fill: true, shape, note: String::new() };
+        let item = Item { id: 1, name: String::new(), op: Op::Engrave, shape, note: String::new() };
         let mut cache = GeometryCache::default();
         let (verts, idx) = cache.get(&item, 0.1).fill.clone().unwrap();
         // Area of the triangles = outer square minus the hole.

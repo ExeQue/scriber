@@ -83,7 +83,7 @@ impl Server {
         ok(json!(library::get().machines))
     }
 
-    #[tool(description = "List the material library: each material with its thickness and laser settings per machine, laser module and operation (cut, score, engrave, fill): power %, speed mm/s, passes, and for fill the line interval in mm and bidirectional.")]
+    #[tool(description = "List the material library: each material with its thickness and laser settings per machine, laser module and operation (cut, score, engrave): power %, speed mm/s, passes, and for engrave the line interval in mm and bidirectional.")]
     fn list_materials(&self, Parameters(p): Parameters<ListMaterials>) -> ToolResult {
         let lib = library::get();
         let Some(machine) = p.machine else { return ok(json!(lib.materials)) };
@@ -180,7 +180,7 @@ impl Server {
         }
     }
 
-    #[tool(description = "Add or replace a material's setting for one machine, laser module and operation (cut, score, engrave, fill): power 0-100 %, speed mm/s, passes; for fill also line_interval (mm) and bidirectional.")]
+    #[tool(description = "Add or replace a material's setting for one machine, laser module and operation (cut, score, engrave; the old \"fill\" means engrave): power 0-100 %, speed mm/s, passes; for engrave also line_interval (mm) and bidirectional.")]
     fn set_material_setting(&self, Parameters(p): Parameters<SetMaterialSetting>) -> ToolResult {
         let r = library::update(|lib| {
             let machine = lib.machine(&p.setting.machine).ok_or(format!("no machine with id {}", p.setting.machine))?;

@@ -415,7 +415,7 @@ mod tests {
     use crate::model::{Contour, Op};
 
     fn item(id: u64, c: Contour) -> Item {
-        Item { id, name: String::new(), op: Op::Cut, fill: false, shape: Shape::path(c), note: String::new() }
+        Item { id, name: String::new(), op: Op::Cut, shape: Shape::path(c), note: String::new() }
     }
 
     fn snap_at(items: &[Item], p: Point) -> Snap {

@@ -2,7 +2,7 @@
 
 use super::App;
 use super::snap::Aid;
-use super::labels::{fill_help, op_color, op_help, op_label};
+use super::labels::{OPEN_SCORED, op_color, op_help, op_label};
 use crate::model::{BBox, Op, Shape, State, Transform};
 use eframe::egui::{self, Color32, RichText};
 
@@ -114,9 +114,11 @@ impl App {
                                 }
                             });
                             ui.end_row();
-                            ui.label("");
-                            changed |= ui.checkbox(&mut item.fill, "Fill (engrave area)").on_hover_text(fill_help()).changed();
-                            ui.end_row();
+                            if item.op == Op::Engrave && !item.shape.has_area() {
+                                ui.label("");
+                                ui.label(RichText::new(OPEN_SCORED).weak().small());
+                                ui.end_row();
+                            }
                         }
                     });
                     ui.separator();
@@ -138,16 +140,6 @@ impl App {
                                 d.s.items.iter_mut().filter(|i| sel.contains(&i.id)).for_each(|i| i.op = op);
                                 changed = true;
                             }
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        if ui.button("Fill all").on_hover_text(fill_help()).clicked() {
-                            d.s.items.iter_mut().filter(|i| sel.contains(&i.id)).for_each(|i| i.fill = true);
-                            changed = true;
-                        }
-                        if ui.button("No fill").clicked() {
-                            d.s.items.iter_mut().filter(|i| sel.contains(&i.id)).for_each(|i| i.fill = false);
-                            changed = true;
                         }
                     });
                     let len: f64 = d.s.items.iter().filter(|i| sel.contains(&i.id)).map(|i| i.shape.metrics().length).sum();
@@ -278,18 +270,18 @@ fn metrics_ui(ui: &mut egui::Ui, b: BBox, length: f64, area: Option<f64>) {
     });
 }
 
-/// "Cut: 1234 mm   Score: 56 mm   Fill: 12 cm²" for the whole document.
+/// "Cut: 1234 mm   Score: 56 mm   Engrave: 12 cm²" for the whole document (open engrave lines count as score).
 fn laser_totals(s: &State) -> String {
-    let mut parts: Vec<String> = [Op::Cut, Op::Score, Op::Engrave]
+    let mut parts: Vec<String> = [Op::Cut, Op::Score]
         .iter()
         .filter_map(|op| {
-            let len: f64 = s.items.iter().filter(|i| i.op == *op && matches!(i.shape, Shape::Path { .. } | Shape::Text { .. })).map(|i| i.shape.metrics().length).sum();
+            let len: f64 = s.items.iter().filter(|i| i.effective_op() == *op && matches!(i.shape, Shape::Path { .. } | Shape::Text { .. })).map(|i| i.shape.metrics().length).sum();
             (len > 0.0).then(|| format!("{}: {:.0} mm", op_label(*op), len))
         })
         .collect();
-    let fill: f64 = s.items.iter().filter(|i| i.engraves_area()).filter_map(|i| i.shape.metrics().area).sum();
-    if fill > 0.0 {
-        parts.push(format!("{}: {:.1} cm²", "Fill", fill / 100.0));
+    let area: f64 = s.items.iter().filter(|i| i.engraves_area()).filter_map(|i| i.shape.metrics().area).sum();
+    if area > 0.0 {
+        parts.push(format!("{}: {:.1} cm²", op_label(Op::Engrave), area / 100.0));
     }
     parts.join("   ")
 }

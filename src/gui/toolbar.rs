@@ -3,7 +3,7 @@
 
 use super::App;
 use super::command::Cmd;
-use super::labels::{fill_help, op_color, op_help, op_label};
+use super::labels::{OPEN_SCORED, op_color, op_help, op_label};
 use super::glyphs;
 use crate::model::{Kind, Op};
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, RichText, Sense, Stroke, Vec2, pos2, vec2};
@@ -145,46 +145,37 @@ impl App {
         let doc = self.doc.clone();
         let mut d = doc.lock().unwrap();
         let sel = d.selection.clone();
-        let items: Vec<(Op, bool)> = d.s.items.iter().filter(|i| sel.contains(&i.id)).map(|i| (i.op, i.fill)).collect();
-        // Show the selection's values when they agree; otherwise the defaults for new shapes.
-        let (op, fill) = if items.is_empty() {
-            (Some(self.new_op), Some(self.new_fill))
-        } else {
-            let same = |f: &dyn Fn(&(Op, bool)) -> bool| items.iter().all(f);
-            let op = items.first().map(|i| i.0).filter(|o| same(&|i| i.0 == *o));
-            let fill = items.first().map(|i| i.1).filter(|f| same(&|i| i.1 == *f));
-            (op, fill)
+        let items: Vec<(Op, bool)> = d.s.items.iter().filter(|i| sel.contains(&i.id)).map(|i| (i.op, i.shape.has_area())).collect();
+        // Show the selection's op when they agree; otherwise the default for new shapes.
+        let op = match items.first() {
+            None => Some(self.new_op),
+            Some(first) => Some(first.0).filter(|o| items.iter().all(|i| i.0 == *o)),
         };
         let mut set_op = None;
-        let mut set_fill = None;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             let target = if items.is_empty() { "New shapes".to_string() } else { format!("{} selected", items.len()) };
             ui.label(RichText::new(target).weak());
             ui.add_space(8.0);
-            for o in [Op::Cut, Op::Score, Op::Engrave, Op::NoLine, Op::Annotate] {
+            for o in Op::ALL {
                 if pill(ui, op == Some(o), Some(op_color(o)), op_label(o)).on_hover_text(op_help(o)).clicked() {
                     set_op = Some(o);
                 }
             }
-            ui.add_space(12.0);
-            if pill(ui, fill == Some(true), None, "▦  Fill").on_hover_text(fill_help()).clicked() {
-                set_fill = Some(fill != Some(true));
+            if items.iter().any(|i| i.0 == Op::Engrave && !i.1) {
+                ui.add_space(8.0);
+                ui.label(RichText::new(OPEN_SCORED).weak().small());
             }
         });
         super::library_window::pickers(ui, &mut d);
-        if set_op.is_none() && set_fill.is_none() {
-            return;
-        }
+        let Some(set_op) = set_op else { return };
         if items.is_empty() {
-            self.new_op = set_op.unwrap_or(self.new_op);
-            self.new_fill = set_fill.unwrap_or(self.new_fill);
+            self.new_op = set_op;
             return;
         }
         d.checkpoint();
         for item in d.s.items.iter_mut().filter(|i| sel.contains(&i.id)) {
-            item.op = set_op.unwrap_or(item.op);
-            item.fill = set_fill.unwrap_or(item.fill);
+            item.op = set_op;
         }
     }
 }

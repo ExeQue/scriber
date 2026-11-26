@@ -151,9 +151,9 @@ impl Document {
 
     // ---------- commands (callers checkpoint first) ----------
 
-    pub fn add(&mut self, name: &str, op: Op, fill: bool, shape: Shape) -> u64 {
+    pub fn add(&mut self, name: &str, op: Op, shape: Shape) -> u64 {
         let id = self.new_id();
-        self.s.items.push(Item { id, name: name.into(), op, fill, shape, note: String::new() });
+        self.s.items.push(Item { id, name: name.into(), op, shape, note: String::new() });
         self.touch();
         id
     }
@@ -201,7 +201,7 @@ impl Document {
         self.touch();
     }
 
-    /// Merge paths into one compound path (keeps the first item's name, op and fill). Returns its id.
+    /// Merge paths into one compound path (keeps the first item's name and op). Returns its id.
     pub fn combine(&mut self, ids: &[u64]) -> Result<u64, String> {
         let paths: Vec<&Item> = self.s.items.iter().filter(|i| ids.contains(&i.id)).collect();
         if paths.len() < 2 || paths.iter().any(|i| !matches!(i.shape, Shape::Path { .. })) {
@@ -226,7 +226,7 @@ impl Document {
         }
         let mut new = Vec::new();
         for c in contours {
-            let nid = self.add(&item.name, item.op, item.fill, Shape::path(c.clone()));
+            let nid = self.add(&item.name, item.op, Shape::path(c.clone()));
             new.push(nid);
         }
         self.delete(&[id]);
@@ -241,7 +241,7 @@ impl Document {
         let w = width.unwrap_or_else(|| (img.w as f64 / 10.0).min(max_w));
         let image = self.new_id();
         self.s.images.insert(image, Arc::new(img));
-        self.add(name, Op::Engrave, true, Shape::Image { image, x: at[0], y: at[1], w, h: w * aspect, rotation: 0.0 })
+        self.add(name, Op::Engrave, Shape::Image { image, x: at[0], y: at[1], w, h: w * aspect, rotation: 0.0 })
     }
 
     // ---------- CAD operations (callers checkpoint first; on an error nothing changes) ----------
@@ -354,11 +354,11 @@ impl Document {
             }
             results.push((item, contours));
         }
-        Ok(results.into_iter().map(|(i, contours)| self.add(&i.name, i.op, i.fill, Shape::Path { contours })).collect())
+        Ok(results.into_iter().map(|(i, contours)| self.add(&i.name, i.op, Shape::Path { contours })).collect())
     }
 
     /// Union, difference (the first item minus the others) or intersection of closed paths. The result
-    /// replaces the first item (keeping its name, op and fill); the others are deleted. Returns its id.
+    /// replaces the first item (keeping its name and op); the others are deleted. Returns its id.
     pub fn boolean(&mut self, ids: &[u64], op: BoolOp) -> Result<u64, String> {
         let items = self.paths(ids)?;
         if items.len() < 2 {
@@ -483,7 +483,7 @@ impl Document {
                     }
                 }
                 if let Some(c) = bridge {
-                    ids.push(self.add(name, ta.op, false, Shape::path(c)));
+                    ids.push(self.add(name, ta.op, Shape::path(c)));
                 }
             }
         }
@@ -503,7 +503,7 @@ mod tests {
     fn undo_redo_and_transform() {
         let mut d = Document::new(100.0, 100.0);
         d.checkpoint();
-        let id = d.add("box", Op::Cut, false, Shape::path(Contour::rect(0.0, 0.0, 10.0, 10.0, 0.0)));
+        let id = d.add("box", Op::Cut, Shape::path(Contour::rect(0.0, 0.0, 10.0, 10.0, 0.0)));
         d.checkpoint();
         d.transform(&[id], &Transform { dx: 5.0, rotate: 90.0, ..Default::default() });
         let b = d.bbox(&[id]).unwrap();
@@ -519,13 +519,13 @@ mod tests {
     #[test]
     fn combine_and_break_apart() {
         let mut d = Document::new(100.0, 100.0);
-        let a = d.add("plate", Op::Cut, true, Shape::path(Contour::rect(0.0, 0.0, 40.0, 40.0, 0.0)));
-        let b = d.add("hole", Op::Score, false, Shape::path(Contour::circle(20.0, 20.0, 5.0)));
+        let a = d.add("plate", Op::Engrave, Shape::path(Contour::rect(0.0, 0.0, 40.0, 40.0, 0.0)));
+        let b = d.add("hole", Op::Score, Shape::path(Contour::circle(20.0, 20.0, 5.0)));
         let id = d.combine(&[a, b]).unwrap();
         assert_eq!(id, a);
         assert_eq!(d.s.items.len(), 1);
         let item = d.item(a).unwrap();
-        assert!(item.fill && item.op == Op::Cut && item.shape.contours().len() == 2);
+        assert!(item.engraves_area() && item.op == Op::Engrave && item.shape.contours().len() == 2);
         let parts = d.break_apart(a).unwrap();
         assert_eq!(parts.len(), 2);
         assert!(d.item(a).is_none());
@@ -536,8 +536,8 @@ mod tests {
     fn cad_operations_on_items() {
         let mut d = Document::new(200.0, 200.0);
         // Two lines meeting at (10, 0): filleting them joins them into one rounded path.
-        let a = d.add("a", Op::Cut, false, Shape::path(Contour::line([0.0, 0.0], [8.0, 0.0])));
-        let b = d.add("b", Op::Cut, false, Shape::path(Contour::line([10.0, 10.0], [10.0, 2.0])));
+        let a = d.add("a", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [8.0, 0.0])));
+        let b = d.add("b", Op::Cut, Shape::path(Contour::line([10.0, 10.0], [10.0, 2.0])));
         d.fillet(&[a, b], 2.0, None).unwrap();
         assert!(d.item(b).is_none());
         let joined = &d.item(a).unwrap().shape.contours()[0];
@@ -545,16 +545,16 @@ mod tests {
         assert!((joined.length() - (8.0 + 8.0 + std::f64::consts::PI)).abs() < 1e-9);
 
         // One corner of a square, picked near it; a radius too big is refused and changes nothing.
-        let sq = d.add("sq", Op::Cut, false, Shape::path(Contour::rect(50.0, 50.0, 10.0, 10.0, 0.0)));
+        let sq = d.add("sq", Op::Cut, Shape::path(Contour::rect(50.0, 50.0, 10.0, 10.0, 0.0)));
         assert!(d.fillet(&[sq], 11.0, Some([60.0, 50.0])).unwrap_err().contains("only 10.000 mm long"));
         d.chamfer(&[sq], 2.0, 2.0, Some([59.0, 51.0])).unwrap();
         assert!((d.item(sq).unwrap().shape.metrics().area.unwrap() - 98.0).abs() < 1e-9);
-        let circle = d.add("circle", Op::Cut, false, Shape::path(Contour::circle(0.0, 0.0, 5.0)));
+        let circle = d.add("circle", Op::Cut, Shape::path(Contour::circle(0.0, 0.0, 5.0)));
         assert!(d.fillet(&[circle], 1.0, None).unwrap_err().contains("no sharp corners"));
         d.delete(&[circle]);
 
         // Boolean keeps the first item, offset and arrays add new ones.
-        let hole = d.add("hole", Op::Cut, false, Shape::path(Contour::circle(55.0, 55.0, 2.0)));
+        let hole = d.add("hole", Op::Cut, Shape::path(Contour::circle(55.0, 55.0, 2.0)));
         assert_eq!(d.boolean(&[sq, hole], BoolOp::Difference).unwrap(), sq);
         assert!(d.item(hole).is_none() && d.item(sq).unwrap().shape.contours().len() == 2);
         let off = d.offset(&[sq], 1.0).unwrap();
@@ -569,9 +569,9 @@ mod tests {
         assert!(d.array_polar(&[sq], 1, [0.0, 0.0], 360.0, true).is_err());
 
         // Trim the middle of a line crossed by two others.
-        let line = d.add("line", Op::Cut, false, Shape::path(Contour::line([0.0, 150.0], [30.0, 150.0])));
-        let e1 = d.add("e1", Op::Cut, false, Shape::path(Contour::line([10.0, 140.0], [10.0, 160.0])));
-        let e2 = d.add("e2", Op::Cut, false, Shape::path(Contour::line([20.0, 140.0], [20.0, 160.0])));
+        let line = d.add("line", Op::Cut, Shape::path(Contour::line([0.0, 150.0], [30.0, 150.0])));
+        let e1 = d.add("e1", Op::Cut, Shape::path(Contour::line([10.0, 140.0], [10.0, 160.0])));
+        let e2 = d.add("e2", Op::Cut, Shape::path(Contour::line([20.0, 140.0], [20.0, 160.0])));
         d.trim(line, [15.0, 150.0], &[e1, e2]).unwrap();
         assert!((d.item(line).unwrap().shape.metrics().length - 20.0).abs() < 1e-9);
     }

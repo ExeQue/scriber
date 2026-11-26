@@ -117,8 +117,8 @@ mod tests {
     #[test]
     fn plain_names() {
         let mut d = Document::new(100.0, 100.0);
-        let a = d.add("line", Op::Cut, false, Shape::path(Contour::line([0.0, 0.0], [10.0, 0.0])));
-        let b = d.add("line", Op::Cut, false, Shape::path(Contour::line([0.0, 5.0], [10.0, 5.0])));
+        let a = d.add("line", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [10.0, 0.0])));
+        let b = d.add("line", Op::Cut, Shape::path(Contour::line([0.0, 5.0], [10.0, 5.0])));
         let id = d.add_constraint(Kind::Parallel, vec![Ref::Segment { item: a, contour: 0, segment: 0 }, Ref::Segment { item: b, contour: 0, segment: 0 }]).unwrap();
         assert_eq!(describe(&d.s, d.constraint(id).unwrap(), &[a]), format!("Parallel to Line {b}"));
         let id = d.add_dimension(Kind::DimAligned, vec![Ref::Segment { item: a, contour: 0, segment: 0 }], None, None, 5.0).unwrap();

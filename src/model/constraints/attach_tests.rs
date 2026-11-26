@@ -8,7 +8,7 @@ use crate::model::{Contour, Document, Op, Point, Shape, Transform};
 
 fn add(d: &mut Document, c: Contour) -> u64 {
     d.checkpoint();
-    d.add("", Op::Cut, false, Shape::path(c))
+    d.add("", Op::Cut, Shape::path(c))
 }
 
 fn start(d: &Document, id: u64) -> Point {

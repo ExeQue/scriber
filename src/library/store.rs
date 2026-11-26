@@ -60,13 +60,26 @@ fn user_part(lib: &Library) -> LibraryFile {
 
 /// Load the library; a missing file means just the built-ins.
 pub fn load(path: &Path) -> anyhow::Result<Library> {
-    let file: LibraryFile = match std::fs::read_to_string(path) {
+    let mut file: LibraryFile = match std::fs::read_to_string(path) {
         Ok(json) => serde_json::from_str(&json)?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => LibraryFile::default(),
         Err(e) => return Err(e.into()),
     };
     anyhow::ensure!(file.version <= VERSION, "the library was saved by a newer Scriber (version {}); please update", file.version);
+    migrate_engrave(&mut file);
     Ok(merged(file))
+}
+
+/// "engrave" (line) and "fill" both read as Engrave now; drop the duplicates that leaves.
+fn migrate_engrave(file: &mut LibraryFile) {
+    file.materials.iter_mut().for_each(Material::merge_old_engrave);
+    for laser in file.machines.iter_mut().flat_map(|m| &mut m.lasers) {
+        let mut seen = Vec::new();
+        laser.ops.retain(|op| !seen.contains(op) && {
+            seen.push(*op);
+            true
+        });
+    }
 }
 
 /// Like `load`, but a broken file is copied aside (`library.json.broken`) instead of being overwritten later.
@@ -111,7 +124,7 @@ mod tests {
         let mut lib = merged(LibraryFile::default());
         lib.put_machine(k40());
         let mut oak = Material { id: "oak".into(), name: "Oak 4 mm".into(), thickness: 4.0, notes: "smoky".into(), source: String::new(), settings: vec![] };
-        let fill = Setting { machine: "k40".into(), laser: "co2".into(), operation: Operation::Fill, power: 30.0, speed: 200.0, passes: 1, line_interval: Some(0.1), bidirectional: Some(true) };
+        let fill = Setting { machine: "k40".into(), laser: "co2".into(), operation: Operation::Engrave, power: 30.0, speed: 200.0, passes: 1, line_interval: Some(0.1), bidirectional: Some(true) };
         oak.put(fill.clone());
         oak.put(Setting { power: 35.0, ..fill });
         assert_eq!(oak.settings.len(), 1, "same machine, laser and operation replaces");
@@ -140,6 +153,29 @@ mod tests {
         assert!(back.material("black-acrylic-3mm").is_none(), "deleted built-ins stay deleted");
         assert!(back.material("basswood-plywood-3mm").is_some());
         assert_eq!(back.machines.len(), builtin_machines().len(), "an edited built-in is not listed twice");
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn old_engrave_and_fill_merge_into_engrave() {
+        let path = temp("old-ops");
+        std::fs::write(
+            &path,
+            r#"{"version": 1,
+                "machines": [{"id": "k40", "name": "K40", "width": 300, "height": 200,
+                    "lasers": [{"id": "co2", "name": "CO2", "kind": "co2", "power_w": 40, "ops": ["cut", "engrave", "fill"]}]}],
+                "materials": [{"id": "oak", "name": "Oak", "thickness": 4, "settings": [
+                    {"machine": "k40", "laser": "co2", "operation": "fill", "power": 30, "speed": 200, "line_interval": 0.1},
+                    {"machine": "k40", "laser": "co2", "operation": "engrave", "power": 20, "speed": 50},
+                    {"machine": "k40", "laser": "co2", "operation": "cut", "power": 90, "speed": 5}]}]}"#,
+        )
+        .unwrap();
+        let lib = load(&path).unwrap();
+        assert_eq!(lib.machine("k40").unwrap().lasers[0].ops, [Operation::Cut, Operation::Engrave]);
+        let oak = lib.material("oak").unwrap();
+        assert_eq!(oak.settings.len(), 2);
+        let engrave = oak.setting("k40", None, Operation::Engrave).unwrap();
+        assert_eq!((engrave.power, engrave.line_interval), (30.0, Some(0.1)), "the old fill setting wins");
         std::fs::remove_dir_all(path.parent().unwrap()).ok();
     }
 

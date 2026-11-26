@@ -158,7 +158,7 @@ mod tests {
         // Without a module: the first one that has a setting.
         assert_eq!(lib.setting("xtool-m2", None, "black-acrylic-3mm", Operation::Cut).unwrap().laser, "diode-10w");
         assert!(lib.setting("xtool-m2", Some("ir-3w"), "black-acrylic-3mm", Operation::Cut).is_none());
-        assert!(lib.setting("xtool-m2", None, "black-acrylic-3mm", Operation::Fill).is_none());
+        assert!(lib.setting("xtool-m2", None, "black-acrylic-3mm", Operation::Engrave).is_none());
         assert_eq!(lib.machine("xtool-m2").unwrap().area(Some("diode-40w")), [426.0, 312.0]);
     }
 

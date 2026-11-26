@@ -166,7 +166,7 @@ mod tests {
     use crate::model::Op;
 
     fn item(shape: Shape) -> Item {
-        Item { id: 7, name: String::new(), op: Op::Cut, fill: false, shape, note: String::new() }
+        Item { id: 7, name: String::new(), op: Op::Cut, shape, note: String::new() }
     }
 
     #[test]

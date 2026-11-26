@@ -13,7 +13,7 @@ fn pt(item: u64, vertex: usize) -> Ref {
 }
 
 fn add(d: &mut Document, c: Contour) -> u64 {
-    d.add("", Op::Cut, false, Shape::path(c))
+    d.add("", Op::Cut, Shape::path(c))
 }
 
 fn vertices(d: &Document, id: u64) -> Vec<Point> {

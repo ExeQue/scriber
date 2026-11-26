@@ -262,7 +262,7 @@ mod tests {
         let mut app = App::new(doc.clone(), Err(String::new()));
         let id = {
             let mut d = doc.lock().unwrap();
-            let id = d.add("", Op::Cut, false, Shape::path(Contour::rect(10.0, 10.0, 40.0, 20.0, 0.0)));
+            let id = d.add("", Op::Cut, Shape::path(Contour::rect(10.0, 10.0, 40.0, 20.0, 0.0)));
             for (k, kind) in [(0, Kind::Horizontal), (1, Kind::Vertical), (2, Kind::Horizontal), (3, Kind::Vertical)] {
                 d.add_constraint(kind, vec![Ref::Segment { item: id, contour: 0, segment: k }]).unwrap();
             }

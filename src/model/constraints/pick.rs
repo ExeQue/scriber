@@ -160,8 +160,8 @@ mod tests {
     #[test]
     fn picks_nearest() {
         let mut d = Document::new(100.0, 100.0);
-        let r = d.add("r", Op::Cut, false, Shape::path(Contour::rect(0.0, 0.0, 40.0, 20.0, 0.0)));
-        let c = d.add("c", Op::Cut, false, Shape::path(Contour::circle(70.0, 50.0, 10.0)));
+        let r = d.add("r", Op::Cut, Shape::path(Contour::rect(0.0, 0.0, 40.0, 20.0, 0.0)));
+        let c = d.add("c", Op::Cut, Shape::path(Contour::circle(70.0, 50.0, 10.0)));
         assert_eq!(nearest_point(&d.s, r, [39.0, 1.0]).unwrap().0, Ref::Point { item: r, contour: 0, vertex: 1 });
         assert_eq!(nearest_segment(&d.s, r, [41.0, 10.0]).unwrap().0, Ref::Segment { item: r, contour: 0, segment: 1 });
         assert_eq!(nearest_point(&d.s, c, [71.0, 50.0]).unwrap().0, Ref::Centre { item: c, contour: 0, segment: 0 });

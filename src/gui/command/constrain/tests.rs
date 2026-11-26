@@ -12,7 +12,7 @@ fn app() -> (App, Arc<Mutex<Document>>) {
 }
 
 fn add(doc: &Arc<Mutex<Document>>, c: Contour) -> u64 {
-    doc.lock().unwrap().add("", Op::Cut, false, Shape::path(c))
+    doc.lock().unwrap().add("", Op::Cut, Shape::path(c))
 }
 
 #[test]

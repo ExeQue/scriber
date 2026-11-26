@@ -27,9 +27,9 @@ mod tests {
     #[test]
     fn renders_lines_fills_and_holes() {
         let mut d = Document::new(100.0, 50.0);
-        d.add("hole", Op::Cut, false, Shape::path(Contour::circle(20.0, 20.0, 10.0)));
+        d.add("hole", Op::Cut, Shape::path(Contour::circle(20.0, 20.0, 10.0)));
         let plate = Shape::Path { contours: vec![Contour::rect(70.0, 5.0, 20.0, 20.0, 0.0), Contour::circle(80.0, 15.0, 3.0)] };
-        d.add("coaster", Op::NoLine, true, plate);
+        d.add("coaster", Op::Engrave, plate);
         let png = super::png(&d.s, 50.8, true).unwrap(); // 2 px per mm
         let img = image::load_from_memory(&png).unwrap().to_rgb8();
         assert_eq!((img.width(), img.height()), (200, 100));

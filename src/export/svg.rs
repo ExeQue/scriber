@@ -8,27 +8,19 @@ use std::fmt::Write;
 const HAIRLINE: f64 = 0.1; // laser software treats thin strokes as vector lines
 const BLACK: &str = "#000000";
 
-/// One group per laser step, in the order a job runs: engrave first, cut last.
+/// One group per laser step, in the order a job runs: images and engraving first, cut last.
 #[derive(Clone, Copy, PartialEq)]
 enum Layer {
     Images,
-    Fill,
     Engrave,
     Score,
     Cut,
-    Annotate,
+    NoOutput,
 }
 
-const LAYERS: [(Layer, &str); 6] = [
-    (Layer::Images, "images"),
-    (Layer::Fill, "fill"),
-    (Layer::Engrave, "engrave"),
-    (Layer::Score, "score"),
-    (Layer::Cut, "cut"),
-    (Layer::Annotate, "annotate"),
-];
+const LAYERS: [(Layer, &str); 5] = [(Layer::Images, "images"), (Layer::Engrave, "engrave"), (Layer::Score, "score"), (Layer::Cut, "cut"), (Layer::NoOutput, "no_output")];
 
-/// The document as SVG. Annotations (notes, dimensions) are only included when asked for.
+/// The document as SVG. No-output items (notes, dimensions) are only included when asked for.
 pub fn svg(s: &State, annotations: bool) -> String {
     svg_with_stroke(s, annotations, HAIRLINE)
 }
@@ -40,7 +32,7 @@ pub(super) fn svg_with_stroke(s: &State, annotations: bool, stroke: f64) -> Stri
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}mm\" height=\"{h}mm\" viewBox=\"0 0 {w} {h}\">\n"
     );
     for (layer, name) in LAYERS {
-        if layer == Layer::Annotate && !annotations {
+        if layer == Layer::NoOutput && !annotations {
             continue;
         }
         let body: String = s.items.iter().filter_map(|i| element(s, i, layer, stroke)).collect();
@@ -55,16 +47,16 @@ pub(super) fn svg_with_stroke(s: &State, annotations: bool, stroke: f64) -> Stri
 /// The item's part in `layer`, if it has one.
 fn element(s: &State, item: &Item, layer: Layer, stroke: f64) -> Option<String> {
     let id = item.id;
-    let line_layer = match item.op {
-        Op::Cut => Some(Layer::Cut),
-        Op::Score => Some(Layer::Score),
-        Op::Engrave => Some(Layer::Engrave),
-        Op::Annotate => Some(Layer::Annotate),
-        Op::NoLine => None,
+    let op = item.effective_op();
+    let op_layer = match op {
+        Op::Cut => Layer::Cut,
+        Op::Score => Layer::Score,
+        Op::Engrave => Layer::Engrave,
+        Op::NoOutput => Layer::NoOutput,
     };
     match &item.shape {
         Shape::Image { image, x, y, w, h, rotation } => {
-            if layer != Layer::Images || item.op == Op::Annotate {
+            if layer != Layer::Images || item.op == Op::NoOutput {
                 return None;
             }
             let img = s.images.get(image)?;
@@ -80,19 +72,20 @@ fn element(s: &State, item: &Item, layer: Layer, stroke: f64) -> Option<String> 
             if d.is_empty() {
                 return None;
             }
-            if layer == Layer::Fill && item.engraves_area() {
-                return Some(format!("<path id=\"i{id}-fill\" d=\"{d}\" fill=\"{BLACK}\" fill-rule=\"evenodd\" stroke=\"none\"/>\n"));
+            if layer != op_layer {
+                return None;
             }
-            (Some(layer) == line_layer).then(|| {
-                format!("<path id=\"i{id}\" d=\"{d}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{stroke}\"/>\n", item.op.hex())
-            })
+            if item.engraves_area() {
+                return Some(format!("<path id=\"i{id}\" d=\"{d}\" fill=\"{BLACK}\" fill-rule=\"evenodd\" stroke=\"none\"/>\n"));
+            }
+            Some(format!("<path id=\"i{id}\" d=\"{d}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{stroke}\"/>\n", op.hex()))
         }
         Shape::Dimension { .. } => {
-            if layer != Layer::Annotate {
+            if layer != op_layer {
                 return None;
             }
             let g = item.shape.dimension()?;
-            let color = Op::Annotate.hex();
+            let color = op.hex();
             let mut angle = g.angle;
             if !(-90.0..=90.0).contains(&angle) {
                 angle += 180.0;
@@ -138,14 +131,17 @@ mod tests {
     #[test]
     fn layers_colours_and_arcs() {
         let mut d = Document::new(100.0, 50.0);
-        d.add("hole", Op::Cut, false, Shape::path(Contour::circle(20.0, 20.0, 10.0)));
-        d.add("arc", Op::Score, false, Shape::path(Contour::arc(60.0, 25.0, 10.0, 0.0, 270.0)));
+        d.add("hole", Op::Cut, Shape::path(Contour::circle(20.0, 20.0, 10.0)));
+        d.add("arc", Op::Score, Shape::path(Contour::arc(60.0, 25.0, 10.0, 0.0, 270.0)));
         let text = Shape::Text { x: 5.0, y: 45.0, size: 5.0, text: "A&B".into(), rotation: 0.0, font: "sans-serif".into(), bold: false, italic: false };
         let has_font = !text.laser_contours().is_empty();
-        d.add("t", Op::NoLine, true, text);
-        d.add("dim", Op::Annotate, false, Shape::Dimension { x1: 10.0, y1: 40.0, x2: 30.0, y2: 40.0, offset: 5.0 });
+        d.add("t", Op::Engrave, text);
+        d.add("dim", Op::NoOutput, Shape::Dimension { x1: 10.0, y1: 40.0, x2: 30.0, y2: 40.0, offset: 5.0 });
         let plate = Shape::Path { contours: vec![Contour::rect(70.0, 5.0, 20.0, 20.0, 0.0), Contour::circle(80.0, 15.0, 3.0)] };
-        d.add("coaster", Op::Cut, true, plate);
+        d.add("face", Op::Engrave, plate.clone());
+        d.add("coaster", Op::Cut, plate);
+        d.add("groove", Op::Engrave, Shape::path(Contour::line([5.0, 5.0], [15.0, 5.0])));
+        d.add("helper", Op::NoOutput, Shape::path(Contour::line([5.0, 8.0], [15.0, 8.0])));
 
         let s = svg(&d.s, false);
         assert!(s.contains("width=\"100mm\""));
@@ -153,13 +149,19 @@ mod tests {
         assert!(s.contains("A10 10 0 1 1"), "270° arc needs the large-arc flag: {s}");
         // Text is exported as filled glyph outlines, never as <text>.
         assert!(!s.contains("<text") && !s.contains("A&"));
-        assert_eq!(s.contains("<path id=\"i3-fill\" d=\"M"), has_font, "{s}");
-        assert!(!s.contains("20.00 mm"));
-        assert!(svg(&d.s, true).contains("20.00 mm"));
-        // The coaster is both a filled compound path and a cut line; fill comes before cut.
-        let fill = s.find("i5-fill").unwrap();
-        assert!(s[fill..].starts_with("i5-fill\" d=\"M70 5") && s.contains("fill-rule=\"evenodd\""));
-        assert!(fill < s.find("<g id=\"cut\"").unwrap());
-        assert!(s.find("<g id=\"cut\"").unwrap() > s.find("<g id=\"score\"").unwrap());
+        assert_eq!(s.contains("<path id=\"i3\" d=\"M"), has_font, "{s}");
+        // No-output items (dimension, helper line) only with annotations.
+        assert!(!s.contains("20.00 mm") && !s.contains("id=\"i8\"") && !s.contains("no_output"));
+        let all = svg(&d.s, true);
+        assert!(all.contains("20.00 mm") && all.contains("<path id=\"i8\" d=\"M5 8 L15 8\" fill=\"none\" stroke=\"#969696\""), "{all}");
+        // Engrave: a closed shape is a filled area (even-odd); an open line is scored (blue, score layer).
+        assert!(s.contains("<path id=\"i5\" d=\"M70 5") && s.contains("fill-rule=\"evenodd\""));
+        assert!(s.contains("<path id=\"i7\" d=\"M5 5 L15 5\" fill=\"none\" stroke=\"#0000ff\""), "{s}");
+        // Laser order: engrave, score, cut.
+        let at = |g: &str| s.find(&format!("<g id=\"{g}\"")).unwrap();
+        assert!(at("engrave") < at("score") && at("score") < at("cut"));
+        assert!(s.find("id=\"i5\"").unwrap() < at("score") && s.find("id=\"i6\"").unwrap() > at("cut"));
+        let i7 = s.find("id=\"i7\"").unwrap();
+        assert!(at("score") < i7 && i7 < at("cut"));
     }
 }

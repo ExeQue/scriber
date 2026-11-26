@@ -47,9 +47,10 @@ fn read_archive(path: &Path) -> anyhow::Result<State> {
     let mut zip = zip::ZipArchive::new(std::fs::File::open(path)?)?;
     let mut json = String::new();
     zip.by_name("document.json")?.read_to_string(&mut json)?;
-    let value: serde_json::Value = serde_json::from_str(&json)?;
+    let mut value: serde_json::Value = serde_json::from_str(&json)?;
     let format = value["format"].as_u64().unwrap_or(0);
     anyhow::ensure!(format <= FORMAT_VERSION as u64, "this file was made by a newer Scriber (format {format}); please update");
+    migrate_fill(&mut value);
     let mut s: State = serde_json::from_value(value)?;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i)?;
@@ -64,9 +65,59 @@ fn read_archive(path: &Path) -> anyhow::Result<State> {
     Ok(s)
 }
 
+/// Files from before the xTool operations had a line op (`cut`, `score`, `engrave`, `none`, `annotate`)
+/// plus a `fill` switch. Now Engrave on a closed shape engraves its area, so:
+/// - cut/score with fill: keep it, and add an engrave copy right before it (nothing is lost);
+/// - none/engrave with fill: engrave;
+/// - none without fill, and annotate: no_output.
+///
+/// Constraints keep pointing at the original item, not the copy.
+fn migrate_fill(doc: &mut serde_json::Value) {
+    let stored = doc["next_id"].as_u64().unwrap_or(1);
+    let Some(items) = doc.get_mut("items").and_then(|i| i.as_array_mut()) else { return };
+    let mut next_id = items.iter().filter_map(|i| i["id"].as_u64()).max().map_or(stored, |m| stored.max(m + 1));
+    let mut out = Vec::with_capacity(items.len());
+    for mut item in items.drain(..) {
+        let fill = item.as_object_mut().and_then(|o| o.remove("fill")).and_then(|f| f.as_bool()).unwrap_or(false);
+        let op = item["op"].as_str().unwrap_or("cut").to_owned();
+        match (op.as_str(), fill) {
+            ("cut" | "score", true) => {
+                let mut copy = item.clone();
+                copy["id"] = next_id.into();
+                copy["op"] = "engrave".into();
+                next_id += 1;
+                out.push(copy);
+            }
+            ("none" | "engrave", true) => item["op"] = "engrave".into(),
+            ("none" | "annotate", _) => item["op"] = "no_output".into(),
+            _ => {}
+        }
+        out.push(item);
+    }
+    *items = out;
+    doc["next_id"] = next_id.into();
+}
+
 #[cfg(test)]
 mod tests {
     use crate::model::{Contour, Document, Op, Shape};
+
+    #[test]
+    fn old_fill_becomes_engrave() {
+        let mut v = serde_json::json!({"width": 10, "height": 10, "next_id": 5, "items": [
+            {"id": 1, "op": "cut", "fill": true, "shape": {"kind": "path", "contours": []}},
+            {"id": 2, "op": "none", "fill": true, "shape": {"kind": "path", "contours": []}},
+            {"id": 3, "op": "none", "fill": false, "shape": {"kind": "path", "contours": []}},
+            {"id": 4, "op": "annotate", "shape": {"kind": "path", "contours": []}},
+            {"id": 6, "op": "score", "fill": false, "shape": {"kind": "path", "contours": []}}
+        ]});
+        super::migrate_fill(&mut v);
+        let s: crate::model::State = serde_json::from_value(v).unwrap();
+        let got: Vec<(u64, Op)> = s.items.iter().map(|i| (i.id, i.op)).collect();
+        assert_eq!(got, [(7, Op::Engrave), (1, Op::Cut), (2, Op::Engrave), (3, Op::NoOutput), (4, Op::NoOutput), (6, Op::Score)]);
+        assert_eq!(got[0].0, 7, "the copy gets a fresh id");
+        assert_eq!(s.next_id, 8);
+    }
 
     #[test]
     fn round_trip() {
@@ -77,7 +128,7 @@ mod tests {
         d.s.notes = "hej".into();
         let img = crate::export::image::to_grey(&crate::export::image::encode_png(&image::GrayImage::new(3, 2)).unwrap()).unwrap();
         d.place_image(img, [1.0, 2.0], Some(30.0), "pic");
-        d.add("c", Op::Cut, true, Shape::path(Contour::circle(50.0, 40.0, 10.0)));
+        d.add("c", Op::Cut, Shape::path(Contour::circle(50.0, 40.0, 10.0)));
         d.save(&path).unwrap();
         let e = Document::open(&path).unwrap();
         assert_eq!(e.s.items, d.s.items);

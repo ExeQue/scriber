@@ -55,7 +55,6 @@ struct App {
     tool: Tool,
     /// What new shapes become.
     new_op: Op,
-    new_fill: bool,
     sides: u32,
     snap: bool,
     /// GRID, ORTHO, OSNAP and POLAR (status bar).
@@ -152,7 +151,6 @@ impl App {
             mcp,
             tool: Tool::Select,
             new_op: Op::Cut,
-            new_fill: false,
             sides: 6,
             snap: true,
             aids: snap::Aids::default(),
@@ -322,10 +320,10 @@ impl App {
         d.selection = d.s.items.iter().map(|i| i.id).collect();
     }
 
-    fn create(&mut self, name: &str, op: Op, fill: bool, shape: Shape) -> u64 {
+    fn create(&mut self, name: &str, op: Op, shape: Shape) -> u64 {
         let mut d = self.doc.lock().unwrap();
         d.checkpoint();
-        let id = d.add(name, op, fill, shape);
+        let id = d.add(name, op, shape);
         d.selection = vec![id];
         id
     }

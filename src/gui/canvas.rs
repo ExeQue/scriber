@@ -322,7 +322,8 @@ impl App {
     }
 
     fn paint_item(&mut self, ctx: &egui::Context, painter: &egui::Painter, images: &std::collections::BTreeMap<u64, std::sync::Arc<Img>>, item: &Item, selected: bool, tol: f64) {
-        let color = op_color(item.op);
+        let op = item.effective_op();
+        let color = op_color(op);
         let (offset, zoom) = (self.canvas_rect.min + self.view.offset, self.view.zoom);
         let to_screen = move |p: &Point| offset + vec2(p[0] as f32, p[1] as f32) * zoom;
         let geometry = self.geometry.get(item, tol);
@@ -335,13 +336,17 @@ impl App {
             // Text is drawn from its glyph outlines, the same shapes the laser gets.
             Shape::Path { .. } | Shape::Text { .. } => {
                 if let Some((verts, indices)) = &geometry.fill {
-                    let fill = if item.op == Op::Annotate { op_color(Op::Annotate).gamma_multiply(0.25) } else { Color32::from_gray(60) };
+                    let fill = Color32::from_gray(60);
                     let vertices = verts.iter().map(|v| egui::epaint::Vertex { pos: offset + vec2(v[0], v[1]) * zoom, uv: egui::epaint::WHITE_UV, color: fill }).collect();
                     painter.add(egui::Mesh { indices: indices.clone(), vertices, texture_id: egui::TextureId::default() });
                 }
-                let stroke = if item.op == Op::NoLine { Stroke::new(1.0, color.gamma_multiply(0.6)) } else { Stroke::new(1.5, color) };
                 for line in &geometry.outline {
-                    painter.add(egui::Shape::line(line.iter().map(to_screen).collect(), stroke));
+                    let pts: Vec<Pos2> = line.iter().map(to_screen).collect();
+                    if op == Op::NoOutput {
+                        painter.extend(egui::Shape::dashed_line(&pts, Stroke::new(1.0, color), 4.0, 3.0));
+                    } else {
+                        painter.add(egui::Shape::line(pts, Stroke::new(1.5, color)));
+                    }
                 }
             }
             Shape::Image { image, x, y, w, h, rotation } => {
@@ -404,7 +409,7 @@ impl App {
         let mut pts = self.draft.clone();
         pts.push(p);
         let Some((_, shape)) = self.draft_shape(&pts) else { return };
-        let op = if self.tool == Tool::Dimension { Op::Annotate } else { self.new_op };
+        let op = if self.tool == Tool::Dimension { Op::NoOutput } else { self.new_op };
         let stroke = Stroke::new(1.5, op_color(op).gamma_multiply(0.7));
         for line in shape.outline(tol) {
             let pts: Vec<Pos2> = line.iter().map(|q| self.w2s(*q)).collect();

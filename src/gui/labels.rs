@@ -7,9 +7,8 @@ pub fn op_label(op: Op) -> &'static str {
     match op {
         Op::Cut => "Cut",
         Op::Score => "Score",
-        Op::Engrave => "Engrave line",
-        Op::NoLine => "No line",
-        Op::Annotate => "Note only",
+        Op::Engrave => "Engrave",
+        Op::NoOutput => "No output",
     }
 }
 
@@ -17,15 +16,13 @@ pub fn op_help(op: Op) -> &'static str {
     match op {
         Op::Cut => "The laser cuts all the way through along the line.",
         Op::Score => "The laser marks a thin line without cutting through.",
-        Op::Engrave => "The laser burns the line into the surface.",
-        Op::NoLine => "The laser ignores the line. Use with Fill to only engrave the area.",
-        Op::Annotate => "Only for you: notes and measurements. The laser ignores it.",
+        Op::Engrave => "Engrave: the laser burns the whole area inside closed shapes (holes stay empty); open lines are scored.",
+        Op::NoOutput => "No output: shown on the drawing only — notes, measurements, helpers; the laser skips it.",
     }
 }
 
-pub fn fill_help() -> &'static str {
-    "Fill: the laser engraves the whole area inside the shape. Holes in combined shapes stay empty."
-}
+/// Shown when Engrave is chosen for a shape without an area.
+pub const OPEN_SCORED: &str = "Open shapes are scored";
 
 pub fn op_color(op: Op) -> Color32 {
     let [r, g, b] = op.rgb();

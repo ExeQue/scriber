@@ -130,9 +130,10 @@ impl App {
         if !text.is_empty()
             && let Some(at) = self.draft.first().copied()
         {
-            let op = if self.new_op == Op::Cut { Op::NoLine } else { self.new_op };
+            // Text is engraved unless another op than the default (cut) was picked.
+            let op = if self.new_op == Op::Cut { Op::Engrave } else { self.new_op };
             let shape = Shape::Text { x: at[0], y: at[1], size: self.cmdline.text_height, text, rotation: 0.0, font: self.cmdline.text_font.clone(), bold: false, italic: false };
-            self.create("text", op, true, shape);
+            self.create("text", op, shape);
         }
         self.end();
     }
@@ -166,8 +167,8 @@ impl App {
         {
             return self.end();
         }
-        let (op, fill) = if self.tool == Tool::Dimension { (Op::Annotate, false) } else { (self.new_op, self.new_fill) };
-        let id = self.create(name, op, fill, shape);
+        let op = if self.tool == Tool::Dimension { Op::NoOutput } else { self.new_op };
+        let id = self.create(name, op, shape);
         self.infer_drawn(id, &pts);
         match self.tool {
             Tool::Line => self.chain_from(id, pts[pts.len() - 1]),

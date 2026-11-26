@@ -1,4 +1,4 @@
-//! What a drawing is made of: items with a shape, a laser operation and an optional fill.
+//! What a drawing is made of: items with a shape and a laser operation.
 
 use super::geom::{BBox, Contour, Point, Transform, bbox_of, rotate_point};
 use super::text;
@@ -8,34 +8,33 @@ use std::sync::Arc;
 use rmcp::schemars::{self, JsonSchema};
 use serde::{Deserialize, Serialize};
 
-/// What the laser does with an item's lines.
+/// What the laser does with an item (the four operations of xTool Studio).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Op {
-    /// Cut through the material (red in SVG).
+    /// Cut through the material along the line (red in SVG).
     #[default]
     Cut,
     /// Mark a line without cutting through (blue in SVG).
     Score,
-    /// Burn the line into the surface (black in SVG).
+    /// Burn the area inside closed shapes, text and images (holes stay empty; black in SVG).
+    /// Open shapes have no area: they are scored (see `Item::effective_op`).
     Engrave,
-    /// Do nothing with the lines; useful with `fill` to only engrave the area.
-    #[serde(rename = "none")]
-    NoLine,
-    /// Notes, guides and dimensions for people; never sent to the laser.
-    Annotate,
+    /// Notes, guides and dimensions for people; never sent to the laser (grey).
+    /// Old files and clients may say "annotate" or "none".
+    #[serde(alias = "annotate", alias = "none")]
+    NoOutput,
 }
 
 impl Op {
-    pub const ALL: [Op; 5] = [Op::Cut, Op::Score, Op::Engrave, Op::NoLine, Op::Annotate];
+    pub const ALL: [Op; 4] = [Op::Cut, Op::Score, Op::Engrave, Op::NoOutput];
 
     pub fn rgb(self) -> [u8; 3] {
         match self {
             Op::Cut => [255, 0, 0],
             Op::Score => [0, 0, 255],
             Op::Engrave => [0, 0, 0],
-            Op::NoLine => [150, 150, 150],
-            Op::Annotate => [0, 150, 70],
+            Op::NoOutput => [150, 150, 150],
         }
     }
 
@@ -43,17 +42,12 @@ impl Op {
         let [r, g, b] = self.rgb();
         format!("#{r:02x}{g:02x}{b:02x}")
     }
-
-    /// Whether the laser follows the lines.
-    pub fn burns_lines(self) -> bool {
-        matches!(self, Op::Cut | Op::Score | Op::Engrave)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Shape {
-    /// One or more contours. Several contours make a compound path: with fill, holes stay empty (even-odd rule).
+    /// One or more contours. Several contours make a compound path: engraved, holes stay empty (even-odd rule).
     Path { contours: Vec<Contour> },
     /// Text with its baseline starting at (x, y). `size` is the font size in mm. It is drawn,
     /// measured and exported as the font's glyph outlines.
@@ -106,26 +100,23 @@ pub struct Item {
     pub id: u64,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
-    /// What happens to the lines.
+    /// What the laser does with it.
     pub op: Op,
-    /// Engrave the enclosed area (closed paths and text).
-    #[serde(default)]
-    pub fill: bool,
     pub shape: Shape,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
 }
 
 impl Item {
-    /// Whether the fill is actually engraved (only closed paths, text and images have an area).
+    /// Whether the laser engraves an area: Engrave on a shape that has one (closed path, text, image).
     pub fn engraves_area(&self) -> bool {
-        self.op != Op::Annotate
-            && match &self.shape {
-                Shape::Path { contours } => self.fill && contours.iter().any(|c| c.closed),
-                Shape::Text { .. } => self.fill,
-                Shape::Image { .. } => true,
-                Shape::Dimension { .. } => false,
-            }
+        self.op == Op::Engrave && self.shape.has_area()
+    }
+
+    /// What the laser really does: Engrave on an open shape (no area) is scored. The stored op stays
+    /// as the user set it; export, canvas and totals use this.
+    pub fn effective_op(&self) -> Op {
+        if self.op == Op::Engrave && !self.shape.has_area() { Op::Score } else { self.op }
     }
 }
 
@@ -154,6 +145,15 @@ pub struct DimGeom {
 impl Shape {
     pub fn path(c: Contour) -> Shape {
         Shape::Path { contours: vec![c] }
+    }
+
+    /// Closed paths, text and images enclose an area; open paths and dimensions do not.
+    pub fn has_area(&self) -> bool {
+        match self {
+            Shape::Path { contours } => contours.iter().any(|c| c.closed),
+            Shape::Text { .. } | Shape::Image { .. } => true,
+            Shape::Dimension { .. } => false,
+        }
     }
 
     pub fn contours(&self) -> &[Contour] {
@@ -337,6 +337,18 @@ mod tests {
         assert!((m.length - (160.0 + 2.0 * PI * 10.0)).abs() < 1e-6);
         assert!(s.contains([2.0, 2.0]));
         assert!(!s.contains([20.0, 20.0]), "the hole is not part of the area");
+    }
+
+    #[test]
+    fn engrave_fills_closed_shapes_and_scores_open_ones() {
+        let item = |op, c| Item { id: 1, name: String::new(), op, shape: Shape::path(c), note: String::new() };
+        let (closed, open) = (item(Op::Engrave, Contour::circle(0.0, 0.0, 5.0)), item(Op::Engrave, Contour::line([0.0, 0.0], [5.0, 0.0])));
+        assert!(closed.engraves_area() && closed.effective_op() == Op::Engrave);
+        assert!(!open.engraves_area() && open.effective_op() == Op::Score && open.op == Op::Engrave);
+        assert!(!item(Op::Cut, Contour::circle(0.0, 0.0, 5.0)).engraves_area());
+        assert_eq!(item(Op::NoOutput, Contour::line([0.0, 0.0], [5.0, 0.0])).effective_op(), Op::NoOutput);
+        assert_eq!(serde_json::from_str::<Op>("\"annotate\"").unwrap(), Op::NoOutput);
+        assert_eq!(serde_json::to_string(&Op::NoOutput).unwrap(), "\"no_output\"");
     }
 
     #[test]

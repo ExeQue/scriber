@@ -24,13 +24,17 @@ fn colours_become_laser_operations() {
         <path d="M5 40 L45 40" stroke="#333"/>
         <path d="M50 30 H90 V48 H50 Z M60 35 H80 V43 H60 Z" fill="#000"/>
         <g transform="translate(10 0)"><line x1="0" y1="45" x2="20" y2="45" stroke="orange"/></g>
+        <circle cx="20" cy="15" r="3" fill="#000" stroke="red"/>
+        <line x1="0" y1="2" x2="20" y2="2" stroke="#009646"/>
     </svg>"##;
     let d = import(svg, &ImportOptions::default());
-    let ops: Vec<(Op, bool)> = d.s.items.iter().map(|i| (i.op, i.fill)).collect();
-    assert_eq!(ops, [(Op::Cut, false), (Op::Score, false), (Op::Engrave, false), (Op::NoLine, true), (Op::Cut, false)]);
-    assert_eq!(d.selection.len(), 5);
+    let ops: Vec<Op> = d.s.items.iter().map(|i| i.op).collect();
+    // The filled and stroked circle becomes two items: engrave the area, then cut it out.
+    assert_eq!(ops, [Op::Cut, Op::Score, Op::Engrave, Op::Engrave, Op::Cut, Op::Engrave, Op::Cut, Op::NoOutput]);
+    assert_eq!(d.selection.len(), 8);
+    assert_eq!(d.s.items[5].shape, d.s.items[6].shape);
 
-    let [plate, circle, _, compound, orange] = &d.s.items[..] else { unreachable!() };
+    let [plate, circle, _, compound, orange, ..] = &d.s.items[..] else { unreachable!() };
     assert_eq!(plate.name, "plate");
     assert!(bbox_near(plate.shape.metrics().bbox, [5.0, 5.0, 40.0, 20.0], 1e-4), "mm units: {:?}", plate.shape.metrics().bbox);
     let rounded = &plate.shape.contours()[0];
@@ -61,25 +65,27 @@ fn scale_width_and_position() {
 #[test]
 fn our_own_svg_export_round_trips() {
     let mut d = Document::new(200.0, 150.0);
-    d.add("rect", Op::Cut, false, Shape::path(Contour::rect(10.0, 10.0, 30.0, 20.0, 0.0)));
-    d.add("coaster", Op::Cut, true, Shape::path(Contour::rect(50.0, 10.0, 40.0, 40.0, 6.0)));
-    d.add("circle", Op::Score, false, Shape::path(Contour::circle(120.0, 30.0, 15.0)));
-    d.add("arc", Op::Engrave, false, Shape::path(Contour::arc(30.0, 80.0, 12.0, 30.0, 250.0)));
+    d.add("rect", Op::Cut, Shape::path(Contour::rect(10.0, 10.0, 30.0, 20.0, 0.0)));
+    d.add("coaster", Op::Cut, Shape::path(Contour::rect(50.0, 10.0, 40.0, 40.0, 6.0)));
+    d.add("coaster face", Op::Engrave, Shape::path(Contour::rect(50.0, 10.0, 40.0, 40.0, 6.0)));
+    d.add("circle", Op::Score, Shape::path(Contour::circle(120.0, 30.0, 15.0)));
+    d.add("arc", Op::Engrave, Shape::path(Contour::arc(30.0, 80.0, 12.0, 30.0, 250.0)));
     let plate = Shape::Path { contours: vec![Contour::rect(60.0, 70.0, 50.0, 30.0, 0.0), Contour::circle(85.0, 85.0, 7.0)] };
-    d.add("face", Op::NoLine, true, plate);
-    d.add("open", Op::Cut, false, Shape::path(Contour::polyline(&[[130.0, 70.0], [150.0, 90.0], [170.0, 70.0]], false)));
+    d.add("face", Op::Engrave, plate);
+    d.add("helper", Op::NoOutput, Shape::path(Contour::line([10.0, 140.0], [50.0, 140.0])));
+    d.add("open", Op::Cut, Shape::path(Contour::polyline(&[[130.0, 70.0], [150.0, 90.0], [170.0, 70.0]], false)));
     let png = crate::export::image::encode_png(&image::GrayImage::from_fn(4, 2, |x, _| image::Luma([x as u8 * 60]))).unwrap();
     let id = d.place_image(Img { png, w: 4, h: 2 }, [20.0, 110.0], Some(40.0), "photo");
     if let Shape::Image { rotation, .. } = &mut d.item_mut(id).unwrap().shape {
         *rotation = 30.0;
     }
 
-    let back = import(&crate::export::svg(&d.s, false), &ImportOptions::default());
+    let back = import(&crate::export::svg(&d.s, true), &ImportOptions::default());
     assert_eq!(back.s.items.len(), d.s.items.len(), "{:#?}", back.s.items);
     for item in &d.s.items {
         let m = item.shape.metrics();
-        let twin: Vec<&Item> = back.s.items.iter().filter(|i| i.op == item.op && i.fill == item.fill && bbox_near(i.shape.metrics().bbox, m.bbox, 1e-3)).collect();
-        assert_eq!(twin.len(), 1, "{} came back once with the same op, fill and place", item.name);
+        let twin: Vec<&Item> = back.s.items.iter().filter(|i| i.op == item.effective_op() && bbox_near(i.shape.metrics().bbox, m.bbox, 1e-3)).collect();
+        assert_eq!(twin.len(), 1, "{} came back once with the same op and place", item.name);
         let twin = twin[0];
         if let (Shape::Image { x, y, w, h, rotation, .. }, Shape::Image { x: x2, y: y2, w: w2, h: h2, rotation: r2, .. }) = (&item.shape, &twin.shape) {
             assert!([(x, x2), (y, y2), (w, w2), (h, h2), (rotation, r2)].iter().all(|(a, b)| near(**a, **b, 1e-3)), "{:?}", twin.shape);
@@ -103,7 +109,7 @@ fn text_becomes_filled_outlines() {
     // No fonts on this machine: nothing to test.
     let Ok(ids) = d.import_svg(svg.as_bytes(), &ImportOptions::default()) else { return };
     let item = d.item(ids[0]).unwrap();
-    assert!(item.op == Op::NoLine && item.fill && item.shape.contours().len() >= 2, "{item:?}");
+    assert!(item.op == Op::Engrave && item.shape.contours().len() >= 2, "{item:?}");
     let [x, y, w, h] = item.shape.metrics().bbox;
     assert!(x >= 5.0 && y > 5.0 && x + w < 30.0 && y + h <= 20.5, "{:?}", [x, y, w, h]);
 }

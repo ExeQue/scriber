@@ -3,7 +3,7 @@
 use rmcp::schemars::{self, JsonSchema};
 use serde::{Deserialize, Serialize};
 
-/// What the laser does, as far as settings go.
+/// What the laser does, as far as settings go (the item ops that reach the laser).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Operation {
@@ -11,21 +11,19 @@ pub enum Operation {
     Cut,
     /// Mark a thin line.
     Score,
-    /// Burn a line into the surface.
+    /// Engrave a whole area, line by line. Older libraries had separate "engrave" (line) and "fill" keys.
+    #[serde(alias = "fill")]
     Engrave,
-    /// Engrave a whole area, line by line.
-    Fill,
 }
 
 impl Operation {
-    pub const ALL: [Operation; 4] = [Operation::Cut, Operation::Score, Operation::Engrave, Operation::Fill];
+    pub const ALL: [Operation; 3] = [Operation::Cut, Operation::Score, Operation::Engrave];
 
     pub fn label(self) -> &'static str {
         match self {
             Operation::Cut => "Cut",
             Operation::Score => "Score",
-            Operation::Engrave => "Engrave line",
-            Operation::Fill => "Fill engrave",
+            Operation::Engrave => "Engrave",
         }
     }
 }
@@ -44,10 +42,10 @@ pub struct Setting {
     pub speed: f64,
     #[serde(default = "one")]
     pub passes: u32,
-    /// Fill only: distance between engraved lines in mm (lines per cm = 10 / this).
+    /// Engrave only: distance between engraved lines in mm (lines per cm = 10 / this).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_interval: Option<f64>,
-    /// Fill only: engrave in both directions.
+    /// Engrave only: engrave in both directions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bidirectional: Option<bool>,
 }
@@ -108,6 +106,14 @@ impl Material {
             Some(s) => *s = setting,
             None => self.settings.push(setting),
         }
+    }
+
+    /// Old libraries could hold both an engrave-line and a fill setting, which are both Engrave now:
+    /// keep one per machine, laser and operation, preferring the old fill one (it has a line interval).
+    pub fn merge_old_engrave(&mut self) {
+        let mut settings = std::mem::take(&mut self.settings);
+        settings.sort_by_key(|s| s.line_interval.is_some());
+        settings.into_iter().for_each(|s| self.put(s));
     }
 
     pub fn check(&self) -> Result<(), String> {
