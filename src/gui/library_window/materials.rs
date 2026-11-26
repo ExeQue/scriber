@@ -266,7 +266,7 @@ fn machine_picker(ui: &mut egui::Ui, view: &mut SettingsView, machines: &[Machin
 /// One profile's grid cells. Engrave line spacing is stored in mm but shown as lines per cm.
 fn setting_row(ui: &mut egui::Ui, i: usize, s: &mut Setting, first: bool) {
     let hint = if first { "Default" } else { "Name" };
-    ui.add(egui::TextEdit::singleline(&mut s.name).id_salt(("name", i)).hint_text(hint).desired_width(110.0)).on_hover_text("e.g. Light, Dark, Photo. The first one is the default; layers can choose another.");
+    ui.add(egui::TextEdit::singleline(&mut s.name).id_salt(("name", i)).hint_text(hint).desired_width(140.0).min_size(egui::vec2(140.0, 0.0))).on_hover_text("e.g. Light, Dark, Photo. The first one is the default; layers can choose another.");
     ui.add(DragValue::new(&mut s.power).range(0.0..=100.0).suffix(" %"));
     ui.add(DragValue::new(&mut s.speed).range(0.1..=2000.0).suffix(" mm/s"));
     ui.add(DragValue::new(&mut s.passes).range(1..=50).suffix("×"));
