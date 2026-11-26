@@ -267,6 +267,26 @@ impl App {
         d.selection = vec![id];
     }
 
+    /// Feed one point to the active drawing tool. Every way of giving a point (a click, a snap,
+    /// typed coordinates on the command line) ends here.
+    fn place_point(&mut self, p: Point) {
+        // Placing the first point again closes a polyline.
+        let first = self.draft.first().copied();
+        if self.tool == Tool::Polyline
+            && self.draft.len() >= 3
+            && let Some(first) = first
+            && crate::model::geom::distance(first, p) * (self.view.zoom as f64) < 8.0
+        {
+            self.draft.push(first);
+            self.finish_draft(true);
+            return;
+        }
+        self.draft.push(p);
+        if self.tool.points() > 0 && self.draft.len() >= self.tool.points() {
+            self.finish_draft(false);
+        }
+    }
+
     /// Turn the placed points into an item (or a measurement).
     fn finish_draft(&mut self, close: bool) {
         let pts = std::mem::take(&mut self.draft);

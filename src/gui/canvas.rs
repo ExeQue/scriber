@@ -82,16 +82,7 @@ impl App {
             // The double click's first click already placed this point.
             self.finish_draft(false);
         } else if response.clicked_by(PointerButton::Primary) {
-            // Clicking the first point again closes a polyline.
-            if tool == Tool::Polyline && self.draft.len() >= 3 && self.px(distance(self.draft[0], p)) < 8.0 {
-                self.draft.push(self.draft[0]);
-                self.finish_draft(true);
-                return;
-            }
-            self.draft.push(p);
-            if tool.points() > 0 && self.draft.len() >= tool.points() {
-                self.finish_draft(false);
-            }
+            self.place_point(p);
         }
     }
 
