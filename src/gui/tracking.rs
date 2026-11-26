@@ -464,7 +464,7 @@ mod tests {
         use crate::model::{Contour, Document, Op, Shape};
         use std::sync::{Arc, Mutex};
         let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
-        let mut app = App::new(doc.clone(), Err(String::new()));
+        let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
         doc.lock().unwrap().add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 0.0])));
         let items = doc.lock().unwrap().s.items.clone();
         app.aids.polar = false;
@@ -492,7 +492,7 @@ mod tests {
         use crate::model::{Contour, Document, Op, Shape};
         use std::sync::{Arc, Mutex};
         let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
-        let mut app = App::new(doc.clone(), Err(String::new()));
+        let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
         {
             let mut d = doc.lock().unwrap();
             d.add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 0.0])));
@@ -551,7 +551,7 @@ mod tests {
         let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
         let a = doc.lock().unwrap().add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 0.0])));
         let items = doc.lock().unwrap().s.items.clone();
-        let mut app = App::new(doc.clone(), Err(String::new()));
+        let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
         app.aids.osnap = true;
         app.start(crate::gui::command::Cmd::Line);
         let t0 = Instant::now();

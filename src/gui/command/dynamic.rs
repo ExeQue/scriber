@@ -358,7 +358,7 @@ impl App {
             return;
         }
         raw.events.retain(|e| match e {
-            Event::Key { key: Key::Tab, pressed, .. } => {
+            Event::Key { key: Key::Tab, pressed, modifiers, .. } if !modifiers.command => {
                 if *pressed {
                     self.dyn_tabs += 1;
                 }

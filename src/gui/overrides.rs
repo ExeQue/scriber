@@ -130,11 +130,10 @@ impl App {
 mod tests {
     use super::*;
     use crate::model::Document;
-    use std::sync::{Arc, Mutex};
 
     #[test]
     fn mid_between_takes_two_picks() {
-        let mut app = App::new(Arc::new(Mutex::new(Document::new(100.0, 100.0))), Err(String::new()));
+        let mut app = App::new(crate::model::Workspace::new(Document::new(100.0, 100.0)), Err(String::new()));
         app.once = Some(Once::MidBetween(None));
         assert!(app.override_pick([0.0, 0.0]));
         assert_eq!(app.override_point([10.0, 4.0]), [5.0, 2.0]);

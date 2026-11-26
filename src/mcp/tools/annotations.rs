@@ -56,6 +56,8 @@ pub struct AnnotationId {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WaitForAnnotations {
+    /// Only this open document's comments; missing = every open document (each reply names its document).
+    pub document: Option<u64>,
     /// The revision from the last list_annotations / wait_for_annotations reply; missing = now.
     pub since_revision: Option<u64>,
     /// Seconds to wait (default 60, at most 300).
@@ -92,7 +94,7 @@ impl Server {
         let d = self.doc.lock().unwrap();
         let since = p.since_revision.unwrap_or(0);
         let found = list(&d, |a| a.revision > since && p.status.is_none_or(|s| a.status == s));
-        ok(json!({"revision": annotations::revision(), "annotations": found}))
+        ok(json!({"revision": annotations::revision(), "document": self.id, "annotations": found}))
     }
 
     #[tool(description = "Pin a comment on the canvas for the person (at a point, or on items). Not lasered or exported. Returns its id.")]
@@ -119,15 +121,27 @@ impl Server {
         })
     }
 
-    #[tool(description = "Wait until the person adds, replies to, resolves or reopens a comment after since_revision (missing = now), or timeout_s passes (default 60, max 300). Returns at once when there already is one. Reply: annotations (the changed ones, as list_annotations) and revision; pass that revision to the next call. timed_out: true when nothing came. Loop on it to follow the person's review.")]
-    async fn wait_for_annotations(&self, Parameters(p): Parameters<WaitForAnnotations>) -> ToolResult {
+    #[tool(description = "Wait until the person adds, replies to, resolves or reopens a comment after since_revision (missing = now), or timeout_s passes (default 60, max 300). Returns at once when there already is one. Watches every open document unless document is given; each annotation in the reply says its document (id), so pass that to reply_annotation. Reply: annotations (the changed ones, as list_annotations) and revision; pass that revision to the next call. timed_out: true when nothing came. Loop on it to follow the person's review.")]
+    pub(super) async fn wait_for_annotations(&self, Parameters(p): Parameters<WaitForAnnotations>) -> ToolResult {
         // Subscribe before looking, so a change between the look and the wait still wakes us.
         let mut changes = annotations::subscribe();
         let since = p.since_revision.unwrap_or_else(annotations::revision);
         let timeout = Duration::from_secs_f64(p.timeout_s.unwrap_or(60.0).clamp(0.0, 300.0));
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
-            let found = from_person(&self.doc.lock().unwrap(), since);
+            let docs = match p.document {
+                Some(id) => self.ws.get(id).map(|d| vec![(id, d)]).unwrap_or_default(),
+                None => self.ws.docs(),
+            };
+            let found: Vec<Value> = docs
+                .iter()
+                .flat_map(|(id, d)| {
+                    from_person(&d.lock().unwrap(), since).into_iter().map(move |mut a| {
+                        a["document"] = json!(id);
+                        a
+                    })
+                })
+                .collect();
             if !found.is_empty() {
                 return ok(json!({"revision": annotations::revision(), "annotations": found}));
             }
@@ -142,11 +156,12 @@ impl Server {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     fn server() -> (Server, crate::model::Shared) {
-        let doc: crate::model::Shared = Arc::new(Mutex::new(Document::new(100.0, 100.0)));
-        (Server::new(doc.clone(), Arc::new(|| {})), doc)
+        let ws = crate::model::Workspace::new(Document::new(100.0, 100.0));
+        let doc = ws.active().1;
+        (Server::new(ws, Arc::new(|| {})), doc)
     }
 
     fn args<T: serde::de::DeserializeOwned>(v: Value) -> Parameters<T> {

@@ -209,7 +209,6 @@ mod tests {
     use super::*;
     use crate::model::Document;
     use egui::{Event, PointerButton, Pos2, RawInput, Rect};
-    use std::sync::{Arc, Mutex};
 
     /// One frame of the canvas with its right-click menu; returns the labelled widgets' centres.
     fn frame(ctx: &egui::Context, app: &mut App, events: Vec<Event>) -> Vec<(String, Pos2)> {
@@ -236,7 +235,7 @@ mod tests {
 
     #[test]
     fn menu_font_and_values_work() {
-        let mut app = App::new(Arc::new(Mutex::new(Document::new(100.0, 100.0))), Err(String::new()));
+        let mut app = App::new(crate::model::Workspace::new(Document::new(100.0, 100.0)), Err(String::new()));
         app.start(Cmd::Text);
         let ctx = egui::Context::default();
         ctx.enable_accesskit();

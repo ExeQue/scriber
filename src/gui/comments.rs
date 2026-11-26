@@ -44,6 +44,14 @@ fn who(a: &Author) -> &str {
     }
 }
 
+impl Comments {
+    /// Another document is shown: its comments are not this one's.
+    pub fn close_thread(&mut self) {
+        (self.open, self.draft, self.hot) = (None, None, None);
+        self.pins.clear();
+    }
+}
+
 impl App {
     /// Comment tool on/off (ribbon). Cancels a running command.
     pub(super) fn toggle_comment_tool(&mut self) {

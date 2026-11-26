@@ -17,6 +17,11 @@ pub(super) struct Check {
 }
 
 impl Check {
+    /// Another document is shown: run the check again.
+    pub fn forget(&mut self) {
+        self.key = None;
+    }
+
     /// Run the check again when the document or the library changed.
     fn refresh(&mut self, d: &Document) {
         let lib = library::get();

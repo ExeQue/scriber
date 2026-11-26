@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 fn app() -> (App, Arc<Mutex<Document>>) {
     let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
-    let mut app = App::new(doc.clone(), Err(String::new()));
+    let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
     app.view.zoom = 4.0;
     (app, doc)
 }

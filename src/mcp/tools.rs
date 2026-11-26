@@ -2,7 +2,7 @@
 
 use crate::export;
 use crate::model::constraints::attach;
-use crate::model::{BoolOp, Contour, Document, Guide, Kind, Op, Ref, Shape, Shared, Transform, text, turn};
+use crate::model::{BoolOp, Contour, Document, Guide, Kind, Op, Ref, Shape, Shared, Transform, Workspace, text, turn};
 use base64::Engine;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 mod annotations;
+mod documents;
 mod editing;
 mod items_file;
 mod laser;
@@ -23,7 +24,8 @@ mod xtool;
 
 use reply::{Detail, IdsDetail, changed};
 
-const INSTRUCTIONS: &str = "Scriber is a 2D CAD program for laser cutters. You edit the document that is open in the user's Scriber window; every change shows there live and the user can undo it.
+const INSTRUCTIONS: &str = "Scriber is a 2D CAD program for laser cutters. You edit the documents that are open in the user's Scriber window; every change shows there live and the user can undo it.
+Documents: Scriber holds several open documents, one per tab; the active tab is the one the person sees. Every document tool takes an optional document (an id from list_documents) and works on the active tab without it. list_documents shows the open ones; open opens a .scrbr project in a new tab (or returns the tab that has it) and gives its id, list_recent_projects lists recently used projects (and the .scrbr files in a folder), new_document starts an empty one, save and close_document (refuses unsaved changes unless discard_changes) finish one. Pass the id as document to work on a document that is not active. Do not switch the person's tab (open/new_document activate: true, activate_document) unless they ask to see something.
 Units are millimetres. Origin is the top-left corner of the material, x grows right, y grows DOWN (like SVG). Angles are degrees, positive = clockwise on screen.
 Layers, as in xTool Studio: every item sits on one layer, and the layer's op says what the laser does with it: cut (red, cut through along the line), score (blue, mark a line), engrave (black, burn the whole area inside closed paths, text and images; an open path on an engrave layer is scored) or no_output (grey, notes, dimensions and helpers for people, never lasered). A layer can also carry its own power/speed/passes (else the material library's preset for its op), so two engrave layers can engrave at different depths. Hidden layers are not lasered or exported; items on locked layers cannot be edited. list_layers, add_layer, update_layer, delete_layer manage them; add_items/update_item take a layer id, or an op, which means the first layer with that op (made if there is none). Example: a coaster with an engraved face is two items with the same shape, one on an engrave layer and one on a cut layer.
 A path holds one or more contours; several contours make a compound path whose holes stay empty when engraved (even-odd). Use combine_items/break_apart to build or split them.
@@ -351,29 +353,6 @@ pub struct ExportPng {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct SavePath {
-    /// Path to the .scrbr file; missing = the current file.
-    pub path: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct OpenFile {
-    pub path: String,
-    /// Discard unsaved changes.
-    #[serde(default)]
-    pub force: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct NewDoc {
-    pub width: Option<f64>,
-    pub height: Option<f64>,
-    /// Discard unsaved changes.
-    #[serde(default)]
-    pub force: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
 pub struct Fillet {
     /// Item ids; empty = the selection. Two open lines/polylines are joined where they meet, and that corner is rounded.
     #[serde(default)]
@@ -489,7 +468,13 @@ pub struct Trim {
 
 #[derive(Clone)]
 pub struct Server {
+    /// The open documents.
+    pub(super) ws: Workspace,
+    /// The document this call works on: the one named by its `document` argument, else the
+    /// active tab (see `for_call`).
     pub(super) doc: Shared,
+    /// That document's id.
+    pub(super) id: u64,
     repaint: Arc<dyn Fn() + Send + Sync>,
     tool_router: ToolRouter<Self>,
 }
@@ -505,8 +490,9 @@ pub(super) fn fail(msg: impl std::fmt::Display) -> ToolResult {
 }
 
 impl Server {
-    pub fn new(doc: Shared, repaint: Arc<dyn Fn() + Send + Sync>) -> Self {
-        Self { doc, repaint, tool_router: Self::tool_router() + Self::constraint_router() + Self::laser_router() + Self::editing_router() + Self::layers_router() + Self::xtool_router() + Self::annotations_router() }
+    pub fn new(ws: Workspace, repaint: Arc<dyn Fn() + Send + Sync>) -> Self {
+        let (id, doc) = ws.active();
+        Self { doc, id, ws, repaint, tool_router: Self::tool_router() + Self::constraint_router() + Self::laser_router() + Self::editing_router() + Self::layers_router() + Self::xtool_router() + Self::annotations_router() + Self::documents_router() }
     }
 
     /// Run `f` on the locked document, then repaint the GUI.
@@ -853,48 +839,6 @@ impl Server {
         self.with(|d| ok(json!({"redone": d.redo()})))
     }
 
-    #[tool(description = "Save the document as a .scrbr file (without path: the current file).")]
-    fn save(&self, Parameters(p): Parameters<SavePath>) -> ToolResult {
-        self.with(|d| {
-            let Some(path) = p.path.map(PathBuf::from).or_else(|| d.path.clone()) else {
-                return fail("the document has no file yet; give a path");
-            };
-            match d.save(&path) {
-                Ok(()) => ok(json!({"path": path})),
-                Err(e) => fail(e),
-            }
-        })
-    }
-
-    #[tool(description = "Open a .scrbr file, replacing the current document. Fails on unsaved changes unless force is set.")]
-    fn open(&self, Parameters(p): Parameters<OpenFile>) -> ToolResult {
-        self.with_select(true, |d| {
-            if d.dirty && !p.force {
-                return fail("the current document has unsaved changes; save it first or pass force: true");
-            }
-            match Document::open(&PathBuf::from(&p.path)) {
-                Ok(new) => {
-                    *d = new;
-                    d.rev += 1;
-                    ok(reply::document(d, &[], None))
-                }
-                Err(e) => fail(e),
-            }
-        })
-    }
-
-    #[tool(description = "Start a new empty document (material size in mm, default 300 × 200). Fails on unsaved changes unless force is set.")]
-    fn new_document(&self, Parameters(p): Parameters<NewDoc>) -> ToolResult {
-        self.with_select(true, |d| {
-            if d.dirty && !p.force {
-                return fail("the current document has unsaved changes; save it first or pass force: true");
-            }
-            *d = Document::new(p.width.unwrap_or(300.0), p.height.unwrap_or(200.0));
-            d.rev += 1;
-            ok(reply::document(d, &[], None))
-        })
-    }
-
     #[tool(description = "Round corners with an arc (empty ids = the selection): the corner nearest `at`, or every sharp corner between straight segments. With exactly two open lines/polylines, they are extended or shortened to meet, joined into one path, and that corner is rounded (AutoCAD FILLET of two objects). With `first` and `second` (each an id and the point it was picked at), fillets any two objects as AutoCAD does: lines, arcs, circles and end segments of open polylines (lines touching end to end count as one polyline); the picks choose the kept sides and which arc is meant, lines and arcs are trimmed or extended to the arc, circles stay, two open paths become one, parallel lines get a half-circle cap, radius 0 makes a sharp corner. Returns the new and changed ids.")]
     fn fillet(&self, Parameters(p): Parameters<Fillet>) -> ToolResult {
         if let Some(picks) = two_objects(&p.first, &p.second) {
@@ -1035,6 +979,19 @@ mod tests;
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for Server {
+    // The document routing (see `documents`): resolve `document`, add it to the schemas.
+    async fn call_tool(&self, request: rmcp::model::CallToolRequestParams, context: rmcp::service::RequestContext<rmcp::RoleServer>) -> Result<rmcp::model::CallToolResponse, McpError> {
+        self.call(request, context).await
+    }
+
+    async fn list_tools(&self, _request: Option<rmcp::model::PaginatedRequestParams>, context: rmcp::service::RequestContext<rmcp::RoleServer>) -> Result<rmcp::model::ListToolsResult, McpError> {
+        Ok(self.list(&context))
+    }
+
+    fn get_tool(&self, name: &str) -> Option<rmcp::model::Tool> {
+        self.tool_router.get(name).cloned().map(documents::with_document)
+    }
+
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("scriber", env!("CARGO_PKG_VERSION")))

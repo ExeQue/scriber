@@ -9,9 +9,9 @@ mod tools;
 pub use http::url;
 pub use tools::Server;
 
-use crate::model::{Document, Shared};
+use crate::model::{Document, Workspace};
 use rmcp::ServiceExt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub const DEFAULT_PORT: u16 = 47821;
 
@@ -19,8 +19,8 @@ pub fn port() -> u16 {
     std::env::var("SCRIBER_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(DEFAULT_PORT)
 }
 
-/// Serve MCP over HTTP on 127.0.0.1 for the GUI's document. Returns the bound port or an error to show in the status bar.
-pub fn listen(doc: Shared, repaint: Arc<dyn Fn() + Send + Sync>) -> anyhow::Result<u16> {
+/// Serve MCP over HTTP on 127.0.0.1 for the GUI's documents. Returns the bound port or an error to show in the status bar.
+pub fn listen(ws: Workspace, repaint: Arc<dyn Fn() + Send + Sync>) -> anyhow::Result<u16> {
     let port = port();
     // ponytail: localhost HTTP, reachable by every local user; switch to a per-user socket/pipe on shared machines.
     let listener = std::net::TcpListener::bind(("127.0.0.1", port))?;
@@ -29,7 +29,7 @@ pub fn listen(doc: Shared, repaint: Arc<dyn Fn() + Send + Sync>) -> anyhow::Resu
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");
         rt.block_on(async move {
             let listener = tokio::net::TcpListener::from_std(listener).expect("listener");
-            http::serve(listener, move || Server::new(doc.clone(), repaint.clone())).await;
+            http::serve(listener, move || Server::new(ws.clone(), repaint.clone())).await;
         });
     })?;
     Ok(port)
@@ -40,8 +40,9 @@ pub fn relay(headless: bool) -> anyhow::Result<()> {
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
     rt.block_on(async {
         if headless {
-            let doc: Shared = Arc::new(Mutex::new(Document::new(300.0, 200.0)));
-            let running = Server::new(doc, Arc::new(|| {})).serve(rmcp::transport::stdio()).await?;
+            let ws = Workspace::new(Document::new(300.0, 200.0));
+            ws.set_recent(crate::gui::recent_files());
+            let running = Server::new(ws, Arc::new(|| {})).serve(rmcp::transport::stdio()).await?;
             running.waiting().await?;
             return Ok(());
         }

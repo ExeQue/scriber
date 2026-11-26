@@ -47,15 +47,14 @@ pub(super) async fn serve(listener: tokio::net::TcpListener, make: impl Fn() -> 
 pub(super) mod tests {
     use super::*;
     use crate::model::Document;
-    use std::sync::Mutex;
 
     /// Serve a fresh headless document on `port` (0 = any); returns the port and the server task.
     pub fn spawn(port: u16) -> (u16, tokio::task::JoinHandle<()>) {
         let l = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
         l.set_nonblocking(true).unwrap();
         let port = l.local_addr().unwrap().port();
-        let doc = Arc::new(Mutex::new(Document::new(300.0, 200.0)));
-        let task = tokio::spawn(serve(tokio::net::TcpListener::from_std(l).unwrap(), move || Server::new(doc.clone(), Arc::new(|| {}))));
+        let ws = crate::model::Workspace::new(Document::new(300.0, 200.0));
+        let task = tokio::spawn(serve(tokio::net::TcpListener::from_std(l).unwrap(), move || Server::new(ws.clone(), Arc::new(|| {}))));
         (port, task)
     }
 

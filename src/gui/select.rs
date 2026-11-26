@@ -356,7 +356,7 @@ mod tests {
     fn grip_drags_keep_constraints() {
         use crate::model::{Contour, Document, Kind, Op, Ref, Shape};
         let doc = std::sync::Arc::new(std::sync::Mutex::new(Document::new(200.0, 200.0)));
-        let mut app = App::new(doc.clone(), Err(String::new()));
+        let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
         let id = {
             let mut d = doc.lock().unwrap();
             let id = d.add("", Op::Cut, Shape::path(Contour::rect(10.0, 10.0, 40.0, 20.0, 0.0)));
@@ -383,7 +383,7 @@ mod tests {
     fn box_turns_with_the_items_and_resizes_along_their_axes() {
         use crate::model::{Contour, Document, Op, Shape};
         let doc = std::sync::Arc::new(std::sync::Mutex::new(Document::new(200.0, 200.0)));
-        let mut app = App::new(doc.clone(), Err(String::new()));
+        let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
         app.aids.polar = false;
         let id = doc.lock().unwrap().add("", Op::Cut, Shape::path(Contour::rect(10.0, 10.0, 40.0, 20.0, 0.0)));
         doc.lock().unwrap().selection = vec![id];
@@ -431,7 +431,7 @@ mod tests {
     fn window_takes_whole_groups_and_skips_hidden_items() {
         use crate::model::{Contour, Document, Op, Shape};
         let doc = std::sync::Arc::new(std::sync::Mutex::new(Document::new(200.0, 200.0)));
-        let mut app = App::new(doc.clone(), Err(String::new()));
+        let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
         let [a, b, c] = {
             let mut d = doc.lock().unwrap();
             let ids = [0.0, 50.0, 100.0].map(|x| d.add("", Op::Cut, Shape::path(Contour::rect(x, 0.0, 10.0, 10.0, 0.0))));

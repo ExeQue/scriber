@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn variant_starts_in_that_way() {
         let doc = std::sync::Arc::new(std::sync::Mutex::new(crate::model::Document::new(100.0, 100.0)));
-        let mut app = App::new(doc, Err(String::new()));
+        let mut app = App::new(crate::model::Workspace::from_shared(doc), Err(String::new()));
         app.start_variant(Cmd::Arc, 2);
         assert_eq!(app.cmdline.arc_mode, ArcMode::CenterStartEnd);
         assert_eq!(app.variants(Cmd::Arc).1, 2);

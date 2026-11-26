@@ -113,7 +113,7 @@ mod tests {
     fn draw_along(acquire: Point, start: Point, end: Point) -> (Arc<Mutex<Document>>, u64, u64, Point) {
         let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
         let a = doc.lock().unwrap().add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 30.0])));
-        let mut app = App::new(doc.clone(), Err(String::new()));
+        let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
         (app.aids.osnap, app.aids.otrack, app.aids.infer, app.aids.polar, app.aids.ortho) = (true, true, true, false, false);
         let items = doc.lock().unwrap().s.items.clone();
         app.start(Cmd::Line);

@@ -1,11 +1,12 @@
 //! Replies, file input, curves and SVG import as an agent sees them.
 
 use super::*;
-use std::sync::Mutex;
+
 
 fn server() -> (Server, Shared) {
-    let doc: Shared = Arc::new(Mutex::new(Document::new(300.0, 200.0)));
-    (Server::new(doc.clone(), Arc::new(|| {})), doc)
+    let ws = Workspace::new(Document::new(300.0, 200.0));
+    let doc = ws.active().1;
+    (Server::new(ws, Arc::new(|| {})), doc)
 }
 
 fn args<T: serde::de::DeserializeOwned>(v: Value) -> Parameters<T> {

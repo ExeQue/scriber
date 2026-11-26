@@ -12,11 +12,26 @@ impl App {
     pub(super) fn menu(&mut self, ui: &mut egui::Ui) {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
-                if ui.button("New").clicked() {
-                    self.new_doc();
+                if ui.button("New  (Ctrl+N)").clicked() {
+                    self.new_tab();
                 }
                 if ui.button("Open…  (Ctrl+O)").clicked() {
                     self.open_dialog();
+                }
+                let recent = self.ws.recent();
+                ui.add_enabled_ui(!recent.is_empty(), |ui| {
+                    ui.menu_button("Open recent", |ui| {
+                        for f in recent {
+                            let name = f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                            let b = ui.add_enabled(f.is_file(), egui::Button::new(name)).on_hover_text(f.display().to_string());
+                            if b.clicked() {
+                                self.open_path(&f);
+                            }
+                        }
+                    });
+                });
+                if ui.button("Close  (Ctrl+W)").clicked() {
+                    self.close_tab(self.doc_id);
                 }
                 if ui.button("Save  (Ctrl+S)").clicked() {
                     self.save(false);

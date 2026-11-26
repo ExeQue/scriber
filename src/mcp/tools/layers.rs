@@ -143,7 +143,7 @@ mod tests {
     use super::*;
     use crate::mcp::tools::{AddItems, UpdateItem};
     use rmcp::model::CallToolResult;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     fn text(r: ToolResult) -> Value {
         let r: CallToolResult = r.unwrap();
@@ -158,8 +158,9 @@ mod tests {
 
     #[test]
     fn layer_tools_round_trip() {
-        let doc = Arc::new(Mutex::new(Document::new(100.0, 100.0)));
-        let server = Server::new(doc.clone(), Arc::new(|| {}));
+        let ws = crate::model::Workspace::new(Document::new(100.0, 100.0));
+        let doc = ws.active().1;
+        let server = Server::new(ws, Arc::new(|| {}));
         let deep = text(server.add_layer(args(json!({"name": "Deep cut", "op": "cut"}))))["id"].as_u64().unwrap();
         // op maps to the first layer with it; layer wins over op.
         let added: Parameters<AddItems> = args(json!({"items": [

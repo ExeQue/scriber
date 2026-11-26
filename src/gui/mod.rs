@@ -36,12 +36,13 @@ mod settings;
 mod shortcuts;
 mod snap;
 mod svg_import;
+mod tabs;
 mod tools;
 mod tracking;
 mod variant_icons;
 mod zoom;
 
-use crate::model::{Document, Op, Point, Shape, Shared, Transform};
+use crate::model::{Document, Op, Point, Shape, Shared, Transform, Workspace};
 use crate::{agents, export, mcp};
 use eframe::egui::{self, Event, Key, Modifiers, Pos2, Rect, Vec2};
 use std::collections::HashMap;
@@ -49,6 +50,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use select::Drag;
 use tools::Tool;
+
+/// What to do once a save is done.
+#[derive(Clone, Copy)]
+enum AfterSave {
+    Nothing,
+    CloseTab,
+    Quit,
+}
 
 struct View {
     /// Screen position of the material's origin, relative to the canvas' top-left.
@@ -75,7 +84,16 @@ impl View {
 }
 
 struct App {
+    /// The open documents (tabs); `doc` is the active one's, `doc_id` its id.
+    ws: Workspace,
     doc: Shared,
+    doc_id: u64,
+    /// The other tabs' views (zoom and pan), by document id.
+    views: HashMap<u64, View>,
+    /// A tab with unsaved changes waiting for Save / Don't save / Cancel.
+    closing: Option<u64>,
+    /// Quit once the save that was asked for is done.
+    quit_after_save: bool,
     mcp: Result<u16, String>,
     tool: Tool,
     sides: u32,
@@ -186,11 +204,12 @@ struct App {
 pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
     #[cfg(windows)]
     detach_console();
-    let doc = match &file {
-        Some(f) => Document::open(f)?,
-        None => Document::new(300.0, 200.0),
-    };
-    let shared: Shared = Arc::new(Mutex::new(doc));
+    let saved = settings::load();
+    let ws = Workspace::new(Document::new(300.0, 200.0));
+    match &file {
+        Some(f) => _ = ws.open(f, true)?,
+        None => {}
+    }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Scriber")
@@ -206,13 +225,22 @@ pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
         Box::new(move |cc| {
             let ctx = cc.egui_ctx.clone();
             lucide::install(&ctx);
-            let mcp = mcp::listen(shared.clone(), Arc::new(move || ctx.request_repaint())).map_err(|e| e.to_string());
-            let mut app = App::new(shared, mcp);
-            app.apply_settings(settings::load());
+            let mcp = mcp::listen(ws.clone(), Arc::new(move || ctx.request_repaint())).map_err(|e| e.to_string());
+            let mut app = App::new(ws, mcp);
+            if file.is_none() {
+                app.restore_session(&saved.open_files);
+            }
+            app.apply_settings(saved);
+            app.follow_active();
             Ok(Box::new(app))
         }),
     )
     .map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+/// The recently used projects as the editor keeps them (for `scriber mcp --headless`).
+pub fn recent_files() -> Vec<PathBuf> {
+    settings::load().recent
 }
 
 /// A console exe started from Explorer gets its own console window; drop it for the GUI.
@@ -227,9 +255,15 @@ fn detach_console() {
 }
 
 impl App {
-    fn new(doc: Shared, mcp: Result<u16, String>) -> Self {
+    fn new(ws: Workspace, mcp: Result<u16, String>) -> Self {
+        let (doc_id, doc) = ws.active();
         Self {
+            ws,
             doc,
+            doc_id,
+            views: HashMap::new(),
+            closing: None,
+            quit_after_save: false,
             mcp,
             tool: Tool::Select,
             sides: 6,
@@ -246,7 +280,7 @@ impl App {
             pointer_mm: None,
             dyn_tabs: 0,
             picked: Vec::new(),
-            view: View { offset: Vec2::ZERO, zoom: 3.0, auto_fit: true, fit_size: Vec2::ZERO, history: Vec::new(), wheeling: false },
+            view: View::default(),
             canvas_rect: Rect::NOTHING,
             textures: HashMap::new(),
             geometry: geometry_cache::GeometryCache::default(),
@@ -298,48 +332,66 @@ impl App {
 
     // ---------- files ----------
 
-    fn new_doc(&mut self) {
-        let mut d = self.doc.lock().unwrap();
-        let (w, h) = (d.s.width, d.s.height);
-        *d = Document::new(w, h);
-        self.textures.clear();
-    }
-
     fn open_dialog(&mut self) {
         if let Some(path) = rfd::FileDialog::new().add_filter("Scriber", &["scrbr"]).pick_file() {
             self.open_path(&path);
         }
     }
 
-    fn open_path(&mut self, path: &Path) {
-        match Document::open(path) {
-            Ok(d) => {
-                *self.doc.lock().unwrap() = d;
-                self.textures.clear();
-                self.view.zoom_extents();
-                self.message = format!("{} {}", "Opened", path.display());
+    /// Save the active tab (asking for a file name when needed).
+    fn save(&mut self, save_as: bool) {
+        self.save_then(self.doc_id, save_as, AfterSave::Nothing);
+    }
+
+    /// Save a tab, asking for a file name when it has none (or `save_as`), then do `after`.
+    fn save_then(&mut self, id: u64, save_as: bool, after: AfterSave) {
+        let Some(doc) = self.ws.get(id) else { return };
+        let current = doc.lock().unwrap().path.clone();
+        match current {
+            Some(p) if !save_as => self.save_to(id, p, after),
+            _ => {
+                if let Some(p) = rfd::FileDialog::new().add_filter("Scriber", &["scrbr"]).set_file_name("design.scrbr").save_file() {
+                    self.save_to(id, p.with_extension("scrbr"), after);
+                }
             }
-            Err(e) => self.message = format!("{}: {e}", "Could not open the file"),
         }
     }
 
-    /// Save (asking for a file name when needed). Returns whether it was saved.
-    fn save(&mut self, save_as: bool) -> bool {
-        let current = self.doc.lock().unwrap().path.clone();
-        let path = match current {
-            Some(p) if !save_as => p,
-            _ => match rfd::FileDialog::new().add_filter("Scriber", &["scrbr"]).set_file_name("design.scrbr").save_file() {
-                Some(p) => p.with_extension("scrbr"),
-                None => return false,
-            },
-        };
-        let result = self.doc.lock().unwrap().save(&path);
-        let saved = result.is_ok();
-        self.message = match result {
-            Ok(()) => format!("{} {}", "Saved", path.display()),
-            Err(e) => format!("{}: {e}", "Could not save"),
-        };
-        saved
+    fn save_to(&mut self, id: u64, path: PathBuf, after: AfterSave) {
+        let Some(doc) = self.ws.get(id) else { return };
+        let result = doc.lock().unwrap().save(&path);
+        match result {
+            Ok(()) => {
+                self.ws.remember(&path);
+                self.message = format!("Saved {}", path.display());
+                match after {
+                    AfterSave::Nothing => {}
+                    AfterSave::CloseTab => _ = self.ws.close(id),
+                    AfterSave::Quit => self.quit_after_save = true,
+                }
+            }
+            Err(e) => self.message = format!("Could not save: {e}"),
+        }
+    }
+
+    /// Quit with unsaved tabs: save those with a file, then ask for a name for the first without
+    /// one (showing it); the quit comes back here until nothing is left unsaved.
+    fn save_all_and_quit(&mut self) {
+        for (id, doc) in self.ws.docs() {
+            let (dirty, path) = {
+                let d = doc.lock().unwrap();
+                (d.dirty, d.path.clone())
+            };
+            match (dirty, path) {
+                (false, _) => {}
+                (true, Some(p)) => self.save_to(id, p, AfterSave::Nothing),
+                (true, None) => {
+                    self.ws.activate(id);
+                    return self.save_then(id, false, AfterSave::Quit);
+                }
+            }
+        }
+        self.quit_after_save = true;
     }
 
     fn import_image_dialog(&mut self) {
@@ -500,13 +552,14 @@ impl App {
     }
 
     fn close_dialog(&mut self, ctx: &egui::Context) {
+        let unsaved = self.ws.docs().iter().filter(|(_, d)| d.lock().unwrap().dirty).count();
         egui::Modal::new(egui::Id::unique("close")).show(ctx, |ui| {
             ui.heading("Save changes?");
-            ui.label("The drawing has changes that are not saved.");
+            ui.label(if unsaved > 1 { format!("{unsaved} drawings have changes that are not saved.") } else { "The drawing has changes that are not saved.".into() });
             ui.horizontal(|ui| {
-                if ui.button("Save").clicked() && self.save(false) {
-                    self.allow_close = true;
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                if ui.button(if unsaved > 1 { "Save all" } else { "Save" }).clicked() {
+                    self.confirm_close = false;
+                    self.save_all_and_quit();
                 }
                 if ui.button("Don't save").clicked() {
                     self.allow_close = true;
@@ -527,13 +580,18 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        let (dirty, title) = {
+        self.follow_active();
+        let title = {
             let d = self.doc.lock().unwrap();
             let name = d.path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
             let name = name.unwrap_or_else(|| "Untitled".into());
-            (d.dirty, format!("{name}{} — Scriber", if d.dirty { " •" } else { "" }))
+            format!("{name}{} — Scriber", if d.dirty { " •" } else { "" })
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        if std::mem::take(&mut self.quit_after_save) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        let dirty = self.ws.docs().iter().any(|(_, d)| d.lock().unwrap().dirty);
         if ctx.input(|i| i.viewport().close_requested()) && dirty && !self.allow_close {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.confirm_close = true;
@@ -549,6 +607,7 @@ impl eframe::App for App {
         self.aid_keys(&ctx);
         self.dyn_keys(&ctx);
         self.shortcut_keys(&ctx, editing);
+        self.tab_keys(&ctx);
         // The ribbon or a shortcut may have just toggled the preview.
         let editing = self.preview.is_none();
         if editing {
@@ -566,7 +625,10 @@ impl eframe::App for App {
                 self.properties(ui);
             })
         });
-        egui::CentralPanel::no_frame().show(ui, |ui| self.canvas(ui));
+        egui::CentralPanel::no_frame().show(ui, |ui| {
+            egui::Panel::top("tabs").show(ui, |ui| self.tab_strip(ui));
+            self.canvas(ui)
+        });
         self.command_card(&ctx);
         self.dyn_cursor(&ctx);
         self.grip_menu_window(&ctx);
@@ -593,6 +655,7 @@ impl eframe::App for App {
         if self.confirm_close {
             self.close_dialog(&ctx);
         }
+        self.close_tab_dialog(&ctx);
         self.save_settings_if_changed();
     }
 }
