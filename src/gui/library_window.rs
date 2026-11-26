@@ -41,35 +41,42 @@ impl App {
 
     pub(super) fn library_window(&mut self, ctx: &egui::Context) {
         let Some(ed) = &mut self.library else { return };
-        let (mut open, mut close) = (true, false);
-        egui::Window::new("Machines & materials").open(&mut open).default_size([760.0, 520.0]).show(ctx, |ui| {
+        let mut close = false;
+        // A centred modal: the drawing waits until the user saves or cancels.
+        let modal = egui::Modal::new(egui::Id::unique("library-modal")).show(ctx, |ui| {
+            ui.set_width(900.0);
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut ed.tab, Tab::Machines, "Machines");
-                ui.selectable_value(&mut ed.tab, Tab::Materials, "Materials");
+                ui.heading("Machines & materials");
+                ui.add_space(16.0);
+                ui.selectable_value(&mut ed.tab, Tab::Machines, RichText::new("Machines").size(15.0));
+                ui.selectable_value(&mut ed.tab, Tab::Materials, RichText::new("Materials").size(15.0));
             });
             ui.separator();
-            match ed.tab {
+            ui.allocate_ui(egui::vec2(900.0, 460.0), |ui| match ed.tab {
                 Tab::Machines => machines_tab(ui, ed),
                 Tab::Materials => materials_tab(ui, ed),
-            }
+            });
             ui.separator();
             ui.horizontal(|ui| {
-                if ui.button("Save").clicked() {
-                    let lib = ed.lib.clone();
-                    match library::update(|l| {
-                        *l = lib;
-                        Ok(())
-                    }) {
-                        Ok(()) => close = true,
-                        Err(e) => ed.error = e,
-                    }
-                }
-                if ui.button("Cancel").clicked() {
-                    close = true;
-                }
                 ui.label(RichText::new(&ed.error).color(Color32::from_rgb(230, 90, 80)));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(RichText::new("Save").strong()).clicked() {
+                        let lib = ed.lib.clone();
+                        match library::update(|l| {
+                            *l = lib;
+                            Ok(())
+                        }) {
+                            Ok(()) => close = true,
+                            Err(e) => ed.error = e,
+                        }
+                    }
+                    if ui.button("Cancel").clicked() {
+                        close = true;
+                    }
+                });
             });
         });
+        let open = !modal.should_close();
         if !open || close {
             self.library = None;
         }
@@ -158,34 +165,41 @@ fn machine_form(ui: &mut egui::Ui, m: &mut Machine) {
     ui.add_space(6.0);
     ui.strong("Lasers");
     let mut remove = None;
-    for (i, l) in m.lasers.iter_mut().enumerate() {
-        ui.push_id(i, |ui| {
-            ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut l.name).desired_width(130.0));
-                ComboBox::from_id_salt("kind").selected_text(l.kind.label()).show_ui(ui, |ui| {
-                    for k in LaserKind::ALL {
-                        ui.selectable_value(&mut l.kind, k, k.label());
-                    }
-                });
-                ui.add(DragValue::new(&mut l.power_w).range(0.1..=500.0).suffix(" W"));
-                if ui.button("Remove").clicked() {
-                    remove = Some(i);
+    // One row per laser module, like a table.
+    egui::Grid::new("lasers").num_columns(4 + Operation::ALL.len()).striped(true).spacing([12.0, 6.0]).show(ui, |ui| {
+        for h in ["Name", "Type", "Power"] {
+            ui.label(RichText::new(h).weak());
+        }
+        for op in Operation::ALL {
+            ui.label(RichText::new(op.label()).weak()).on_hover_text("This laser can do it");
+        }
+        ui.label("");
+        ui.end_row();
+        for (i, l) in m.lasers.iter_mut().enumerate() {
+            ui.push_id(i, |ui| {
+                ui.add(egui::TextEdit::singleline(&mut l.name).desired_width(150.0));
+            });
+            ComboBox::from_id_salt(("kind", i)).selected_text(l.kind.label()).width(110.0).show_ui(ui, |ui| {
+                for k in LaserKind::ALL {
+                    ui.selectable_value(&mut l.kind, k, k.label());
                 }
             });
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Can do:").weak());
-                for op in Operation::ALL {
-                    let mut on = l.ops.contains(&op);
-                    if ui.checkbox(&mut on, op.label()).changed() {
-                        l.ops.retain(|o| *o != op);
-                        if on {
-                            l.ops.push(op);
-                        }
+            ui.add(DragValue::new(&mut l.power_w).range(0.1..=500.0).suffix(" W"));
+            for op in Operation::ALL {
+                let mut on = l.ops.contains(&op);
+                if ui.checkbox(&mut on, "").changed() {
+                    l.ops.retain(|o| *o != op);
+                    if on {
+                        l.ops.push(op);
                     }
                 }
-            });
-        });
-    }
+            }
+            if ui.small_button("🗑").on_hover_text("Remove this laser").clicked() {
+                remove = Some(i);
+            }
+            ui.end_row();
+        }
+    });
     if let Some(i) = remove {
         m.lasers.remove(i);
     }
