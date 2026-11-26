@@ -210,6 +210,18 @@ pub struct Fillet {
     pub radius: f64,
     /// Only round the corner nearest this point; missing = every sharp corner.
     pub at: Option<[f64; 2]>,
+    /// Two-object form (AutoCAD FILLET/CHAMFER picking two objects): the first object and where it
+    /// was picked; needs `second` too, and then `ids` and `at` are ignored.
+    pub first: Option<ObjectPick>,
+    /// The second object and where it was picked.
+    pub second: Option<ObjectPick>,
+}
+
+/// An object picked at a point: the point chooses the segment, the side kept and which corner is meant.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ObjectPick {
+    pub id: u64,
+    pub at: [f64; 2],
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -223,6 +235,11 @@ pub struct Chamfer {
     pub distance2: Option<f64>,
     /// Only cut the corner nearest this point; missing = every sharp corner.
     pub at: Option<[f64; 2]>,
+    /// Two-object form (AutoCAD FILLET/CHAMFER picking two objects): the first object and where it
+    /// was picked; needs `second` too, and then `ids` and `at` are ignored.
+    pub first: Option<ObjectPick>,
+    /// The second object and where it was picked.
+    pub second: Option<ObjectPick>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -328,6 +345,18 @@ impl Server {
         let r = f(&mut self.doc.lock().unwrap());
         (self.repaint)();
         r
+    }
+
+    /// Run a two-object fillet or chamfer.
+    fn edit_objects(&self, picks: Result<Picks, &str>, f: impl FnOnce(&mut Document, (u64, [f64; 2]), (u64, [f64; 2])) -> Result<Vec<u64>, String>) -> ToolResult {
+        let [a, b] = match picks {
+            Ok(p) => p,
+            Err(e) => return fail(e),
+        };
+        self.edit_ids(&[a.0, b.0], |d, _| match f(d, a, b) {
+            Ok(ids) => ok(json!({"ids": ids})),
+            Err(e) => fail(e),
+        })
     }
 
     /// Like `with`, for commands that act on ids (empty = selection) and change the document.
@@ -620,16 +649,22 @@ impl Server {
         })
     }
 
-    #[tool(description = "Round corners with an arc (empty ids = the selection): the corner nearest `at`, or every sharp corner between straight segments. With exactly two open lines/polylines, they are extended or shortened to meet, joined into one path, and that corner is rounded (AutoCAD FILLET of two objects).")]
+    #[tool(description = "Round corners with an arc (empty ids = the selection): the corner nearest `at`, or every sharp corner between straight segments. With exactly two open lines/polylines, they are extended or shortened to meet, joined into one path, and that corner is rounded (AutoCAD FILLET of two objects). With `first` and `second` (each an id and the point it was picked at), fillets any two objects as AutoCAD does: lines, arcs, circles and end segments of open polylines (lines touching end to end count as one polyline); the picks choose the kept sides and which arc is meant, lines and arcs are trimmed or extended to the arc, circles stay, two open paths become one, parallel lines get a half-circle cap, radius 0 makes a sharp corner. Returns the new and changed ids.")]
     fn fillet(&self, Parameters(p): Parameters<Fillet>) -> ToolResult {
+        if let Some(picks) = two_objects(&p.first, &p.second) {
+            return self.edit_objects(picks, |d, a, b| d.fillet_objects(a, b, p.radius));
+        }
         self.edit_ids(&p.ids, |d, ids| match d.fillet(&ids, p.radius, p.at) {
             Ok(()) => ok(json!({"ids": existing(d, &ids)})),
             Err(e) => fail(e),
         })
     }
 
-    #[tool(description = "Cut corners off with a straight line (empty ids = the selection): the corner nearest `at`, or every sharp corner. distance goes back along the incoming side, distance2 (default = distance) along the outgoing one. Two open lines/polylines are joined where they meet, like fillet.")]
+    #[tool(description = "Cut corners off with a straight line (empty ids = the selection): the corner nearest `at`, or every sharp corner. distance goes back along the incoming side, distance2 (default = distance) along the outgoing one. Two open lines/polylines are joined where they meet, like fillet. With `first` and `second`, chamfers two picked objects as AutoCAD does (lines, arcs and end segments of open polylines; not circles): distance from the corner along the first (along the arc for arcs), distance2 along the second; 0 and 0 makes a sharp corner. Returns the new and changed ids.")]
     fn chamfer(&self, Parameters(p): Parameters<Chamfer>) -> ToolResult {
+        if let Some(picks) = two_objects(&p.first, &p.second) {
+            return self.edit_objects(picks, |d, a, b| d.chamfer_objects(a, b, p.distance, p.distance2.unwrap_or(p.distance)));
+        }
         self.edit_ids(&p.ids, |d, ids| match d.chamfer(&ids, p.distance, p.distance2.unwrap_or(p.distance), p.at) {
             Ok(()) => ok(json!({"ids": existing(d, &ids)})),
             Err(e) => fail(e),
@@ -687,6 +722,18 @@ impl Server {
             },
             _ => fail("give one id or select exactly one item"),
         })
+    }
+}
+
+/// The two picks of the two-object fillet/chamfer form: (id, point) each.
+type Picks = [(u64, [f64; 2]); 2];
+
+/// Both picks of the two-object fillet/chamfer form, None when neither is given.
+fn two_objects(first: &Option<ObjectPick>, second: &Option<ObjectPick>) -> Option<Result<Picks, &'static str>> {
+    match (first, second) {
+        (None, None) => None,
+        (Some(a), Some(b)) => Some(Ok([(a.id, a.at), (b.id, b.at)])),
+        _ => Some(Err("give both first and second, or neither")),
     }
 }
 

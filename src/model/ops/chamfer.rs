@@ -1,6 +1,7 @@
 //! Chamfer: cut a sharp corner off with a straight line.
 
 use super::corner::{Cut, cut_corners};
+use super::objects::{Edit, Pick, corner_between, meet, pick};
 use crate::model::geom::Contour;
 
 /// Cut the corner at vertex `corner` (None = every sharp corner): `d1` mm back along the incoming side,
@@ -10,6 +11,26 @@ pub fn chamfer(c: &Contour, corner: Option<usize>, d1: f64, d2: f64) -> Result<C
         return Err("chamfer distances must be greater than 0".into());
     }
     cut_corners(c, corner, |_| Cut { back: d1, ahead: d2, bulge: 0.0 }).map_err(|e| format!("chamfer {d1} × {d2} mm: {e}"))
+}
+
+/// Chamfer between two picked objects (AutoCAD CHAMFER): lines, arcs (distances measured along the
+/// arc) and the end segments of open polylines. They are brought to the corner where they meet,
+/// keeping the picked sides, and cut `d1` mm back along the first and `d2` along the second; 0 and 0
+/// leaves the sharp corner.
+pub fn chamfer_objects(a: Pick, b: Pick, d1: f64, d2: f64) -> Result<Edit, String> {
+    if !(d1 >= 0.0 && d2 >= 0.0 && d1.is_finite() && d2.is_finite()) {
+        return Err("chamfer distances must be 0 or more".into());
+    }
+    if let Some((ci, vertex, first_in)) = corner_between(a, b)? {
+        let c = &a.0[ci];
+        let (back, ahead) = if first_in { (d1, d2) } else { (d2, d1) };
+        return Ok(Edit::one(a.0, ci, if d1 == 0.0 && d2 == 0.0 { c.clone() } else { chamfer(c, Some(vertex), back, ahead)? }));
+    }
+    let (p, q) = (pick(a.0, a.1, "first")?, pick(b.0, b.1, "second")?);
+    if p.is_circle() || q.is_circle() {
+        return Err("chamfer works on lines, arcs and open polylines, not circles".into());
+    }
+    meet(a, b, &p, &q, d1, d2)
 }
 
 #[cfg(test)]

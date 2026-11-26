@@ -2,17 +2,20 @@
 
 mod array;
 mod boolean;
+mod carrier;
 mod chamfer;
 mod corner;
 mod fillet;
+mod objects;
 mod offset;
 mod trim;
 
 pub use array::{grid_offsets, polar_angles};
 pub use boolean::{BoolOp, boolean};
-pub use chamfer::chamfer;
+pub use chamfer::{chamfer, chamfer_objects};
 pub use corner::join_ends;
-pub use fillet::fillet;
+pub use fillet::{fillet, fillet_objects};
+pub use objects::{Edit, Pick};
 pub use offset::offset;
 pub use trim::trim;
 
@@ -40,3 +43,6 @@ fn depth(c: &Contour, all: &[Contour]) -> usize {
     let p = c.vertices.first().map(|v| [v.x, v.y]).unwrap_or_default();
     all.iter().filter(|o| !std::ptr::eq(*o, c) && o.contains(p)).count()
 }
+
+#[cfg(test)]
+mod objects_tests;

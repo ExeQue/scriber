@@ -415,6 +415,61 @@ impl Document {
         }
         Ok(())
     }
+
+    /// Fillet two objects, each picked at a point (AutoCAD FILLET): lines, arcs, circles and end
+    /// segments of open polylines; lines touching end to end count as one polyline. The picks choose
+    /// the kept sides and which of the possible arcs is meant; lines and arcs are trimmed or extended
+    /// to the arc, circles stay. Radius 0 makes a sharp corner; parallel lines get a half-circle cap.
+    /// Two open paths are joined into one. Returns the ids of the new and changed items.
+    pub fn fillet_objects(&mut self, a: (u64, Point), b: (u64, Point), radius: f64) -> Result<Vec<u64>, String> {
+        self.edit_objects(a, b, "fillet", |pa, pb| ops::fillet_objects(pa, pb, radius))
+    }
+
+    /// Chamfer two objects, each picked at a point (AutoCAD CHAMFER): lines, arcs and end segments of
+    /// open polylines, `d1` mm from the corner along the first and `d2` along the second (along the
+    /// arc for arcs). 0 and 0 makes a sharp corner. Otherwise like `fillet_objects`.
+    pub fn chamfer_objects(&mut self, a: (u64, Point), b: (u64, Point), d1: f64, d2: f64) -> Result<Vec<u64>, String> {
+        self.edit_objects(a, b, "chamfer", |pa, pb| ops::chamfer_objects(pa, pb, d1, d2))
+    }
+
+    /// Join each pick's chain into one path, apply `op` and write its result back; all or nothing.
+    fn edit_objects(&mut self, a: (u64, Point), b: (u64, Point), name: &str, op: impl FnOnce(ops::Pick, ops::Pick) -> Result<ops::Edit, String>) -> Result<Vec<u64>, String> {
+        self.paths(&[a.0, b.0])?;
+        let before = self.s.clone();
+        let ia = self.join_chains(&[a.0])[0];
+        // Picks on one chain are on the same path now.
+        let ib = self.join_chains(&[b.0]).first().copied().unwrap_or(ia);
+        let (ta, tb) = (self.item(ia).unwrap().clone(), self.item(ib).unwrap().clone());
+        let edit = if ia == ib { op((ta.shape.contours(), a.1), (ta.shape.contours(), b.1)) } else { op((ta.shape.contours(), a.1), (tb.shape.contours(), b.1)) };
+        let edit = match edit {
+            Ok(e) => e,
+            Err(e) => {
+                self.s = before;
+                return Err(e);
+            }
+        };
+        let mut ids = Vec::new();
+        match edit {
+            ops::Edit::Joined(c) => {
+                self.item_mut(ia).unwrap().shape = Shape::path(c);
+                self.delete(&[ib]);
+                ids.push(ia);
+            }
+            ops::Edit::Trimmed { a: na, b: nb, bridge } => {
+                for (id, contours) in [(ia, na), (ib, nb)] {
+                    if let Some(contours) = contours {
+                        self.item_mut(id).unwrap().shape = Shape::Path { contours };
+                        ids.push(id);
+                    }
+                }
+                if let Some(c) = bridge {
+                    ids.push(self.add(name, ta.op, false, Shape::path(c)));
+                }
+            }
+        }
+        self.touch();
+        Ok(ids)
+    }
 }
 
 /// Most copies one array may make.
