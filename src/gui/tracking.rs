@@ -137,6 +137,14 @@ pub fn extension(seg: Seg) -> Path {
     }
 }
 
+/// The path through `p` square to `seg`: perpendicular to a line, or along an arc's radius.
+pub fn perpendicular(seg: Seg, p: Point) -> Path {
+    match seg {
+        Seg::Line(a, b) => Path::Line { o: p, ang: angle(a, b) + 90.0 },
+        Seg::Arc { c, .. } => Path::Line { o: p, ang: angle(c, p) },
+    }
+}
+
 /// Angles as line directions (an endless line at 0° is the one at 180°), without repeats.
 fn line_angles(angles: &[f64]) -> Vec<f64> {
     let mut out: Vec<f64> = Vec::new();
@@ -269,7 +277,11 @@ impl App {
             return;
         }
         let ends_here = |seg: &Seg| seg.ends().iter().any(|e| distance(*e, s.p) < 1e-6);
-        let ext = if self.aids.osnap && s.kind == Kind::Endpoint { on(s.p).into_iter().filter(ends_here).map(extension).collect() } else { Vec::new() };
+        let mut ext: Vec<Path> = if self.aids.osnap && s.kind == Kind::Endpoint { on(s.p).into_iter().filter(ends_here).map(extension).collect() } else { Vec::new() };
+        // Square to the shape at an end or middle: perpendicular to a line, along the radius of an arc.
+        if self.aids.osnap && matches!(s.kind, Kind::Endpoint | Kind::Midpoint) {
+            ext.extend(on(s.p).into_iter().map(|seg| perpendicular(seg, s.p)));
+        }
         self.tracker.toggle_point(s.p, ext);
     }
 
@@ -424,6 +436,13 @@ mod tests {
     }
 
     /// The real input path: `aim` as the canvas calls it each frame, with the pointer resting and moving.
+    #[test]
+    fn perpendicular_paths() {
+        let Path::Line { ang, .. } = perpendicular(Seg::Line([0.0, 0.0], [10.0, 10.0]), [10.0, 10.0]) else { panic!() };
+        // The line runs at -45° on screen (y down); square to it is 45°.
+        assert!(((ang - 45.0).rem_euclid(180.0)).abs() < 1e-9 || ((ang - 45.0).rem_euclid(180.0) - 180.0).abs() < 1e-9, "{ang}");
+    }
+
     #[test]
     fn otrack_works_with_polar_off() {
         use crate::gui::command::Cmd;
