@@ -107,6 +107,7 @@ impl App {
             if ui.button("Deselect all").clicked() {
                 self.doc.lock().unwrap().selection.clear();
             }
+            self.comment_menu(ui);
         }
         if self.clip.is_some() {
             ui.separator();

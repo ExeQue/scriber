@@ -21,6 +21,7 @@ pub const LAYERS: &str = "\u{e104}";
 pub const MAXIMIZE: &str = "\u{e116}";
 pub const CIRCLE_CHECK: &str = "\u{e226}";
 pub const CIRCLE_ALERT: &str = "\u{e07b}";
+pub const MESSAGE_SQUARE: &str = "\u{e11b}";
 
 /// Add the icon font after the default fonts, so its private-use codepoints work in any text.
 pub fn install(ctx: &egui::Context) {

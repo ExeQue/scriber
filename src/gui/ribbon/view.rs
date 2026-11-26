@@ -53,6 +53,9 @@ impl App {
                         *on = !*on;
                     }
                 }
+                if super::button(ui, false, compact, !self.comments.hidden, Icon::Glyph(crate::gui::lucide::MESSAGE_SQUARE), "Comments").on_hover_text("Comments\nShow the review comment pins").clicked() {
+                    self.comments.hidden = !self.comments.hidden;
+                }
             });
         });
     }

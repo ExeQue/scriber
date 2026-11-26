@@ -6,6 +6,7 @@ mod canvas;
 mod check_panel;
 mod clipboard;
 mod command;
+mod comments;
 mod constraint_bars;
 mod constraint_list;
 mod cycle;
@@ -178,6 +179,8 @@ struct App {
     grip_menu: Option<(grips::Grip, Point)>,
     /// POLAR's additional angles as typed in its menu.
     polar_extra_text: String,
+    /// Review comments: the Comment tool, pins and their windows.
+    comments: comments::Comments,
 }
 
 pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
@@ -289,6 +292,7 @@ impl App {
             grip_rest: None,
             grip_menu: None,
             polar_extra_text: String::new(),
+            comments: comments::Comments::default(),
         }
     }
 
@@ -558,6 +562,7 @@ impl eframe::App for App {
             ui.add_enabled_ui(editing, |ui| {
                 self.layers_panel(ui);
                 ui.separator();
+                self.comments_panel(ui);
                 self.properties(ui);
             })
         });

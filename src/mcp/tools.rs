@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+mod annotations;
 mod editing;
 mod items_file;
 mod laser;
@@ -32,7 +33,8 @@ Constraints (as in AutoCAD) bind geometry: add_constraint (coincident, parallel,
 Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. A large document comes back as a summary without geometry (or ask for one with geometry: false); get_document with ids gives the geometry of particular items. Tools that change items reply compactly (per item id, name, layer, op, kind, bbox, rotation, contour and vertex counts); pass verbose: true for the full geometry. Call export_png without a path to look at the result.
 Mirrored copy: transform_items with mirror_x/mirror_y and copy: true. boolean keeps the first item's layer (and so its op). import_svg maps colours to ops (shapes with neither fill nor stroke, or a grey or green fill, come in as no_output, useful as boolean cutters) and says which SVG element (svg_id, element index) each item came from.
 Laser settings: list_machines and list_materials show the user's machines and material library; set_laser_setup picks the document's machine, laser module and material, and get_laser_setup returns the power/speed/passes to use per operation and per layer. Before the user lasers, run preflight_check and look at export_png with preview: true.
-Import and share: search_xtool_materials and import_xtool_materials copy settings from xTool Studio's local material cache (only materials the user opened there), import_xtool_project from an .xs project; export_library and import_library write and merge .scrlib files for other Scriber users.";
+Import and share: search_xtool_materials and import_xtool_materials copy settings from xTool Studio's local material cache (only materials the user opened there), import_xtool_project from an .xs project; export_library and import_library write and merge .scrlib files for other Scriber users.
+Review comments: the person can pin comments on the canvas (on a spot or on shapes) to tell you what to change. To follow a review, loop: wait_for_annotations (pass the revision from its last reply) blocks until the person comments, replies or reopens one, then act on each comment, and answer with reply_annotation (resolve: true when it is done, saying what you changed; ask in a reply when unsure). list_annotations shows them all (status: open for the open ones); add_annotation leaves a note for the person. Comments are not lasered, exported or undone with undo.";
 
 // ---------- parameters ----------
 
@@ -504,7 +506,7 @@ pub(super) fn fail(msg: impl std::fmt::Display) -> ToolResult {
 
 impl Server {
     pub fn new(doc: Shared, repaint: Arc<dyn Fn() + Send + Sync>) -> Self {
-        Self { doc, repaint, tool_router: Self::tool_router() + Self::constraint_router() + Self::laser_router() + Self::editing_router() + Self::layers_router() + Self::xtool_router() }
+        Self { doc, repaint, tool_router: Self::tool_router() + Self::constraint_router() + Self::laser_router() + Self::editing_router() + Self::layers_router() + Self::xtool_router() + Self::annotations_router() }
     }
 
     /// Run `f` on the locked document, then repaint the GUI.

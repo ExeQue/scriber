@@ -1,6 +1,7 @@
 //! The document and every command that changes it. The GUI and the MCP server both go through here,
 //! so they can do the same things and share one undo history.
 
+pub mod annotations;
 mod chain;
 pub mod clipboard;
 pub mod constraints;
@@ -92,6 +93,8 @@ pub struct Document {
     hold: Vec<Ref>,
     /// The layer new items go on (see `current_layer`); not part of undo or the file.
     current_layer: u64,
+    /// Review comments (see `annotations`): saved with the file, not part of undo.
+    pub annotations: annotations::Annotations,
 }
 
 impl Document {

@@ -1,5 +1,6 @@
 //! The `.scrbr` project file: a zip with `document.json` and the images as `images/<id>.png`.
 
+use super::annotations::Annotations;
 use super::{Document, Img, Layer, Op, State, layer};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -11,7 +12,7 @@ pub const FORMAT_VERSION: u32 = 2;
 impl Document {
     pub fn save(&mut self, path: &Path) -> anyhow::Result<()> {
         let tmp = path.with_extension("scrbr.tmp");
-        write_archive(&self.s, &tmp)?;
+        write_archive(&self.s, &self.annotations, &tmp)?;
         // Write-then-rename, so a crash never leaves a half-written project.
         std::fs::rename(&tmp, path)?;
         self.path = Some(path.to_path_buf());
@@ -21,16 +22,20 @@ impl Document {
     }
 
     pub fn open(path: &Path) -> anyhow::Result<Self> {
-        Ok(Self { s: read_archive(path)?, path: Some(path.to_path_buf()), ..Self::default() })
+        let (s, annotations) = read_archive(path)?;
+        Ok(Self { s, annotations: annotations.loaded(), path: Some(path.to_path_buf()), ..Self::default() })
     }
 }
 
-fn write_archive(s: &State, path: &Path) -> anyhow::Result<()> {
+fn write_archive(s: &State, annotations: &Annotations, path: &Path) -> anyhow::Result<()> {
     let mut zip = zip::ZipWriter::new(std::fs::File::create(path)?);
     let opts = zip::write::SimpleFileOptions::default();
     let mut json = serde_json::to_value(s)?;
     json["format"] = FORMAT_VERSION.into();
     json["app"] = "scriber".into();
+    if !annotations.list.is_empty() {
+        json["annotations"] = serde_json::to_value(annotations)?;
+    }
     zip.start_file("document.json", opts)?;
     zip.write_all(serde_json::to_string_pretty(&json)?.as_bytes())?;
     // PNGs are already compressed.
@@ -43,13 +48,14 @@ fn write_archive(s: &State, path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn read_archive(path: &Path) -> anyhow::Result<State> {
+fn read_archive(path: &Path) -> anyhow::Result<(State, Annotations)> {
     let mut zip = zip::ZipArchive::new(std::fs::File::open(path)?)?;
     let mut json = String::new();
     zip.by_name("document.json")?.read_to_string(&mut json)?;
     let mut value: serde_json::Value = serde_json::from_str(&json)?;
     let format = value["format"].as_u64().unwrap_or(0);
     anyhow::ensure!(format <= FORMAT_VERSION as u64, "this file was made by a newer Scriber (format {format}); please update");
+    let annotations = value.as_object_mut().and_then(|o| o.remove("annotations")).map(serde_json::from_value).transpose()?.unwrap_or_default();
     migrate_fill(&mut value);
     migrate_layers(&mut value);
     let mut s: State = serde_json::from_value(value)?;
@@ -63,7 +69,7 @@ fn read_archive(path: &Path) -> anyhow::Result<State> {
         let (w, h) = image::ImageReader::new(std::io::Cursor::new(&png)).with_guessed_format()?.into_dimensions()?;
         s.images.insert(id, Arc::new(Img { png, w, h }));
     }
-    Ok(s)
+    Ok((s, annotations))
 }
 
 /// Files from before the xTool operations had a line op (`cut`, `score`, `engrave`, `none`, `annotate`)
@@ -192,6 +198,26 @@ mod tests {
         assert_eq!(e.s.notes, "hej");
         assert_eq!(e.s.next_id, d.s.next_id);
         assert_eq!(e.s.images.values().next().unwrap().w, 3);
+        assert!(e.annotations.list.is_empty(), "a file without annotations loads with none");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn annotations_round_trip() {
+        use crate::model::annotations::{Author, Status, revision};
+        let dir = std::env::temp_dir().join(format!("scriber-ann-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.scrbr");
+        let mut d = Document::new(120.0, 80.0);
+        let id = d.annotate(Author::Person, "rounder", Some([5.0, 6.0]), vec![]).unwrap();
+        d.reply_annotation(id, Author::Agent("bot".into()), "ok", Some(true)).unwrap();
+        d.save(&path).unwrap();
+        let before = revision();
+        let mut e = Document::open(&path).unwrap();
+        let (a, b) = (&d.annotations.list[0], &e.annotations.list[0]);
+        assert_eq!((b.id, b.at, &b.text, b.status, &b.replies, &b.changed_by), (a.id, a.at, &a.text, Status::Resolved, &a.replies, &a.changed_by));
+        assert!(b.revision > before, "loaded annotations get fresh revisions");
+        assert_eq!(e.annotate(Author::Person, "next", Some([0.0, 0.0]), vec![]).unwrap(), id + 1);
         std::fs::remove_dir_all(dir).ok();
     }
 

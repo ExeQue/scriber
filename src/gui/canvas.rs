@@ -50,7 +50,8 @@ impl App {
         self.aids.tracking = None;
         self.shift = ui.input(|i| i.modifiers.shift);
         let raw = response.hover_pos().map(|p| self.s2w(p));
-        let pointer = if space_pan {
+        let commenting = !space_pan && self.comment_input(ui, &response, raw);
+        let pointer = if space_pan || commenting {
             raw
         } else if self.tool == Tool::Select {
             self.select_input(ui, &response, raw)
@@ -71,6 +72,7 @@ impl App {
         self.dimension_input(&response);
         self.settle();
         self.paint(ui, rect, pointer);
+        self.comment_windows(&ctx);
     }
 
     // ---------- drafting aids ----------
@@ -350,6 +352,7 @@ impl App {
         self.paint_hover_measure(&painter, &snap_items(&state), pointer);
         self.paint_picked(&painter, tol);
         self.paint_draft(&painter, pointer, tol);
+        self.paint_comments(&painter);
         self.paint_aids(&painter, rect, pointer);
     }
 

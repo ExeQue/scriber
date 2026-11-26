@@ -1,6 +1,7 @@
-//! Annotate: text, dimensions, measuring and guide lines.
+//! Annotate: text, dimensions, measuring, guide lines and review comments.
 
-use super::{App, Icon, panel};
+use super::{App, Icon, button, panel};
+use crate::gui::lucide;
 use crate::gui::command::Cmd;
 use eframe::egui::Ui;
 
@@ -16,6 +17,16 @@ impl App {
             ui.vertical(|ui| {
                 if self.small(ui, self.show_guides, Icon::Glyph("👁"), "Show guide lines", "Show or hide the guide lines (they are never cut)") {
                     self.show_guides = !self.show_guides;
+                }
+            });
+        });
+        panel(ui, "Review", |ui| {
+            if button(ui, true, false, self.comments.placing, Icon::Glyph(lucide::MESSAGE_SQUARE), "Comment").on_hover_text("Comment\nPin a comment on a spot or a shape, for an agent (or a person) to act on").clicked() {
+                self.toggle_comment_tool();
+            }
+            ui.vertical(|ui| {
+                if self.small(ui, !self.comments.hidden, Icon::Glyph(lucide::EYE), "Show comments", "Show or hide the comment pins") {
+                    self.comments.hidden = !self.comments.hidden;
                 }
             });
         });
