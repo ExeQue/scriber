@@ -24,7 +24,7 @@ impl Tool {
     /// What to do next, given how many points are placed.
     pub fn hint(self, placed: usize) -> &'static str {
         match (self, placed) {
-            (Tool::Select, _) => "Click shapes to add them, Shift-click to remove. Drag on empty space for a window (left to right) or crossing (right to left). Drag grips to edit. Type a command below.",
+            (Tool::Select, _) => "Click shapes to add them, Shift-click to remove. Drag on empty space for a window (left to right) or crossing (right to left). Drag grips to edit. Pick a tool on the left to draw.",
             (Tool::Rect, 0) => "Click (or press and drag) the first corner.",
             (Tool::Rect, _) => "Click the opposite corner.",
             (Tool::Circle, _) => "Click the points of the circle; the card shows which point comes next and other ways to draw it.",
@@ -33,10 +33,10 @@ impl Tool {
             (Tool::Arc, _) => "Click the points of the arc; the card shows which point comes next and other ways to draw it.",
             (Tool::Polyline, 0) => "Click the first point.",
             (Tool::Polyline, _) => "Click the next point. Double-click or Enter finishes, Esc cancels.",
-            (Tool::Text, _) => "Click where the text should start, then give its height and the text on the command line.",
+            (Tool::Text, _) => "Click where the text should start, then type the text and its height on the card.",
             (Tool::Line | Tool::Dimension | Tool::Measure, 0) => "Click (or press and drag) the start point.",
             (Tool::Line | Tool::Dimension | Tool::Measure, _) => "Click the end point.",
-            (Tool::Pick, _) => "Click a point, or type coordinates on the command line.",
+            (Tool::Pick, _) => "Click a point, or type an exact value on the card.",
         }
     }
 

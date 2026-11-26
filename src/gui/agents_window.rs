@@ -46,7 +46,7 @@ impl App {
             }
             ui.horizontal(|ui| {
                 refresh |= ui.button("Search again").clicked();
-                ui.label(RichText::new("Command line: scriber agents").small().weak());
+                ui.label(RichText::new("Also in a terminal: scriber agents").small().weak());
             });
         });
         self.show_agents = open;
