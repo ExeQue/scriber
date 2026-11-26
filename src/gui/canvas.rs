@@ -1,14 +1,20 @@
-//! The drawing area: mouse and keyboard input, picking shapes, and painting the document.
+//! The drawing area: input for the drawing tools, the drafting aids (OSNAP, ORTHO, POLAR, grid)
+//! and painting the document. Selection and grip dragging live in select.rs.
 
+use super::App;
 use super::labels::op_color;
+use super::snap::{self, Aid};
 use super::tools::Tool;
-use super::{App, Drag};
-use crate::model::geom::{distance, segment_distance, union};
-use crate::model::{BBox, Document, Img, Item, Op, Point, Shape, Transform};
-use eframe::egui::{self, Align2, Color32, FontId, PointerButton, Pos2, Rect, Sense, Stroke, pos2, vec2};
+use crate::model::geom::{distance, segment_distance};
+use crate::model::{Document, Img, Item, Op, Point, Shape};
+use eframe::egui::{self, Align2, Color32, FontId, Key, PointerButton, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use std::path::PathBuf;
 
 const SELECTED: Color32 = Color32::from_rgb(255, 150, 0);
+/// Half the size of the pick box, in pixels; also how close a click must be to a line.
+const PICKBOX: f32 = 5.0;
+/// How close (pixels) the pointer must be for an object snap, polar ray or grip.
+pub(super) const APERTURE: f32 = 10.0;
 
 impl App {
     pub(super) fn canvas(&mut self, ui: &mut egui::Ui) {
@@ -17,17 +23,98 @@ impl App {
         let ctx = ui.ctx().clone();
         self.fit_if_needed(rect);
         self.pan_and_zoom(ui, &response);
-
-        let raw = response.hover_pos().map(|p| self.s2w(p));
-        let pointer = raw.map(|p| self.snap(p));
-        if self.tool == Tool::Select {
-            self.select_input(ui, &response, raw);
-        } else if let Some(p) = pointer {
-            self.draw_input(ui, &response, p);
+        if response.hovered() {
+            ctx.set_cursor_icon(egui::CursorIcon::None);
         }
 
+        self.aids.hit = None;
+        self.aids.tracking = None;
+        let raw = response.hover_pos().map(|p| self.s2w(p));
+        let pointer = if self.tool == Tool::Select {
+            self.select_input(ui, &response, raw)
+        } else {
+            let from = self.draft.last().copied();
+            let pointer = raw.map(|r| self.aim_at_doc(r, from));
+            if let Some(p) = pointer {
+                self.draw_input(ui, &response, p);
+            }
+            pointer
+        };
         self.dropped_files(&ctx, pointer);
         self.paint(ui, rect, pointer);
+    }
+
+    // ---------- drafting aids ----------
+
+    pub(super) fn aid_on(&self, a: Aid) -> bool {
+        match a {
+            Aid::Grid => self.aids.grid,
+            Aid::Snap => self.snap,
+            Aid::Ortho => self.aids.ortho,
+            Aid::Osnap => self.aids.osnap,
+            Aid::Polar => self.aids.polar,
+        }
+    }
+
+    /// Flip a status-bar toggle. ORTHO and POLAR exclude each other, as in AutoCAD.
+    pub(super) fn toggle(&mut self, a: Aid) {
+        let on = !self.aid_on(a);
+        match a {
+            Aid::Grid => self.aids.grid = on,
+            Aid::Snap => self.snap = on,
+            Aid::Osnap => self.aids.osnap = on,
+            Aid::Ortho => {
+                self.aids.ortho = on;
+                self.aids.polar &= !on;
+            }
+            Aid::Polar => {
+                self.aids.polar = on;
+                self.aids.ortho &= !on;
+            }
+        }
+        self.message = format!("<{} {}>", a.label(), if on { "on" } else { "off" });
+    }
+
+    /// F3/F7/F8/F9/F10 toggle the aids (also while the command line has focus); Esc cancels a window or grip drag.
+    /// Runs before `App::keys`, which consumes Esc.
+    pub(super) fn aid_keys(&mut self, ctx: &egui::Context) {
+        for a in Aid::ALL {
+            if ctx.input(|i| i.key_pressed(a.key())) {
+                self.toggle(a);
+            }
+        }
+        if ctx.input(|i| i.key_pressed(Key::Escape)) {
+            self.cancel_drag();
+        }
+    }
+
+    /// Where a point lands: an object snap first, else the grid, then ORTHO or POLAR from `from`.
+    pub(super) fn aim(&mut self, items: &[Item], raw: Point, from: Option<Point>) -> Point {
+        let tol = (APERTURE / self.view.zoom) as f64;
+        if self.aids.osnap
+            && let Some(s) = snap::find(items, raw, tol, from)
+        {
+            self.aids.hit = Some(s);
+            return s.p;
+        }
+        let p = self.snap(raw);
+        let Some(f) = from else { return p };
+        if self.aids.ortho {
+            return snap::ortho(f, p);
+        }
+        if self.aids.polar
+            && let Some(q) = snap::polar(f, raw, 15.0, tol)
+        {
+            self.aids.tracking = Some((f, q));
+            return q;
+        }
+        p
+    }
+
+    fn aim_at_doc(&mut self, raw: Point, from: Option<Point>) -> Point {
+        let doc = self.doc.clone();
+        let d = doc.lock().unwrap();
+        self.aim(&d.s.items, raw, from)
     }
 
     /// Show the whole material, once at start and after "Show whole material".
@@ -45,7 +132,8 @@ impl App {
         self.view.fitted = true;
     }
 
-    /// Middle/right drag pans; the wheel (or pinch) zooms around the pointer.
+    /// Middle drag pans, and so does a right drag (egui only reports a drag once the pointer moved,
+    /// so a plain right click stays free); the wheel (or pinch) zooms around the pointer.
     fn pan_and_zoom(&mut self, ui: &egui::Ui, response: &egui::Response) {
         if response.dragged_by(PointerButton::Middle) || response.dragged_by(PointerButton::Secondary) {
             self.view.offset += response.drag_delta();
@@ -68,11 +156,11 @@ impl App {
                 && self.draft.is_empty()
                 && let Some(o) = ui.input(|i| i.pointer.press_origin())
             {
-                self.draft.push(self.snap(self.s2w(o)));
+                let start = self.aim_at_doc(self.s2w(o), None);
+                self.draft.push(start);
             }
             if response.drag_stopped_by(PointerButton::Primary) && self.draft.len() == 1 && self.px(distance(self.draft[0], p)) > 4.0 {
-                self.draft.push(p);
-                self.finish_draft(false);
+                self.place_point(p);
             }
         }
         if response.double_clicked_by(PointerButton::Primary) && tool == Tool::Polyline {
@@ -80,73 +168,6 @@ impl App {
             self.finish_draft(false);
         } else if response.clicked_by(PointerButton::Primary) {
             self.place_point(p);
-        }
-    }
-
-    /// Select tool: click to pick, drag a shape to move it, drag on empty space to box-select.
-    fn select_input(&mut self, ui: &egui::Ui, response: &egui::Response, raw: Option<Point>) {
-        let add = ui.input(|i| i.modifiers.shift || i.modifiers.command);
-        if response.drag_started_by(PointerButton::Primary)
-            && let Some(o) = ui.input(|i| i.pointer.press_origin())
-        {
-            let origin = self.s2w(o);
-            let mut d = self.doc.lock().unwrap();
-            self.drag = Some(match self.hit(&d, origin) {
-                Some(id) => {
-                    if !d.selection.contains(&id) {
-                        if !add {
-                            d.selection.clear();
-                        }
-                        d.selection.push(id);
-                    }
-                    d.checkpoint();
-                    Drag::Move { origin, applied: [0.0, 0.0] }
-                }
-                None => Drag::Box { start: origin },
-            });
-        }
-        if let (Some(Drag::Move { origin, applied }), Some(p)) = (&mut self.drag, raw) {
-            let mut want = [p[0] - origin[0], p[1] - origin[1]];
-            if self.snap {
-                want = [want[0].round(), want[1].round()];
-            }
-            let (dx, dy) = (want[0] - applied[0], want[1] - applied[1]);
-            if dx != 0.0 || dy != 0.0 {
-                *applied = want;
-                let mut d = self.doc.lock().unwrap();
-                let ids = d.selection.clone();
-                d.transform(&ids, &Transform::translate(dx, dy));
-            }
-        }
-        if response.drag_stopped_by(PointerButton::Primary) {
-            if let (Some(Drag::Box { start }), Some(p)) = (&self.drag, raw) {
-                let area = [start[0].min(p[0]), start[1].min(p[1]), (p[0] - start[0]).abs(), (p[1] - start[1]).abs()];
-                let mut d = self.doc.lock().unwrap();
-                let inside: Vec<u64> = d.s.items.iter().filter(|i| contains_box(area, i.shape.metrics().bbox)).map(|i| i.id).collect();
-                if !add {
-                    d.selection.clear();
-                }
-                for id in inside {
-                    if !d.selection.contains(&id) {
-                        d.selection.push(id);
-                    }
-                }
-            }
-            self.drag = None;
-        }
-        if response.clicked_by(PointerButton::Primary)
-            && let Some(p) = raw
-        {
-            let mut d = self.doc.lock().unwrap();
-            match (self.hit(&d, p), add) {
-                (Some(id), true) => match d.selection.iter().position(|s| *s == id) {
-                    Some(i) => _ = d.selection.remove(i),
-                    None => d.selection.push(id),
-                },
-                (Some(id), false) => d.selection = vec![id],
-                (None, false) => d.selection.clear(),
-                (None, true) => {}
-            }
         }
     }
 
@@ -163,13 +184,13 @@ impl App {
     }
 
     /// Millimetres on screen, in pixels.
-    fn px(&self, mm: f64) -> f32 {
+    pub(super) fn px(&self, mm: f64) -> f32 {
         mm as f32 * self.view.zoom
     }
 
     /// The item under `p`: a line within a few pixels wins; otherwise the smallest area containing `p`.
-    fn hit(&self, d: &Document, p: Point) -> Option<u64> {
-        let tol = 6.0 / self.view.zoom as f64;
+    pub(super) fn hit(&self, d: &Document, p: Point) -> Option<u64> {
+        let tol = (PICKBOX / self.view.zoom) as f64;
         let mut inside: Option<(f64, u64)> = None;
         for item in d.s.items.iter().rev() {
             let near_line = item.shape.outline(0.05).iter().any(|line| line.windows(2).any(|s| segment_distance(p, s[0], s[1]) <= tol));
@@ -201,8 +222,8 @@ impl App {
 
     fn paint(&mut self, ui: &egui::Ui, rect: Rect, pointer: Option<Point>) {
         let painter = ui.painter_at(rect);
-        let background = if ui.visuals().dark_mode { Color32::from_gray(38) } else { Color32::from_gray(200) };
-        painter.rect_filled(rect, 0.0, background);
+        // Model space: always dark around the light material.
+        painter.rect_filled(rect, 0.0, Color32::from_gray(33));
 
         let (state, selection) = {
             let d = self.doc.lock().unwrap();
@@ -216,15 +237,42 @@ impl App {
         }
         self.paint_selection(&painter, &state.items, &selection, pointer);
         self.paint_draft(&painter, pointer, tol);
+        self.paint_aids(&painter, rect, pointer);
+    }
+
+    /// Tracking ray, snap marker with its name, and the crosshair with the pick box.
+    fn paint_aids(&self, painter: &egui::Painter, rect: Rect, pointer: Option<Point>) {
+        let Some(p) = pointer else { return };
+        let at = self.w2s(p);
+        if let Some((from, q)) = self.aids.tracking {
+            let (a, b) = (self.w2s(from), self.w2s(q));
+            let far = a + (b - a).normalized() * (rect.width() + rect.height());
+            let stroke = Stroke::new(1.0, Color32::from_rgb(120, 200, 120));
+            painter.extend(egui::Shape::dashed_line(&[a, far], stroke, 4.0, 4.0));
+            let ang = (-(q[1] - from[1])).atan2(q[0] - from[0]).to_degrees();
+            tooltip(painter, at, &format!("Polar: {:.2} < {:.0}°", distance(from, q), ang));
+        }
+        if let Some(s) = self.aids.hit {
+            snap::paint_marker(painter, at, s.kind);
+            tooltip(painter, at, s.kind.label());
+        }
+        let cross = Stroke::new(1.0, Color32::from_gray(140));
+        painter.line_segment([pos2(rect.left(), at.y), pos2(rect.right(), at.y)], cross);
+        painter.line_segment([pos2(at.x, rect.top()), pos2(at.x, rect.bottom())], cross);
+        if self.tool == Tool::Select {
+            let pick = Rect::from_center_size(at, vec2(PICKBOX * 2.0, PICKBOX * 2.0));
+            painter.rect_filled(pick, 0.0, Color32::from_gray(33));
+            painter.rect_stroke(pick, 0.0, Stroke::new(1.0, Color32::from_gray(220)), egui::StrokeKind::Middle);
+        }
     }
 
     fn paint_material(&self, painter: &egui::Painter, w: f64, h: f64) {
         let mat = Rect::from_min_max(self.w2s([0.0, 0.0]), self.w2s([w, h]));
         painter.rect_filled(mat.translate(vec2(3.0, 3.0)), 2.0, Color32::from_black_alpha(60));
         painter.rect_filled(mat, 0.0, Color32::WHITE);
-        // 1 mm and 10 mm grid lines, hidden when they would be too dense.
+        // 1 mm and 10 mm grid lines (GRID, F7), hidden when they would be too dense.
         for (step, color) in [(1.0, Color32::from_gray(242)), (10.0, Color32::from_gray(222))] {
-            if self.px(step) < 6.0 {
+            if !self.aids.grid || self.px(step) < 6.0 {
                 continue;
             }
             let stroke = Stroke::new(1.0, color);
@@ -299,18 +347,6 @@ impl App {
         painter.add(egui::epaint::TextShape::new(pos, galley, color).with_angle(angle.to_radians()));
     }
 
-    fn paint_selection(&self, painter: &egui::Painter, items: &[Item], selection: &[u64], pointer: Option<Point>) {
-        let boxes: Vec<BBox> = items.iter().filter(|i| selection.contains(&i.id)).map(|i| i.shape.metrics().bbox).collect();
-        if let Some(b) = union(&boxes) {
-            let r = Rect::from_min_max(self.w2s([b[0], b[1]]), self.w2s([b[0] + b[2], b[1] + b[3]])).expand(4.0);
-            painter.rect_stroke(r, 0.0, Stroke::new(1.0, SELECTED), egui::StrokeKind::Outside);
-        }
-        if let (Some(Drag::Box { start }), Some(p)) = (&self.drag, pointer) {
-            let blue = Color32::from_rgb(80, 140, 255);
-            painter.rect(Rect::from_two_pos(self.w2s(*start), self.w2s(p)), 0.0, blue.gamma_multiply(0.12), Stroke::new(1.0, blue), egui::StrokeKind::Inside);
-        }
-    }
-
     /// The shape being drawn, with its live size, plus the measuring line.
     fn paint_draft(&self, painter: &egui::Painter, pointer: Option<Point>, tol: f64) {
         if let Some((a, b)) = self.measured {
@@ -320,7 +356,6 @@ impl App {
         if self.tool == Tool::Select {
             return;
         }
-        painter.circle_stroke(self.w2s(p), 4.0, Stroke::new(1.5, Color32::from_rgb(255, 120, 0)));
         if self.draft.is_empty() {
             return;
         }
@@ -345,10 +380,6 @@ impl App {
         };
         painter.text(self.w2s(p) + vec2(14.0, 14.0), Align2::LEFT_TOP, label, FontId::proportional(13.0), Color32::from_gray(30));
     }
-}
-
-fn contains_box(outer: BBox, inner: BBox) -> bool {
-    inner[0] >= outer[0] && inner[1] >= outer[1] && inner[0] + inner[2] <= outer[0] + outer[2] && inner[1] + inner[3] <= outer[1] + outer[3]
 }
 
 /// Fill polygons with the even-odd rule using horizontal spans, so holes stay empty.
@@ -398,4 +429,12 @@ fn arrow_head(painter: &egui::Painter, tip: Pos2, from: Pos2, color: Color32) {
     let dir = (tip - from).normalized() * 7.0;
     let side = vec2(-dir.y, dir.x) * 0.4;
     painter.add(egui::Shape::convex_polygon(vec![tip, tip - dir + side, tip - dir - side], color, Stroke::NONE));
+}
+
+/// A small dark label next to the cursor.
+fn tooltip(painter: &egui::Painter, at: Pos2, text: &str) {
+    let pos = at + vec2(16.0, 16.0);
+    let galley = painter.layout_no_wrap(text.to_string(), FontId::proportional(12.0), Color32::WHITE);
+    painter.rect_filled(Rect::from_min_size(pos, galley.size()).expand(3.0), 3.0, Color32::from_black_alpha(200));
+    painter.galley(pos, galley, Color32::WHITE);
 }

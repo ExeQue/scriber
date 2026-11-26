@@ -1,6 +1,7 @@
 //! The panels around the canvas: menu bar, toolbar (left), properties (right) and status bar.
 
 use super::App;
+use super::snap::Aid;
 use super::labels::{fill_help, op_color, op_help, op_label};
 use super::tools::Tool;
 use crate::model::{BBox, Op, Shape, State, Transform};
@@ -244,6 +245,11 @@ impl App {
                         "AI agents cannot connect (is Scriber already running?)"
                     )),
                 };
+                for a in Aid::ALL.into_iter().rev() {
+                    if ui.selectable_label(self.aid_on(a), RichText::new(a.label()).monospace()).on_hover_text(a.help()).clicked() {
+                        self.toggle(a);
+                    }
+                }
                 // 96 DPI screen: 3.78 px per mm is 100 %.
                 ui.label(format!("{:.0} %", self.view.zoom / 3.78 * 100.0));
                 if let Some(p) = pointer {

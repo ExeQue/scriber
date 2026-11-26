@@ -4,8 +4,11 @@
 mod agents_window;
 mod canvas;
 mod command;
+mod grips;
 mod labels;
 mod panels;
+mod select;
+mod snap;
 mod tools;
 
 use crate::model::{Document, Op, Point, Shape, Shared, Transform};
@@ -14,13 +17,8 @@ use eframe::egui::{self, Event, Key, Modifiers, PointerButton, Pos2, Rect, Vec2}
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use select::Drag;
 use tools::Tool;
-
-/// A drag in progress with the select tool.
-enum Drag {
-    Move { origin: Point, applied: Point },
-    Box { start: Point },
-}
 
 struct View {
     /// Screen position of the material's origin, relative to the canvas' top-left.
@@ -39,6 +37,8 @@ struct App {
     new_fill: bool,
     sides: u32,
     snap: bool,
+    /// GRID, ORTHO, OSNAP and POLAR (status bar).
+    aids: snap::Aids,
     /// Points placed so far with the current tool.
     draft: Vec<Point>,
     drag: Option<Drag>,
@@ -106,6 +106,7 @@ impl App {
             new_fill: false,
             sides: 6,
             snap: true,
+            aids: snap::Aids::default(),
             draft: Vec::new(),
             drag: None,
             cmdline: command::CommandLine::new(),
@@ -363,6 +364,7 @@ impl eframe::App for App {
         let pointer = hover.map(|p| self.snap(self.s2w(p)));
 
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
+        self.aid_keys(&ctx);
         self.keys(&ctx, pointer);
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui, pointer));
         egui::Panel::bottom("command").show(ui, |ui| self.command_line(ui));
