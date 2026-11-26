@@ -50,6 +50,19 @@ impl App {
                     self.doc.lock().unwrap().redo();
                 }
                 ui.separator();
+                if ui.button("Cut  (Ctrl+X)").clicked() {
+                    self.cut_selection(ui.ctx());
+                }
+                if ui.button("Copy  (Ctrl+C)").clicked() {
+                    self.copy_selection(ui.ctx());
+                }
+                if ui.button("Paste  (Ctrl+V)").clicked() {
+                    self.request_paste(ui.ctx(), None, false);
+                }
+                if ui.button("Paste in place  (Ctrl+Shift+V)").clicked() {
+                    self.request_paste(ui.ctx(), None, true);
+                }
+                ui.separator();
                 if ui.button("Duplicate  (Ctrl+D)").clicked() {
                     self.duplicate_selection();
                 }

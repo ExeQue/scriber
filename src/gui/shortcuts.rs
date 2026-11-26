@@ -57,6 +57,8 @@ const OTHER: &[(&str, &str)] = &[
     ("Ctrl+Z / Ctrl+Y", "Undo / Redo"),
     ("Ctrl+S / Ctrl+Shift+S", "Save / Save as"),
     ("Ctrl+O", "Open"),
+    ("Ctrl+C / Ctrl+X / Ctrl+V", "Copy / Cut / Paste at the pointer (also between windows)"),
+    ("Ctrl+Shift+V", "Paste in place"),
     ("Ctrl+D", "Duplicate"),
     ("Ctrl+A", "Select all"),
     ("Ctrl+G / Ctrl+Shift+G", "Combine / Break apart"),

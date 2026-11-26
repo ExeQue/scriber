@@ -4,6 +4,7 @@
 mod agents_window;
 mod canvas;
 mod check_panel;
+mod clipboard;
 mod command;
 mod constraint_bars;
 mod constraint_list;
@@ -127,6 +128,11 @@ struct App {
     bar_badges: Vec<(u64, Rect)>,
     /// The constraint the open right-click menu is for.
     menu_constraint: Option<u64>,
+    /// Where the canvas was right-clicked (Paste there).
+    menu_at: Option<Point>,
+    /// The last copy, for when the system clipboard gives nothing back.
+    clip: Option<String>,
+    paste_request: Option<clipboard::PasteRequest>,
     /// The constraint pointed at in the properties list, highlighted on the canvas.
     hot_constraint: Option<u64>,
     agents: Arc<Mutex<Option<Vec<agents::Target>>>>,
@@ -254,6 +260,9 @@ impl App {
             dim_labels: Vec::new(),
             bar_badges: Vec::new(),
             menu_constraint: None,
+            menu_at: None,
+            clip: None,
+            paste_request: None,
             hot_constraint: None,
             agents: Arc::new(Mutex::new(None)),
             confirm_close: false,
@@ -444,6 +453,7 @@ impl App {
         }
         let consume = |mods: Modifiers, k: Key| ctx.input_mut(|i| i.consume_key(mods, k));
         let (ctrl, ctrl_shift) = (Modifiers::COMMAND, Modifiers::COMMAND | Modifiers::SHIFT);
+        self.clipboard_events(ctx, pointer);
         // Most specific first: Ctrl+Shift+Z must not also count as Ctrl+Z.
         match () {
             _ if consume(ctrl_shift, Key::Z) => _ = self.doc.lock().unwrap().redo(),
@@ -452,6 +462,7 @@ impl App {
             _ if consume(ctrl_shift, Key::S) => _ = self.save(true),
             _ if consume(ctrl, Key::S) => _ = self.save(false),
             _ if consume(ctrl, Key::O) => self.open_dialog(),
+            _ if consume(ctrl_shift, Key::V) => self.request_paste(ctx, None, true),
             _ if consume(ctrl, Key::D) => self.duplicate_selection(),
             _ if consume(ctrl, Key::A) => self.select_all(),
             _ if consume(ctrl_shift, Key::G) => self.break_apart_selection(),

@@ -2,6 +2,7 @@
 //! so they can do the same things and share one undo history.
 
 mod chain;
+pub mod clipboard;
 pub mod constraints;
 pub mod editing;
 mod file;

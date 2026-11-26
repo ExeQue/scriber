@@ -28,6 +28,7 @@ impl App {
     /// selected, both stay selected.
     pub(in crate::gui) fn right_click(&mut self, at: egui::Pos2) {
         // Shift+right-click while a point is asked for: the one-shot object snap menu.
+        self.menu_at = Some(self.s2w(at));
         self.osnap_menu_open = self.shift && self.active_cmd().is_some();
         if self.osnap_menu_open {
             return;
@@ -97,8 +98,23 @@ impl App {
                     self.start(cmd);
                 }
             }
+            if ui.button("Cut").clicked() {
+                self.cut_selection(ui.ctx());
+            }
+            if ui.button("Copy").clicked() {
+                self.copy_selection(ui.ctx());
+            }
             if ui.button("Deselect all").clicked() {
                 self.doc.lock().unwrap().selection.clear();
+            }
+        }
+        if self.clip.is_some() {
+            ui.separator();
+            if ui.button("Paste").clicked() {
+                self.request_paste(ui.ctx(), self.menu_at, false);
+            }
+            if ui.button("Paste in place").clicked() {
+                self.request_paste(ui.ctx(), None, true);
             }
         }
         self.ux_menu(ui, selected);
