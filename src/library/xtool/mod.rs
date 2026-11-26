@@ -6,7 +6,7 @@ mod leveldb;
 mod v8;
 mod xs;
 
-use super::{Category, LaserKind, Library, Material, Operation, Setting};
+use super::{Category, Laser, LaserKind, Library, Material, Operation, Setting};
 use serde::Serialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -44,6 +44,70 @@ const DEVICES: [(&str, &str); 1] = [("JS002", "xtool-m2")];
 
 pub fn machine_for(device: &str) -> Option<&'static str> {
     DEVICES.iter().find(|(d, _)| *d == device).map(|(_, m)| *m)
+}
+
+/// Names of the device codes seen in xTool's cache; the others are shown by code.
+const DEVICE_NAMES: [(&str, &str); 2] = [("JS002", "xTool M2"), ("ZH009", "xTool M1 Ultra")];
+
+pub fn device_name(device: &str) -> String {
+    DEVICE_NAMES.iter().find(|(d, _)| *d == device).map_or_else(|| format!("xTool device {device}"), |(_, n)| n.to_string())
+}
+
+/// One xTool material with its parameter sets, one per xTool machine type that has settings for it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct XtoolGroup {
+    /// xTool's material id.
+    pub id: String,
+    pub name: String,
+    pub thickness: f64,
+    pub category: Category,
+    pub sets: Vec<XtoolMaterial>,
+}
+
+/// The parameter sets grouped by material, in the list's order.
+pub fn group(list: Vec<XtoolMaterial>) -> Vec<XtoolGroup> {
+    let mut out: Vec<XtoolGroup> = Vec::new();
+    for x in list {
+        let id = x.key.split('@').next().unwrap_or_default().to_string();
+        match out.iter_mut().find(|g| g.id == id) {
+            Some(g) => g.sets.push(x),
+            None => out.push(XtoolGroup { id, name: x.name.clone(), thickness: x.thickness, category: x.category, sets: vec![x] }),
+        }
+    }
+    out
+}
+
+impl XtoolGroup {
+    /// The machines in `lib` it can be imported for, with their parameter set; `first` (the document's machine) first.
+    pub fn targets<'a>(&'a self, lib: &Library, first: Option<&str>) -> Vec<(&'static str, &'a XtoolMaterial)> {
+        let mut out: Vec<_> = self.sets.iter().filter_map(|x| machine_for(&x.device).filter(|m| !modules(lib, m, x).is_empty()).map(|m| (m, x))).collect();
+        out.sort_by_key(|(m, _)| Some(*m) != first);
+        out
+    }
+
+    /// Why it cannot be imported, e.g. "for xTool F1 — not in your machines".
+    pub fn reason(&self, lib: &Library) -> String {
+        let mut names: Vec<String> = self.sets.iter().map(|x| device_name(&x.device)).collect();
+        names.dedup();
+        let shown = if names.len() > 3 { format!("{} and {} more", names[..3].join(", "), names.len() - 3) } else { names.join(", ") };
+        if self.sets.iter().any(|x| machine_for(&x.device).is_some_and(|m| lib.machine(m).is_some())) {
+            format!("for {shown} — none of its laser modules match yours")
+        } else {
+            format!("for {shown} — not in your machines")
+        }
+    }
+}
+
+/// The laser modules of `machine` that `x` has settings for, in the machine's order, each with its settings.
+pub fn modules<'a, 'b>(lib: &'a Library, machine: &str, x: &'b XtoolMaterial) -> Vec<(&'a Laser, Vec<&'b XtoolSetting>)> {
+    let Some(m) = lib.machine(machine) else { return Vec::new() };
+    m.lasers
+        .iter()
+        .filter_map(|l| {
+            let list: Vec<&XtoolSetting> = x.settings.iter().filter(|s| laser_for(lib, machine, s).as_deref() == Some(l.id.as_str())).collect();
+            (!list.is_empty()).then_some((l, list))
+        })
+        .collect()
 }
 
 fn kind_of(source: &str) -> Option<LaserKind> {
@@ -286,15 +350,20 @@ fn laser_for(lib: &Library, machine: &str, s: &XtoolSetting) -> Option<String> {
     lib.machine(machine)?.lasers.iter().find(|l| l.kind == kind && (l.power_w - s.watts).abs() < 0.5).map(|l| l.id.clone())
 }
 
-/// The module labels per operation, for listings: {"diode-10w": ["cut", "score"]} (xTool's "blue 10W" when unmatched).
-pub fn ops_by_module(lib: &Library, x: &XtoolMaterial) -> serde_json::Map<String, Value> {
-    let mut out = serde_json::Map::new();
-    for s in &x.settings {
-        let module = machine_for(&x.device).and_then(|m| laser_for(lib, m, s)).unwrap_or_else(|| format!("{} {}W", s.source, s.watts));
-        let list = out.entry(module).or_insert_with(|| Value::Array(Vec::new()));
-        list.as_array_mut().unwrap().push(serde_json::to_value(s.operation).unwrap());
+/// The settings per laser module of `machine`, for listings: {"diode-10w": {"cut": "100 % · 4 mm/s · 1×", …}}.
+pub fn settings_by_module(lib: &Library, machine: &str, x: &XtoolMaterial) -> serde_json::Map<String, Value> {
+    modules(lib, machine, x).into_iter().map(|(l, list)| (l.id.clone(), Value::Object(list.iter().map(|s| (s.operation.label().to_lowercase(), Value::String(s.hint()))).collect()))).collect()
+}
+
+impl XtoolSetting {
+    /// e.g. "100 % · 4 mm/s · 1×".
+    pub fn hint(&self) -> String {
+        let mut s = format!("{} % · {} mm/s · {}×", self.power, self.speed, self.passes);
+        if let Some(l) = self.lines_per_cm {
+            s += &format!(" · {l} lines/cm");
+        }
+        s
     }
-    out
 }
 
 /// The `source` text that marks a material imported from xTool entry `key` (used to find it again).
@@ -378,9 +447,10 @@ mod tests {
         assert_eq!(other.name, "xTool material #8", "no catalogue entry");
 
         let mut lib = super::super::store::merged(super::super::store::LibraryFile::default());
-        let ops = ops_by_module(&lib, ply);
-        assert_eq!(ops["diode-10w"], json!(["cut", "score", "engrave"]));
-        assert_eq!(ops["ir-3w"], json!(["score"]));
+        let ops = settings_by_module(&lib, "xtool-m2", ply);
+        assert_eq!(ops["diode-10w"]["cut"], json!("100 % · 4 mm/s · 1×"));
+        assert_eq!(ops["diode-10w"]["engrave"], json!("80 % · 200 mm/s · 1× · 100 lines/cm"));
+        assert_eq!(ops["ir-3w"], json!({"score": "20 % · 50 mm/s · 1×"}));
         let id = import(&mut lib, ply, "cache", false).unwrap();
         let m = lib.material(&id).unwrap().clone();
         assert_eq!(m.setting("xtool-m2", Some("diode-10w"), Operation::Engrave).unwrap().line_interval, Some(0.1));
@@ -389,6 +459,35 @@ mod tests {
         assert_eq!(import(&mut lib, ply, "cache", true).unwrap(), id, "overwrite replaces the earlier import");
         assert_ne!(import(&mut lib, ply, "cache", false).unwrap(), id, "without overwrite: a second copy");
         assert!(import(&mut lib, other, "cache", false).unwrap_err().contains("ZZ999"));
+    }
+    /// Parameter sets of one material for several devices are one entry; it can be imported only for
+    /// machines in the library whose modules match.
+    #[test]
+    fn groups_devices_per_material() {
+        let (c, mut p) = sample();
+        let mut f1 = p[0].clone();
+        f1["deviceCode"] = json!("GS003");
+        for m in f1["machineParas"].as_array_mut().unwrap() {
+            m["deviceMode"] = json!({"code": "GS003"});
+        }
+        p.push(f1);
+        let groups = group(parse(&c, &p));
+        assert_eq!(groups.len(), 2, "7 on two devices and 8 are two materials");
+        let ply = groups.iter().find(|g| g.id == "7").unwrap();
+        assert_eq!((ply.name.as_str(), ply.sets.len()), ("Test ply 3mm", 2));
+        let other = groups.iter().find(|g| g.id == "8").unwrap();
+
+        let mut lib = super::super::store::merged(super::super::store::LibraryFile::default());
+        let targets = ply.targets(&lib, None);
+        assert_eq!(targets.iter().map(|(m, x)| (*m, x.device.as_str())).collect::<Vec<_>>(), [("xtool-m2", "JS002")]);
+        let modules: Vec<&str> = modules(&lib, "xtool-m2", targets[0].1).iter().map(|(l, _)| l.id.as_str()).collect();
+        assert_eq!(modules, ["diode-10w", "ir-3w"]);
+        assert!(other.targets(&lib, None).is_empty());
+        assert_eq!(other.reason(&lib), "for xTool device ZZ999 — not in your machines");
+
+        lib.machines.retain(|m| m.id != "xtool-m2");
+        assert!(ply.targets(&lib, None).is_empty(), "the M2 is not in the library");
+        assert_eq!(ply.reason(&lib), "for xTool device GS003, xTool M2 — not in your machines");
     }
 
     /// A whole cache folder: database name metadata, both stores, and a record of another store that is never decoded.
@@ -423,4 +522,5 @@ mod tests {
         assert_eq!(t.len(), 10);
         assert!(t.starts_with("20"));
     }
+
 }

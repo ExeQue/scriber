@@ -36,7 +36,7 @@ fn has(m: &Material, machine: Option<&str>, laser: Option<&str>, op: Operation) 
 
 /// One operation's mark: a rounded tag with its letter (C, S, E), filled in a colour that reads on
 /// dark and light themes when the material has a setting for it, only outlined when not.
-fn pill(ui: &mut egui::Ui, op: Operation, on: bool) -> egui::Response {
+pub(super) fn pill(ui: &mut egui::Ui, op: Operation, on: bool) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(15.0, 15.0), egui::Sense::hover());
     let dark = ui.visuals().dark_mode;
     // Brighter than the canvas colours: score's dark blue and engrave's black vanish on a dark theme.

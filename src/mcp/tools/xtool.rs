@@ -13,17 +13,21 @@ use std::path::PathBuf;
 pub struct SearchXtool {
     /// Words that must all appear in the name (case-insensitive); missing = all.
     pub query: Option<String>,
-    /// Only materials for this Scriber machine id (e.g. "xtool-m2").
+    /// Only materials that can be imported for this Scriber machine id (e.g. "xtool-m2").
     pub machine: Option<String>,
+    /// Also list materials that only have settings for xTool machines not in the user's library.
+    #[serde(default)]
+    pub include_other_machines: bool,
     /// xTool Studio's data folder, when it is not in the usual place (or set SCRIBER_XTOOL_DIR).
     pub dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ImportXtool {
-    /// Keys from search_xtool_materials, e.g. "123@JS002".
+    /// Material ids from search_xtool_materials, e.g. "123".
     pub ids: Vec<String>,
-    /// Only these keys' settings for this machine id; missing = any.
+    /// The Scriber machine to import the settings for; missing = the document's machine if it has
+    /// settings for it, else the first machine that has.
     pub machine: Option<String>,
     /// Replace materials imported earlier from the same xTool entry instead of adding copies.
     #[serde(default)]
@@ -57,8 +61,7 @@ pub struct ImportLibrary {
     pub on_conflict: exchange::OnConflict,
 }
 
-fn import_all(list: &[xtool::XtoolMaterial], origin: &str, overwrite: bool) -> ToolResult {
-    let mut errors = Vec::new();
+fn import_all(list: &[xtool::XtoolMaterial], origin: &str, overwrite: bool, mut errors: Vec<String>) -> ToolResult {
     let r = library::update(|lib| {
         let mut ids = Vec::new();
         for x in list {
@@ -78,41 +81,69 @@ fn import_all(list: &[xtool::XtoolMaterial], origin: &str, overwrite: bool) -> T
 
 #[tool_router(router = xtool_router, vis = "pub(super)")]
 impl Server {
-    #[tool(description = "Search the materials in xTool Studio's local cache on this computer (only materials the user opened in xTool Studio's material library, or saved there from atomm.com's Materials Lab with \"Save to Studio\"; read-only, nothing is downloaded). Each: key (for import_xtool_materials), name, thickness mm, category, xTool device, Scriber machine (null = no profile yet, cannot import) and which ops each laser module has.")]
+    #[tool(description = "Search the materials in xTool Studio's local cache on this computer (only materials the user opened in xTool Studio's material library, or saved there from atomm.com's Materials Lab with \"Save to Studio\"; read-only, nothing is downloaded). Each material once: id (for import_xtool_materials), name, thickness mm, category, and per Scriber machine in the user's library it can be imported for (the document's first) the settings per laser module and op. By default only importable materials are listed; with include_other_machines the rest come with why_not.")]
     fn search_xtool_materials(&self, Parameters(p): Parameters<SearchXtool>) -> ToolResult {
         let list = match xtool::read_cache(p.dir.as_deref()) {
             Ok(l) => l,
             Err(e) => return fail(e),
         };
+        let first = self.doc.lock().unwrap().s.machine.clone();
         let lib = library::get();
         let words: Vec<String> = p.query.unwrap_or_default().to_lowercase().split_whitespace().map(str::to_string).collect();
-        let hits: Vec<_> = list
+        let hits: Vec<_> = xtool::group(list)
             .iter()
-            .filter(|x| words.iter().all(|w| x.name.to_lowercase().contains(w)))
-            .filter(|x| p.machine.as_deref().is_none_or(|m| xtool::machine_for(&x.device) == Some(m)))
-            .map(|x| json!({"key": x.key, "name": x.name, "thickness": x.thickness, "category": x.category, "device": x.device, "machine": xtool::machine_for(&x.device), "ops": xtool::ops_by_module(&lib, x)}))
+            .filter(|g| words.iter().all(|w| g.name.to_lowercase().contains(w)))
+            .filter_map(|g| {
+                let targets: Vec<_> = g.targets(&lib, first.as_deref()).into_iter().filter(|(m, _)| p.machine.as_deref().is_none_or(|pm| pm == *m)).collect();
+                let mut entry = json!({"id": g.id, "name": g.name, "thickness": g.thickness, "category": g.category});
+                if targets.is_empty() {
+                    if !p.include_other_machines || p.machine.is_some() {
+                        return None;
+                    }
+                    entry["why_not"] = json!(g.reason(&lib));
+                } else {
+                    entry["machines"] = targets.iter().map(|(m, x)| (m.to_string(), serde_json::Value::Object(xtool::settings_by_module(&lib, m, x)))).collect::<serde_json::Map<_, _>>().into();
+                }
+                Some(entry)
+            })
             .collect();
         const MAX: usize = 60;
         ok(json!({"count": hits.len(), "materials": &hits[..hits.len().min(MAX)], "note": (hits.len() > MAX).then_some("more results: narrow the query")}))
     }
 
-    #[tool(description = "Import materials from xTool Studio's cache into the user's library (keys from search_xtool_materials): name, thickness, category and per laser module the cut/score/engrave power, speed, passes and line interval. Image (bitmap) engraving settings are not imported. Returns the new material ids.")]
+    #[tool(description = "Import materials from xTool Studio's cache into the user's library (ids from search_xtool_materials) for one Scriber machine: name, thickness, category and for every laser module of that machine the cut/score/engrave power, speed, passes and line interval. Image (bitmap) engraving settings are not imported. Returns the new material ids.")]
     fn import_xtool_materials(&self, Parameters(p): Parameters<ImportXtool>) -> ToolResult {
         let list = match xtool::read_cache(p.dir.as_deref()) {
             Ok(l) => l,
             Err(e) => return fail(e),
         };
-        let chosen: Vec<_> = list.into_iter().filter(|x| p.ids.contains(&x.key) && p.machine.as_deref().is_none_or(|m| xtool::machine_for(&x.device) == Some(m))).collect();
-        if chosen.is_empty() {
-            return fail("none of those keys are in xTool Studio's cache; see search_xtool_materials");
+        let first = p.machine.clone().or_else(|| self.doc.lock().unwrap().s.machine.clone());
+        let groups = xtool::group(list);
+        let (mut chosen, mut errors) = (Vec::new(), Vec::new());
+        {
+            let lib = library::get();
+            for id in &p.ids {
+                // An old "<id>@<device>" key works too.
+                let (material, device) = id.split_once('@').map_or((id.as_str(), None), |(m, d)| (m, Some(d)));
+                let Some(g) = groups.iter().find(|g| g.id == material) else {
+                    errors.push(format!("{id}: not in xTool Studio's cache; see search_xtool_materials"));
+                    continue;
+                };
+                let targets = g.targets(&lib, first.as_deref());
+                match targets.iter().find(|(m, x)| p.machine.as_deref().is_none_or(|pm| pm == *m) && device.is_none_or(|d| d == x.device)) {
+                    Some((_, x)) => chosen.push((*x).clone()),
+                    None if targets.is_empty() => errors.push(format!("{}: {}", g.name, g.reason(&lib))),
+                    None => errors.push(format!("{}: no settings for {}", g.name, p.machine.as_deref().unwrap_or(id))),
+                }
+            }
         }
-        import_all(&chosen, "cache", p.overwrite)
+        import_all(&chosen, "cache", p.overwrite, errors)
     }
 
     #[tool(description = "Import the laser settings of an xTool Studio project (.xs) as a material named after the file (rename it with save_material). Returns the new material ids.")]
     fn import_xtool_project(&self, Parameters(p): Parameters<ImportXs>) -> ToolResult {
         match xtool::read_project(&p.path) {
-            Ok(list) => import_all(&list, &format!("project {}", p.path.file_name().unwrap_or_default().to_string_lossy()), p.overwrite),
+            Ok(list) => import_all(&list, &format!("project {}", p.path.file_name().unwrap_or_default().to_string_lossy()), p.overwrite, Vec::new()),
             Err(e) => fail(e),
         }
     }
