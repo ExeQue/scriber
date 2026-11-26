@@ -21,6 +21,7 @@ mod icons_ux;
 mod labels;
 mod layers;
 mod library_window;
+mod lucide;
 mod overrides;
 mod panels;
 mod parameters;
@@ -107,6 +108,10 @@ struct App {
     panel_editing: bool,
     /// The same for the layers panel.
     layers_editing: bool,
+    /// The Edit layers dialog is open.
+    show_layers: bool,
+    /// A layer button pressed in the dialog, applied after it is drawn.
+    layer_action: Option<layers::Action>,
     message: String,
     show_agents: bool,
     /// Constraint bars on (CONSTRAINTBAR), and items whose bars are hidden.
@@ -191,6 +196,7 @@ pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
         options,
         Box::new(move |cc| {
             let ctx = cc.egui_ctx.clone();
+            lucide::install(&ctx);
             let mcp = mcp::listen(shared.clone(), Arc::new(move || ctx.request_repaint())).map_err(|e| e.to_string());
             let mut app = App::new(shared, mcp);
             app.apply_settings(settings::load());
@@ -237,6 +243,8 @@ impl App {
             geometry: geometry_cache::GeometryCache::default(),
             panel_editing: false,
             layers_editing: false,
+            show_layers: false,
+            layer_action: None,
             message: String::new(),
             show_agents: false,
             bars: true,
@@ -551,6 +559,9 @@ impl eframe::App for App {
 
         let svg = self.svg_dialog.is_some();
         self.popouts.track(&[("parameters", self.show_parameters), ("agents", self.show_agents), ("check", self.check.open), ("shortcuts", self.show_shortcuts), ("svg", svg)]);
+        if self.show_layers {
+            self.layers_dialog(&ctx);
+        }
         if self.show_parameters {
             self.parameters_window(&ctx);
         }

@@ -1,8 +1,9 @@
-//! The Layers panel (right side, above the properties): one row per layer with the current-layer
-//! marker, colour, name, show/lock toggles, laser operation, order, delete and the layer's own
-//! power, speed and passes. Plus the layer drop-down used by the properties panel.
+//! Layers: a short list in the right panel (current layer, colour, name, operation, show and lock)
+//! and the Edit layers dialog with everything else (colour, name, operation, order, delete and the
+//! layer's own power, speed and passes). Plus the layer drop-down used by the properties panel.
 
 use super::App;
+use super::lucide;
 use super::labels::{op_help, op_label, rgb};
 use crate::library::{self, Setting};
 use crate::model::layer::op_operation;
@@ -10,7 +11,7 @@ use crate::model::{Layer, Op, Overrides, State};
 use eframe::egui::{self, RichText, emath::Numeric};
 use std::ops::RangeInclusive;
 
-enum Action {
+pub(super) enum Action {
     Current(u64),
     Add,
     Delete(u64),
@@ -38,6 +39,39 @@ pub(super) fn layer_combo(ui: &mut egui::Ui, salt: &str, s: &State, current: Opt
 
 impl App {
     pub(super) fn layers_panel(&mut self, ui: &mut egui::Ui) {
+        egui::CollapsingHeader::new(RichText::new("Layers").heading()).default_open(true).show(ui, |ui| {
+            self.layers_ui(ui, false);
+            if ui.button(format!("{}  Edit layers…", lucide::PENCIL)).on_hover_text("Colours, names, operations, order and each layer's power, speed and passes").clicked() {
+                self.show_layers = true;
+            }
+        });
+    }
+
+    pub(super) fn layers_dialog(&mut self, ctx: &egui::Context) {
+        let modal = egui::Modal::new(egui::Id::unique("layers-modal")).show(ctx, |ui| {
+            ui.set_width(560.0);
+            ui.heading("Layers");
+            ui.label(RichText::new("Each layer has its laser operation. Power, speed and passes come from the material library unless a layer sets its own.").weak());
+            ui.add_space(8.0);
+            egui::ScrollArea::vertical().max_height(ctx.content_rect().height() * 0.7).show(ui, |ui| self.layers_ui(ui, true));
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button(format!("{}  Add layer", lucide::PLUS)).on_hover_text("A new layer with the operation of the current one; new shapes go on it").clicked() {
+                    self.layer_action = Some(Action::Add);
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| ui.button("Close").clicked())
+                    .inner
+            })
+            .inner
+        });
+        self.apply_layer_action();
+        if modal.inner || modal.should_close() {
+            self.show_layers = false;
+        }
+    }
+
+    /// The layer rows: short in the panel, everything in the dialog.
+    fn layers_ui(&mut self, ui: &mut egui::Ui, full: bool) {
         let doc = self.doc.clone();
         let mut d = doc.lock().unwrap();
         let before = d.s.clone();
@@ -51,16 +85,11 @@ impl App {
         let count = d.s.layers.len();
         let mut changed = false;
         let mut action = None;
-        egui::CollapsingHeader::new(RichText::new("Layers").heading()).default_open(true).show(ui, |ui| {
-            for (k, (layer, preset)) in d.s.layers.iter_mut().zip(presets).enumerate() {
-                ui.push_id(layer.id, |ui| {
-                    changed |= layer_row(ui, layer, preset, current, used.contains(&layer.id), k, count, &mut action);
-                });
-            }
-            if ui.button("➕ Add layer").on_hover_text("A new layer with the operation of the current one; new shapes go on it").clicked() {
-                action = Some(Action::Add);
-            }
-        });
+        for (k, (layer, preset)) in d.s.layers.iter_mut().zip(presets).enumerate() {
+            ui.push_id(layer.id, |ui| {
+                changed |= if full { layer_row(ui, layer, preset, current, used.contains(&layer.id), k, count, &mut action) } else { short_row(ui, layer, current, &mut action) };
+            });
+        }
 
         if changed {
             if !self.layers_editing {
@@ -71,7 +100,20 @@ impl App {
         } else if !(ui.ctx().memory(|m| m.focused().is_some()) || ui.input(|i| i.pointer.any_down())) {
             self.layers_editing = false;
         }
-        match action {
+        drop(d);
+        if action.is_some() {
+            self.layer_action = action;
+        }
+        if !full {
+            self.apply_layer_action();
+        }
+    }
+
+    fn apply_layer_action(&mut self) {
+        let doc = self.doc.clone();
+        let mut d = doc.lock().unwrap();
+        let current = d.current_layer();
+        match self.layer_action.take() {
             Some(Action::Current(id)) => d.set_current_layer(id),
             Some(Action::Add) => {
                 d.checkpoint();
@@ -112,31 +154,20 @@ fn layer_row(ui: &mut egui::Ui, layer: &mut Layer, preset: Option<Setting>, curr
             changed = true;
         }
         changed |= ui.add(egui::TextEdit::singleline(&mut layer.name).desired_width(96.0)).changed();
-        let eye = if layer.visible { "👁" } else { "—" };
-        if ui.selectable_label(!layer.visible, eye).on_hover_text("Show or hide; hidden layers are not lasered or exported").clicked() {
-            layer.visible = !layer.visible;
-            changed = true;
-        }
-        if ui.selectable_label(layer.locked, "🔒").on_hover_text("Lock: shapes on it cannot be selected or edited").clicked() {
-            layer.locked = !layer.locked;
-            changed = true;
-        }
-    });
-    ui.horizontal(|ui| {
-        ui.add_space(22.0);
+        changed |= show_lock(ui, layer);
         egui::ComboBox::from_id_salt("op").width(90.0).selected_text(op_label(layer.op)).show_ui(ui, |ui| {
             for op in Op::ALL {
                 changed |= ui.selectable_value(&mut layer.op, op, op_label(op)).on_hover_text(op_help(op)).changed();
             }
         });
-        if ui.add_enabled(k > 0, egui::Button::new("⏶").small()).on_hover_text("Move up").clicked() {
+        if ui.add_enabled(k > 0, egui::Button::new(lucide::CHEVRON_UP).frame(false)).on_hover_text("Move up").clicked() {
             *action = Some(Action::Move(layer.id, k - 1));
         }
-        if ui.add_enabled(k + 1 < count, egui::Button::new("⏷").small()).on_hover_text("Move down").clicked() {
+        if ui.add_enabled(k + 1 < count, egui::Button::new(lucide::CHEVRON_DOWN).frame(false)).on_hover_text("Move down").clicked() {
             *action = Some(Action::Move(layer.id, k + 1));
         }
         let why = if count == 1 { "The last layer cannot be deleted" } else if used { "Move its shapes to another layer first" } else { "Delete this layer" };
-        if ui.add_enabled(count > 1 && !used, egui::Button::new("🗑").small()).on_hover_text(why).on_disabled_hover_text(why).clicked() {
+        if lucide::delete(ui, count > 1 && !used, why).clicked() {
             *action = Some(Action::Delete(layer.id));
         }
     });
@@ -150,6 +181,55 @@ fn layer_row(ui: &mut egui::Ui, layer: &mut Layer, preset: Option<Setting>, curr
     }
     ui.add_space(4.0);
     changed
+}
+
+/// Show/hide and lock toggles.
+fn show_lock(ui: &mut egui::Ui, layer: &mut Layer) -> bool {
+    let mut changed = false;
+    let eye = if layer.visible { lucide::EYE } else { lucide::EYE_OFF };
+    if lucide::button(ui, eye, !layer.visible, "Show or hide; hidden layers are not lasered or exported").clicked() {
+        layer.visible = !layer.visible;
+        changed = true;
+    }
+    let lock = if layer.locked { lucide::LOCK } else { lucide::LOCK_OPEN };
+    if lucide::button(ui, lock, layer.locked, "Lock: shapes on it cannot be selected or edited").clicked() {
+        layer.locked = !layer.locked;
+        changed = true;
+    }
+    changed
+}
+
+/// The panel's row: current-layer marker, colour, name and operation, show and lock.
+fn short_row(ui: &mut egui::Ui, layer: &mut Layer, current: u64, action: &mut Option<Action>) -> bool {
+    ui.horizontal(|ui| {
+        if ui.radio(layer.id == current, "").on_hover_text("Current layer: new shapes go here").clicked() {
+            *action = Some(Action::Current(layer.id));
+        }
+        let (swatch, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+        ui.painter().rect_filled(swatch, 3.0, rgb(layer.rgb()));
+        let name = ui.add(egui::Label::new(&layer.name).sense(egui::Sense::click())).on_hover_text(op_help(layer.op));
+        if name.clicked() {
+            *action = Some(Action::Current(layer.id));
+        }
+        ui.label(RichText::new(op_label(layer.op)).weak().small());
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // Right to left: lock first.
+            let mut changed = false;
+            let lock = if layer.locked { lucide::LOCK } else { lucide::LOCK_OPEN };
+            if lucide::button(ui, lock, layer.locked, "Lock: shapes on it cannot be selected or edited").clicked() {
+                layer.locked = !layer.locked;
+                changed = true;
+            }
+            let eye = if layer.visible { lucide::EYE } else { lucide::EYE_OFF };
+            if lucide::button(ui, eye, !layer.visible, "Show or hide; hidden layers are not lasered or exported").clicked() {
+                layer.visible = !layer.visible;
+                changed = true;
+            }
+            changed
+        })
+        .inner
+    })
+    .inner
 }
 
 /// "100 % · 4 mm/s · 2×" with the layer's own numbers, or why there are none.
