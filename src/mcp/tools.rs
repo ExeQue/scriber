@@ -14,17 +14,22 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 mod editing;
+mod items_file;
 mod laser;
 mod layers;
+mod reply;
+
+use reply::{Detail, IdsDetail, changed};
 
 const INSTRUCTIONS: &str = "Scriber is a 2D CAD program for laser cutters. You edit the document that is open in the user's Scriber window; every change shows there live and the user can undo it.
 Units are millimetres. Origin is the top-left corner of the material, x grows right, y grows DOWN (like SVG). Angles are degrees, positive = clockwise on screen.
 Layers, as in xTool Studio: every item sits on one layer, and the layer's op says what the laser does with it: cut (red, cut through along the line), score (blue, mark a line), engrave (black, burn the whole area inside closed paths, text and images; an open path on an engrave layer is scored) or no_output (grey, notes, dimensions and helpers for people, never lasered). A layer can also carry its own power/speed/passes (else the material library's preset for its op), so two engrave layers can engrave at different depths. Hidden layers are not lasered or exported; items on locked layers cannot be edited. list_layers, add_layer, update_layer, delete_layer manage them; add_items/update_item take a layer id, or an op, which means the first layer with that op (made if there is none). Example: a coaster with an engraved face is two items with the same shape, one on an engrave layer and one on a cut layer.
 A path holds one or more contours; several contours make a compound path whose holes stay empty when engraved (even-odd). Use combine_items/break_apart to build or split them.
 CAD operations: fillet, chamfer, offset (also kerf compensation), boolean (union/difference/intersection), array_rectangular, array_polar, trim, stretch, join, explode, align, break_item, extend, lengthen, match_properties, group/ungroup, select_similar and quick_select. Guide lines (add_items kind xline/ray/centerline/centermark) help placing things and are never lasered or exported.
-Contours are polylines whose segments can be arcs: each vertex has a bulge = tan(sweep/4) for the segment to the next vertex (0 = straight). Prefer add_items with kind rect/circle/arc/polygon/line/polyline over building arcs by hand.
+Contours are polylines whose segments can be arcs: each vertex has a bulge = tan(sweep/4) for the segment to the next vertex (0 = straight). Prefer add_items with kind rect/circle/arc/polygon/line/polyline over building arcs by hand; for Bézier curves use kind curve (quadratic or cubic control points, turned into arcs), for SVG path data import_svg with data. Big batches: write the items array to a JSON file and give add_items its path.
 Constraints (as in AutoCAD) bind geometry: add_constraint (coincident, parallel, tangent, …; the first object stays, the second moves), add_dimensional_constraint (a named parameter like d1 = 40 or d2 = d1 / 2 that drives the size), set_parameter, list_constraints, delete_constraints, auto_constrain. A reference names geometry in a path: {kind: point, item, vertex}, {kind: segment, item, segment} (segment k runs from vertex k to k+1; a circle is segment 0), {kind: centre, item, segment}, {kind: item, item}; contour defaults to 0. After every change the solver keeps all constraints satisfied, moving as little as possible; a change that cannot be satisfied is refused and undone, naming the conflicting constraints.
-Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. Call export_png without a path to look at the result.
+Start with get_document; it includes the user's current selection, and tools that take ids use the selection when ids is empty. A large document comes back as a summary without geometry (or ask for one with geometry: false); get_document with ids gives the geometry of particular items. Tools that change items reply compactly (per item id, name, layer, op, kind, bbox, rotation, contour and vertex counts); pass verbose: true for the full geometry. Call export_png without a path to look at the result.
+Mirrored copy: transform_items with mirror_x/mirror_y and copy: true. boolean keeps the first item's layer (and so its op). import_svg maps colours to ops (shapes with neither fill nor stroke, or a grey or green fill, come in as no_output, useful as boolean cutters) and says which SVG element (svg_id, element index) each item came from.
 Laser settings: list_machines and list_materials show the user's machines and material library; set_laser_setup picks the document's machine, laser module and material, and get_laser_setup returns the power/speed/passes to use per operation and per layer. Before the user lasers, run preflight_check and look at export_png with preview: true.";
 
 // ---------- parameters ----------
@@ -44,6 +49,16 @@ pub enum ShapeInput {
     Polyline { points: Vec<[f64; 2]>, #[serde(default)] closed: bool },
     /// Full control: one or more contours with arc bulges (several = compound path).
     Path { contours: Vec<Contour> },
+    /// Bézier curves (as in SVG paths): from start, each segment goes to `to` straight (no controls),
+    /// as a quadratic (one control point) or a cubic curve (two). Curves become arcs within tolerance
+    /// mm (default 0.01). For SVG path data (a `d` string) use import_svg with data instead.
+    Curve {
+        start: [f64; 2],
+        segments: Vec<CurveSegment>,
+        #[serde(default)]
+        closed: bool,
+        tolerance: Option<f64>,
+    },
     /// Text; (x, y) is the start of the baseline; size is the font size in mm. font is an installed family
     /// (see list_fonts) or sans-serif (default), serif or monospace. It is lasered as the glyph outlines.
     Text {
@@ -90,6 +105,15 @@ pub enum ShapeInput {
     },
 }
 
+/// One segment of a curve.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CurveSegment {
+    pub to: [f64; 2],
+    /// 0 = straight line, 1 = quadratic, 2 = cubic Bézier control points.
+    #[serde(default)]
+    pub controls: Vec<[f64; 2]>,
+}
+
 fn default_dim_offset() -> f64 {
     5.0
 }
@@ -106,6 +130,11 @@ impl ShapeInput {
             S::Polygon { cx, cy, r, sides, rotation } => ("polygon", Shape::path(Contour::polygon(cx, cy, r, sides, rotation))),
             S::Polyline { points, closed } => ("polyline", Shape::path(Contour::polyline(&points, closed))),
             S::Path { contours } => ("path", Shape::Path { contours }),
+            S::Curve { start, segments, closed, tolerance } => {
+                let segments: Vec<_> = segments.into_iter().map(|s| (s.controls, s.to)).collect();
+                let contour = export::svg_import::bezier_contour(start, &segments, closed, tolerance.unwrap_or(0.01));
+                ("curve", Shape::Path { contours: contour.into_iter().collect() })
+            }
             S::Text { x, y, size, text, rotation, font, bold, italic } => {
                 let font = font.unwrap_or_else(|| text::DEFAULT_FONT.into());
                 ("text", Shape::Text { x, y, size, text, rotation, font, bold, italic })
@@ -118,10 +147,21 @@ impl ShapeInput {
         }
     }
 
-    /// Why the input cannot be used: a text font that is not installed.
-    fn font_error(&self) -> Option<String> {
+    /// Why the input cannot be used: a text font that is not installed, a bad curve.
+    fn input_error(&self) -> Option<String> {
         match self {
             ShapeInput::Text { font: Some(f), .. } => text::font_error(f),
+            ShapeInput::Curve { start, segments, tolerance, .. } => {
+                if segments.iter().all(|s| (s.to[0] - start[0]).hypot(s.to[1] - start[1]) < 1e-9) {
+                    Some("a curve needs a segment that ends away from its start".into())
+                } else if segments.iter().any(|s| s.controls.len() > 2) {
+                    Some("a curve segment has 0, 1 or 2 control points".into())
+                } else if tolerance.is_some_and(|t| !(t.is_finite() && t > 0.0)) {
+                    Some("tolerance must be a positive number".into())
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -143,13 +183,18 @@ pub struct NewItem {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddItems {
+    #[serde(default)]
     pub items: Vec<NewItem>,
+    /// Or a JSON file (absolute path) holding the same items array (or {"items": [...]}), for big batches.
+    pub path: Option<String>,
     /// Select the new items in the GUI (default true).
     pub select: Option<bool>,
     /// Join the new items to what they touch, as drawing in the GUI does (INFER): coincident on
     /// ends and centres within 1e-6 mm of another item's, concentric for shared arc centres.
     /// Default false.
     pub infer: Option<bool>,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -170,6 +215,8 @@ pub struct UpdateItem {
     /// Turn the item to this angle in degrees (clockwise positive) about the centre of its own box.
     /// get_document reports each item's rotation; a new shape starts at 0 (text and images: their rotation).
     pub rotation: Option<f64>,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -183,6 +230,18 @@ pub struct Ids {
 pub struct OneId {
     /// Item id; missing = the single selected item.
     pub id: Option<u64>,
+    #[serde(flatten)]
+    pub detail: Detail,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetDocument {
+    /// Only these items; empty = all. Picked items come with their geometry unless geometry is false.
+    #[serde(default)]
+    pub ids: Vec<u64>,
+    /// true: every item's geometry; false: summary only (id, name, layer, op, kind, bbox, rotation,
+    /// contour and vertex counts). Default: geometry, unless the reply would be very large.
+    pub geometry: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -191,6 +250,11 @@ pub struct TransformItems {
     pub ids: Vec<u64>,
     #[serde(flatten)]
     pub transform: Transform,
+    /// Transform copies and leave the originals where they are (e.g. mirror_x with copy for a mirrored copy).
+    #[serde(default)]
+    pub copy: bool,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -201,6 +265,8 @@ pub struct Duplicate {
     pub dx: f64,
     #[serde(default)]
     pub dy: f64,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -235,7 +301,8 @@ pub struct ImportImage {
     pub y: f64,
     /// Width in mm; height follows the aspect ratio. Default 10 px per mm, capped to the material.
     pub width: Option<f64>,
-    pub name: Option<String>,
+    pub name: Option<String>,    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -253,7 +320,8 @@ pub struct ImportSvg {
     /// Extra factor on the file's own size; 1.333 (96/72) for 72 DPI files. Default 1.
     pub scale: Option<f64>,
     /// Largest distance in mm between a curve and the arcs that replace it. Default 0.01.
-    pub tolerance: Option<f64>,
+    pub tolerance: Option<f64>,    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -315,6 +383,8 @@ pub struct Fillet {
     pub first: Option<ObjectPick>,
     /// The second object and where it was picked.
     pub second: Option<ObjectPick>,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 /// An object picked at a point: the point chooses the segment, the side kept and which corner is meant.
@@ -340,6 +410,8 @@ pub struct Chamfer {
     pub first: Option<ObjectPick>,
     /// The second object and where it was picked.
     pub second: Option<ObjectPick>,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -348,6 +420,8 @@ pub struct Offset {
     pub ids: Vec<u64>,
     /// mm. Positive = outward for closed shapes (holes shrink), to the left on screen for open ones; negative = inward / right.
     pub distance: f64,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -356,6 +430,8 @@ pub struct BooleanItems {
     #[serde(default)]
     pub ids: Vec<u64>,
     pub operation: BoolOp,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -370,6 +446,8 @@ pub struct ArrayRect {
     /// Distance between rows in mm (positive = down).
     #[serde(default)]
     pub dy: f64,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -383,6 +461,8 @@ pub struct ArrayPolar {
     pub angle: Option<f64>,
     /// Turn the copies with the angle (default true); false only moves them.
     pub rotate: Option<bool>,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -397,6 +477,8 @@ pub struct Trim {
     /// Keep each new end on the edge it was trimmed against (a coincident constraint, as INFER
     /// does while drawing). Default true.
     pub constrain: Option<bool>,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 // ---------- server ----------
@@ -416,30 +498,6 @@ pub(super) fn ok(v: Value) -> ToolResult {
 
 pub(super) fn fail(msg: impl std::fmt::Display) -> ToolResult {
     Ok(CallToolResult::error(vec![ContentBlock::text(msg.to_string())]))
-}
-
-fn summary(d: &Document) -> Value {
-    let items: Vec<Value> = d
-        .s
-        .items
-        .iter()
-        .map(|i| {
-            let mut v = serde_json::to_value(i).unwrap();
-            v["op"] = json!(d.s.op(i));
-            v["bbox"] = json!(i.shape.metrics().bbox);
-            v["rotation"] = json!(i.rotation);
-            v
-        })
-        .collect();
-    let images: Vec<Value> = d.s.images.iter().map(|(id, i)| json!({"image": id, "px_width": i.w, "px_height": i.h})).collect();
-    json!({
-        "width": d.s.width, "height": d.s.height, "units": "mm",
-        "file": d.path, "unsaved_changes": d.dirty,
-        "notes": d.s.notes, "selection": d.selection,
-        "layers": layers::layers(d), "items": items, "images": images,
-        "machine": d.s.machine, "laser": d.s.laser, "material": d.s.material,
-        "groups": d.s.groups,
-    })
 }
 
 impl Server {
@@ -463,13 +521,13 @@ impl Server {
     }
 
     /// Run a two-object fillet or chamfer.
-    fn edit_objects(&self, picks: Result<Picks, &str>, f: impl FnOnce(&mut Document, (u64, [f64; 2]), (u64, [f64; 2])) -> Result<Vec<u64>, String>) -> ToolResult {
+    fn edit_objects(&self, picks: Result<Picks, &str>, verbose: bool, f: impl FnOnce(&mut Document, (u64, [f64; 2]), (u64, [f64; 2])) -> Result<Vec<u64>, String>) -> ToolResult {
         let [a, b] = match picks {
             Ok(p) => p,
             Err(e) => return fail(e),
         };
         self.edit_ids(&[a.0, b.0], |d, _| match f(d, a, b) {
-            Ok(ids) => ok(json!({"ids": ids})),
+            Ok(ids) => ok(changed(d, &ids, verbose)),
             Err(e) => fail(e),
         })
     }
@@ -494,9 +552,9 @@ impl Server {
 
 #[tool_router]
 impl Server {
-    #[tool(description = "Get the whole document: material size, notes, the user's selection, and every item with its geometry and bounding box.")]
-    fn get_document(&self) -> ToolResult {
-        ok(summary(&self.doc.lock().unwrap()))
+    #[tool(description = "Get the document: material size, notes, layers, the user's selection, and every item (or only ids) with op, bounding box, rotation and its geometry. geometry: false gives a summary without geometry; a large document gets the summary unless geometry is set, with a note saying so: then ask for the geometry of particular ids.")]
+    fn get_document(&self, Parameters(p): Parameters<GetDocument>) -> ToolResult {
+        ok(reply::document(&self.doc.lock().unwrap(), &p.ids, p.geometry))
     }
 
     #[tool(description = "List the font families installed on this computer, for a text's font. sans-serif, serif and monospace also work and pick the system's default of that kind.")]
@@ -516,9 +574,20 @@ impl Server {
         })
     }
 
-    #[tool(description = "Add items (line, rect, circle, arc, polygon, polyline, path, text, dimension) and guide lines (xline, ray, centerline, centermark: construction lines for drawing, never lasered or exported), each on a layer (by id, or by op: the first layer with it). Returns their ids. One undo step. The old fill: true is still accepted and means op engrave.")]
-    fn add_items(&self, Parameters(p): Parameters<AddItems>) -> ToolResult {
-        if let Some(e) = p.items.iter().find_map(|it| it.shape.font_error()) {
+    #[tool(description = "Add items (line, rect, circle, arc, polygon, polyline, path, curve (Bézier), text, dimension) and guide lines (xline, ray, centerline, centermark: construction lines for drawing, never lasered or exported), each on a layer (by id, or by op: the first layer with it). Returns ids and the items compactly (id, name, layer, op, kind, bbox, rotation, contour/vertex counts; verbose: true for geometry). Big batches: write the items array to a JSON file and pass its path instead of items. One undo step. The old fill: true is still accepted and means op engrave.")]
+    fn add_items(&self, Parameters(mut p): Parameters<AddItems>) -> ToolResult {
+        match (&p.path, p.items.is_empty()) {
+            (Some(_), false) => return fail("give items or path, not both"),
+            (Some(path), true) => match items_file::load(path) {
+                Ok(items) => p.items = items,
+                Err(e) => return fail(e),
+            },
+            (None, _) => {}
+        }
+        if p.items.is_empty() {
+            return fail("no items given");
+        }
+        if let Some(e) = p.items.iter().find_map(|it| it.shape.input_error()) {
             return fail(e);
         }
         self.with(|d| {
@@ -548,13 +617,15 @@ impl Server {
             }
             let found: Vec<_> = if p.infer.unwrap_or(false) { ids.iter().flat_map(|id| attach::link_constraints(&d.s, *id, &attach::touching(&d.s, *id))).collect() } else { Vec::new() };
             let inferred = d.constrain_new(own, found);
-            ok(json!({"ids": ids, "inferred_constraints": inferred}))
+            let mut out = changed(d, &ids, p.detail.verbose);
+            out["inferred_constraints"] = json!(inferred);
+            ok(out)
         })
     }
 
     #[tool(description = "Change an item's name, layer (or op: moves it to the first layer with that op), note, geometry, rotation (degrees, about its own centre) or (text only) font. The old fill: true is still accepted and means op engrave.")]
     fn update_item(&self, Parameters(p): Parameters<UpdateItem>) -> ToolResult {
-        if let Some(e) = p.shape.as_ref().and_then(ShapeInput::font_error).or_else(|| p.font.as_deref().and_then(text::font_error)) {
+        if let Some(e) = p.shape.as_ref().and_then(ShapeInput::input_error).or_else(|| p.font.as_deref().and_then(text::font_error)) {
             return fail(e);
         }
         let is_text = matches!(self.doc.lock().unwrap().item(p.id).map(|i| &i.shape), Some(Shape::Text { .. }));
@@ -591,7 +662,7 @@ impl Server {
             {
                 return fail(e);
             }
-            ok(serde_json::to_value(d.item(p.id).unwrap()).unwrap())
+            ok(changed(d, &[p.id], p.detail.verbose))
         })
     }
 
@@ -603,11 +674,17 @@ impl Server {
         })
     }
 
-    #[tool(description = "Move, rotate, scale and/or mirror items (empty ids = the selection). Order: mirror, scale, rotate around the pivot, then move by dx/dy. The pivot defaults to the centre of the items' bounding box. Each item's rotation (see get_document) adds the rotate angle; a mirror negates it; a non-uniform scale resets it to 0 unless the item's angle is a multiple of 90°.")]
+    #[tool(description = "Move, rotate, scale and/or mirror items (empty ids = the selection). Order: mirror, scale, rotate around the pivot, then move by dx/dy. The pivot defaults to the centre of the items' bounding box. Each item's rotation (see get_document) adds the rotate angle; a mirror negates it; a non-uniform scale resets it to 0 unless the item's angle is a multiple of 90°. copy: true transforms copies and keeps the originals (a mirrored copy: mirror_x or mirror_y with copy); the copies become the selection.")]
     fn transform_items(&self, Parameters(p): Parameters<TransformItems>) -> ToolResult {
-        self.edit_ids(&p.ids, |d, ids| {
+        self.edit_ids(&p.ids, |d, mut ids| {
+            if p.copy {
+                ids = d.duplicate(&ids, 0.0, 0.0);
+                d.selection = ids.clone();
+            }
             d.transform(&ids, &p.transform);
-            ok(json!({"ids": ids, "bbox": d.bbox(&ids)}))
+            let mut out = changed(d, &ids, p.detail.verbose);
+            out["bbox"] = json!(d.bbox(&ids));
+            ok(out)
         })
     }
 
@@ -615,14 +692,14 @@ impl Server {
     fn duplicate_items(&self, Parameters(p): Parameters<Duplicate>) -> ToolResult {
         self.edit_ids(&p.ids, |d, ids| {
             d.selection = d.duplicate(&ids, p.dx, p.dy);
-            ok(json!({"ids": d.selection}))
+            ok(changed(d, &d.selection, p.detail.verbose))
         })
     }
 
     #[tool(description = "Combine paths into one compound path (empty ids = the selection). Holes stay empty when engraved. Keeps the first item's name and op.")]
-    fn combine_items(&self, Parameters(p): Parameters<Ids>) -> ToolResult {
+    fn combine_items(&self, Parameters(p): Parameters<IdsDetail>) -> ToolResult {
         self.edit_ids(&p.ids, |d, ids| match d.combine(&ids) {
-            Ok(id) => ok(json!({"id": id})),
+            Ok(id) => ok(changed(d, &[id], p.detail.verbose)),
             Err(e) => fail(e),
         })
     }
@@ -632,7 +709,7 @@ impl Server {
         let ids: Vec<u64> = p.id.into_iter().collect();
         self.edit_ids(&ids, |d, ids| match ids.as_slice() {
             [id] => match d.break_apart(*id) {
-                Ok(new) => ok(json!({"ids": new})),
+                Ok(new) => ok(changed(d, &new, p.detail.verbose)),
                 Err(e) => fail(e),
             },
             _ => fail("give one id or select exactly one item"),
@@ -719,7 +796,7 @@ impl Server {
             d.checkpoint();
             let id = d.place_image(img, [p.x, p.y], p.width, &name);
             d.selection = vec![id];
-            ok(serde_json::to_value(d.item(id).unwrap()).unwrap())
+            ok(changed(d, &[id], p.detail.verbose))
         })
     }
 
@@ -786,7 +863,7 @@ impl Server {
                 Ok(new) => {
                     *d = new;
                     d.rev += 1;
-                    ok(summary(d))
+                    ok(reply::document(d, &[], None))
                 }
                 Err(e) => fail(e),
             }
@@ -801,17 +878,17 @@ impl Server {
             }
             *d = Document::new(p.width.unwrap_or(300.0), p.height.unwrap_or(200.0));
             d.rev += 1;
-            ok(summary(d))
+            ok(reply::document(d, &[], None))
         })
     }
 
     #[tool(description = "Round corners with an arc (empty ids = the selection): the corner nearest `at`, or every sharp corner between straight segments. With exactly two open lines/polylines, they are extended or shortened to meet, joined into one path, and that corner is rounded (AutoCAD FILLET of two objects). With `first` and `second` (each an id and the point it was picked at), fillets any two objects as AutoCAD does: lines, arcs, circles and end segments of open polylines (lines touching end to end count as one polyline); the picks choose the kept sides and which arc is meant, lines and arcs are trimmed or extended to the arc, circles stay, two open paths become one, parallel lines get a half-circle cap, radius 0 makes a sharp corner. Returns the new and changed ids.")]
     fn fillet(&self, Parameters(p): Parameters<Fillet>) -> ToolResult {
         if let Some(picks) = two_objects(&p.first, &p.second) {
-            return self.edit_objects(picks, |d, a, b| d.fillet_objects(a, b, p.radius));
+            return self.edit_objects(picks, p.detail.verbose, |d, a, b| d.fillet_objects(a, b, p.radius));
         }
         self.edit_ids(&p.ids, |d, ids| match d.fillet(&ids, p.radius, p.at) {
-            Ok(()) => ok(json!({"ids": existing(d, &ids)})),
+            Ok(()) => ok(changed(d, &existing(d, &ids), p.detail.verbose)),
             Err(e) => fail(e),
         })
     }
@@ -819,10 +896,10 @@ impl Server {
     #[tool(description = "Cut corners off with a straight line (empty ids = the selection): the corner nearest `at`, or every sharp corner. distance goes back along the incoming side, distance2 (default = distance) along the outgoing one. Two open lines/polylines are joined where they meet, like fillet. With `first` and `second`, chamfers two picked objects as AutoCAD does (lines, arcs and end segments of open polylines; not circles): distance from the corner along the first (along the arc for arcs), distance2 along the second; 0 and 0 makes a sharp corner. Returns the new and changed ids.")]
     fn chamfer(&self, Parameters(p): Parameters<Chamfer>) -> ToolResult {
         if let Some(picks) = two_objects(&p.first, &p.second) {
-            return self.edit_objects(picks, |d, a, b| d.chamfer_objects(a, b, p.distance, p.distance2.unwrap_or(p.distance)));
+            return self.edit_objects(picks, p.detail.verbose, |d, a, b| d.chamfer_objects(a, b, p.distance, p.distance2.unwrap_or(p.distance)));
         }
         self.edit_ids(&p.ids, |d, ids| match d.chamfer(&ids, p.distance, p.distance2.unwrap_or(p.distance), p.at) {
-            Ok(()) => ok(json!({"ids": existing(d, &ids)})),
+            Ok(()) => ok(changed(d, &existing(d, &ids), p.detail.verbose)),
             Err(e) => fail(e),
         })
     }
@@ -832,16 +909,18 @@ impl Server {
         self.edit_ids(&p.ids, |d, ids| match d.offset(&ids, p.distance) {
             Ok(new) => {
                 d.selection = new.clone();
-                ok(json!({"ids": new, "bbox": d.bbox(&new)}))
+                let mut out = changed(d, &new, p.detail.verbose);
+                out["bbox"] = json!(d.bbox(&new));
+                ok(out)
             }
             Err(e) => fail(e),
         })
     }
 
-    #[tool(description = "Union, difference or intersection of two or more closed paths (empty ids = the selection). Difference subtracts the others from the first id. The result replaces the first item (keeping its name and op); holes become contours of a compound path; the other items are deleted.")]
+    #[tool(description = "Union, difference or intersection of two or more closed paths (empty ids = the selection). Difference subtracts the others from the first id. The result replaces the first item, keeping its name, layer and so its op (the other items' layers do not matter: a no-output cutter subtracted from a cut part leaves a cut part); holes become contours of a compound path; the other items are deleted. Returns the result compactly (verbose: true for its geometry).")]
     fn boolean(&self, Parameters(p): Parameters<BooleanItems>) -> ToolResult {
         self.edit_ids(&p.ids, |d, ids| match d.boolean(&ids, p.operation) {
-            Ok(id) => ok(serde_json::to_value(d.item(id).unwrap()).unwrap()),
+            Ok(id) => ok(changed(d, &[id], p.detail.verbose)),
             Err(e) => fail(e),
         })
     }
@@ -851,7 +930,7 @@ impl Server {
         self.edit_ids(&p.ids, |d, ids| match d.array_rectangular(&ids, p.rows, p.columns, p.dx, p.dy) {
             Ok(new) => {
                 d.selection = new.clone();
-                ok(json!({"ids": new}))
+                ok(changed(d, &new, p.detail.verbose))
             }
             Err(e) => fail(e),
         })
@@ -862,7 +941,7 @@ impl Server {
         self.edit_ids(&p.ids, |d, ids| match d.array_polar(&ids, p.count, p.centre, p.angle.unwrap_or(360.0), p.rotate.unwrap_or(true)) {
             Ok(new) => {
                 d.selection = new.clone();
-                ok(json!({"ids": new}))
+                ok(changed(d, &new, p.detail.verbose))
             }
             Err(e) => fail(e),
         })
@@ -873,14 +952,14 @@ impl Server {
         let ids: Vec<u64> = p.id.into_iter().collect();
         self.edit_ids(&ids, |d, ids| match ids.as_slice() {
             [id] => match d.trim(*id, p.at, &p.edges, p.constrain.unwrap_or(true)) {
-                Ok(()) => ok(json!({"id": id, "item": d.item(*id)})),
+                Ok(()) => ok(changed(d, &[*id], p.detail.verbose)),
                 Err(e) => fail(e),
             },
             _ => fail("give one id or select exactly one item"),
         })
     }
 
-    #[tool(description = "Import an SVG file (path) or SVG text/base64 (data). Each path becomes an item (subpaths stay one compound path), curves become arcs, text becomes outlines and raster images greyscale images. Stroke colour sets the op: red = cut, blue = score, black/dark = engrave, grey or green = no_output, other colours = cut; a filled closed path becomes an engrave item, so a path with both a fill and a stroke becomes two items (engrave, then the stroke's op). Each item goes on the current layer when that has its op, else on the first layer with it. Units in the file (mm, cm, in) are honoured; plain numbers are px at 96 per inch. The new items become the selection; returns their ids.")]
+    #[tool(description = "Import an SVG file (path) or SVG text/base64 (data). Each path becomes an item (subpaths stay one compound path), curves become arcs, text becomes outlines and raster images greyscale images. Stroke colour sets the op: red = cut, blue = score, black/dark = engrave, grey or green = no_output, other colours = cut. A fill on a closed path means engrave the area, except a grey or green fill (no_output); a path with both a fill and a stroke becomes two items (the fill's op, then the stroke's) unless both give the same op. A path with neither fill nor stroke (or a fully transparent fill) comes in as no_output, handy as a boolean cutter. Each item goes on the current layer when that has its op, else on the first layer with it. Units in the file (mm, cm, in) are honoured; plain numbers are px at 96 per inch. The new items become the selection. Returns ids and items (compact, verbose: true for geometry), each with svg_id (the element's id, empty when it has none) and element (index of the SVG path/image in document order; one element can give two items).")]
     fn import_svg(&self, Parameters(p): Parameters<ImportSvg>) -> ToolResult {
         let bytes = match (&p.path, &p.data) {
             (Some(path), _) => std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}")),
@@ -903,10 +982,20 @@ impl Server {
         };
         self.with(|d| {
             let before = d.s.clone();
-            match d.import_svg(&bytes, &opts) {
-                Ok(ids) => {
+            match d.import_svg_sources(&bytes, &opts) {
+                Ok(new) => {
                     d.push_undo(before);
-                    ok(json!({"ids": ids, "bbox": d.bbox(&ids)}))
+                    let ids: Vec<u64> = new.iter().map(|(id, _)| *id).collect();
+                    let items: Vec<Value> = new
+                        .iter()
+                        .map(|(id, src)| {
+                            let mut v = reply::item(d, d.item(*id).unwrap(), p.detail.verbose);
+                            v["svg_id"] = json!(src.svg_id);
+                            v["element"] = json!(src.element);
+                            v
+                        })
+                        .collect();
+                    ok(json!({"ids": ids, "bbox": d.bbox(&ids), "items": items}))
                 }
                 Err(e) => fail(e),
             }
@@ -930,6 +1019,9 @@ fn two_objects(first: &Option<ObjectPick>, second: &Option<ObjectPick>) -> Optio
 fn existing(d: &Document, ids: &[u64]) -> Vec<u64> {
     ids.iter().copied().filter(|id| d.item(*id).is_some()).collect()
 }
+
+#[cfg(test)]
+mod tests;
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for Server {

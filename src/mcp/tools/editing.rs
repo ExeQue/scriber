@@ -1,6 +1,7 @@
 //! MCP tools for the AutoCAD editing commands of the UX pack: stretch, join, explode, align,
 //! match_properties, break_item, extend, lengthen, group/ungroup and select_similar/quick_select.
 
+use super::reply::{Detail, IdsDetail, changed};
 use super::{Server, ToolResult, fail, ok};
 use crate::model::{BBox, Op, Point};
 use rmcp::handler::server::wrapper::Parameters;
@@ -18,6 +19,8 @@ pub struct Stretch {
     /// Only these items; empty = every item the window catches.
     #[serde(default)]
     pub ids: Vec<u64>,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -40,6 +43,8 @@ pub struct Align {
     /// With a second pair: also scale so the two lines have the same length.
     #[serde(default)]
     pub scale: bool,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -48,6 +53,8 @@ pub struct MatchProps {
     /// Items that get the source's laser operation (and font, text to text); empty = the selection.
     #[serde(default)]
     pub targets: Vec<u64>,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -57,6 +64,8 @@ pub struct BreakItem {
     pub at: Point,
     /// Second point: the piece between `at` and `at2` is removed (on a closed shape the shorter way round).
     pub at2: Option<Point>,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -67,6 +76,8 @@ pub struct Extend {
     /// Boundary items; empty = every other path and guide line.
     #[serde(default)]
     pub boundaries: Vec<u64>,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -78,6 +89,8 @@ pub struct Lengthen {
     pub delta: Option<f64>,
     /// Or the new total length of the contour, mm.
     pub total: Option<f64>,
+    #[serde(flatten)]
+    pub detail: Detail,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -110,43 +123,47 @@ impl Server {
             if r.is_err() {
                 d.undo();
             }
-            reply!(r, ids => json!({"ids": ids}))
+            reply!(r, ids => changed(d, &ids, p.detail.verbose))
         })
     }
 
     #[tool(description = "Join (AutoCAD JOIN) open paths that touch end to end into one path each (empty ids = the selection); a chain that comes round to its start becomes closed. Returns the remaining ids.")]
-    fn join(&self, Parameters(p): Parameters<IdList>) -> ToolResult {
-        self.edit_ids(&p.ids, |d, ids| reply!(d.join(&ids), ids => json!({"ids": ids})))
+    fn join(&self, Parameters(p): Parameters<IdsDetail>) -> ToolResult {
+        self.edit_ids(&p.ids, |d, ids| reply!(d.join(&ids), ids => changed(d, &ids, p.detail.verbose)))
     }
 
     #[tool(description = "Explode (AutoCAD EXPLODE, empty ids = the selection): a compound path becomes one item per contour, a single path one item per line or arc segment, a text one path of its letter outlines. Returns the new ids.")]
-    fn explode(&self, Parameters(p): Parameters<IdList>) -> ToolResult {
-        self.edit_ids(&p.ids, |d, ids| reply!(d.explode(&ids), ids => json!({"ids": ids})))
+    fn explode(&self, Parameters(p): Parameters<IdsDetail>) -> ToolResult {
+        self.edit_ids(&p.ids, |d, ids| reply!(d.explode(&ids), ids => changed(d, &ids, p.detail.verbose)))
     }
 
     #[tool(description = "Align (AutoCAD ALIGN, empty ids = the selection): move the items so source1 lands on dest1; with source2/dest2 also rotate them so source1→source2 points along dest1→dest2, and with scale also size them to match.")]
     fn align(&self, Parameters(p): Parameters<Align>) -> ToolResult {
-        self.edit_ids(&p.ids, |d, ids| reply!(d.align(&ids, (p.source1, p.source2), (p.dest1, p.dest2), p.scale), _x => json!({"ids": ids, "bbox": d.bbox(&ids)})))
+        self.edit_ids(&p.ids, |d, ids| reply!(d.align(&ids, (p.source1, p.source2), (p.dest1, p.dest2), p.scale), _x => {
+            let mut out = changed(d, &ids, p.detail.verbose);
+            out["bbox"] = json!(d.bbox(&ids));
+            out
+        }))
     }
 
     #[tool(description = "Match properties (AutoCAD MATCHPROP): give the targets (empty = the selection) the layer (and so the laser operation) of the source item, and its font when both are text.")]
     fn match_properties(&self, Parameters(p): Parameters<MatchProps>) -> ToolResult {
-        self.edit_ids(&p.targets, |d, ids| reply!(d.match_properties(p.source, &ids), _x => json!({"ids": ids})))
+        self.edit_ids(&p.targets, |d, ids| reply!(d.match_properties(p.source, &ids), _x => changed(d, &ids, p.detail.verbose)))
     }
 
     #[tool(description = "Break a path (AutoCAD BREAK) at the point nearest `at`: an open path splits in two items, a closed one opens there. With at2 the piece between the two points is removed instead (a closed shape loses the shorter way round). Returns the ids of the pieces.")]
     fn break_item(&self, Parameters(p): Parameters<BreakItem>) -> ToolResult {
-        self.edit_ids(&[p.id], |d, _| reply!(d.break_item(p.id, p.at, p.at2), ids => json!({"ids": ids})))
+        self.edit_ids(&[p.id], |d, _| reply!(d.break_item(p.id, p.at, p.at2), ids => changed(d, &ids, p.detail.verbose)))
     }
 
     #[tool(description = "Extend (AutoCAD EXTEND) the open end of a path nearest `at` until it meets the nearest boundary ahead of it (lines along their direction, arcs round their circle). Boundaries default to every other path and guide line.")]
     fn extend(&self, Parameters(p): Parameters<Extend>) -> ToolResult {
-        self.edit_ids(&[p.id], |d, _| reply!(d.extend(p.id, p.at, &p.boundaries), _x => json!({"item": d.item(p.id)})))
+        self.edit_ids(&[p.id], |d, _| reply!(d.extend(p.id, p.at, &p.boundaries), _x => changed(d, &[p.id], p.detail.verbose)))
     }
 
     #[tool(description = "Lengthen (AutoCAD LENGTHEN) the open end of a path nearest `at` by delta mm (negative shortens), or so the contour is total mm long.")]
     fn lengthen(&self, Parameters(p): Parameters<Lengthen>) -> ToolResult {
-        self.edit_ids(&[p.id], |d, _| reply!(d.lengthen(p.id, p.at, p.delta, p.total), _x => json!({"item": d.item(p.id)})))
+        self.edit_ids(&[p.id], |d, _| reply!(d.lengthen(p.id, p.at, p.delta, p.total), _x => changed(d, &[p.id], p.detail.verbose)))
     }
 
     #[tool(description = "Group items (empty ids = the selection) so they are picked together; an item leaves any group it was in.")]

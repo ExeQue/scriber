@@ -47,6 +47,25 @@ fn colours_become_laser_operations() {
 }
 
 #[test]
+fn unpainted_and_grey_filled_shapes_are_helpers() {
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="50mm" viewBox="0 0 100 50">
+        <rect x="0" y="0" width="10" height="10" fill="none"/>
+        <rect x="20" y="0" width="10" height="10" fill="#000" fill-opacity="0"/>
+        <rect x="40" y="0" width="10" height="10" fill="#969696" stroke="#969696"/>
+        <rect x="60" y="0" width="10" height="10" fill="#00964b"/>
+        <rect id="face" x="80" y="0" width="10" height="10" fill="#000"/>
+        <rect x="0" y="20" width="10" height="10" fill="none" stroke="red" visibility="hidden"/>
+    </svg>"##;
+    let mut d = Document::new(100.0, 50.0);
+    let got = d.import_svg_sources(svg.as_bytes(), &ImportOptions::default()).unwrap();
+    let ops: Vec<Op> = d.s.items.iter().map(|i| d.s.op(i)).collect();
+    // One item per element (a grey fill and the same grey stroke are one helper); hidden ones stay out.
+    assert_eq!(ops, [Op::NoOutput, Op::NoOutput, Op::NoOutput, Op::NoOutput, Op::Engrave]);
+    assert_eq!(got.iter().map(|(_, s)| s.element).collect::<Vec<_>>(), [0, 1, 2, 3, 4]);
+    assert_eq!(got[4].1.svg_id, "face");
+}
+
+#[test]
 fn scale_width_and_position() {
     // Plain numbers are px at 96 per inch: 96 px = 25.4 mm.
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect x="10" y="10" width="96" height="48" fill="none" stroke="red"/></svg>"#;

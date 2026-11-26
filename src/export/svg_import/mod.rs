@@ -38,8 +38,10 @@ impl Default for ImportOptions {
 
 /// Stroke colour → laser operation, as laser software reads colours. The nearest reference colour
 /// within `NEAR` wins (so #e00, #c00 and #f33 are cut, #333 is engraved); any other colour is cut.
-/// A fill (any paint) on a closed shape means "engrave the area"; a path with both a fill and a stroke
-/// becomes two items (engrave, then the stroke's op).
+/// A fill on a closed shape means "engrave the area", unless its colour is a no-output grey or green
+/// (then it is a helper); a path with both a fill and a stroke becomes two items (the fill's op, then
+/// the stroke's) unless both give the same op. A path with neither (or a fully transparent fill)
+/// comes in as no output: agents use such shapes as boolean cutters.
 const STROKE_OPS: [([u8; 3], Op); 5] = [
     ([255, 0, 0], Op::Cut),           // red
     ([0, 0, 255], Op::Score),         // blue
@@ -56,6 +58,19 @@ fn stroke_op(paint: &Paint) -> Op {
         (d(c.red, rgb[0]) + d(c.green, rgb[1]) + d(c.blue, rgb[2])).sqrt()
     };
     STROKE_OPS.iter().map(|(rgb, op)| (dist(*rgb), *op)).filter(|(d, _)| *d <= NEAR).min_by(|a, b| a.0.total_cmp(&b.0)).map_or(Op::Cut, |(_, op)| op)
+}
+
+/// Fill → laser operation: engrave the area, unless the colour means no output.
+fn fill_op(paint: &Paint) -> Op {
+    if stroke_op(paint) == Op::NoOutput { Op::NoOutput } else { Op::Engrave }
+}
+
+/// Where an imported item came from: the SVG element's id (empty when it has none) and the
+/// element's index among the paths and images in document order (text counts one per glyph path).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Source {
+    pub svg_id: String,
+    pub element: usize,
 }
 
 /// Something to add to the document.
@@ -91,9 +106,15 @@ impl Document {
     /// All or nothing; callers checkpoint first. The new items become the selection. A path goes on
     /// the current layer when that has the op of its colour, else on the first layer with that op.
     pub fn import_svg(&mut self, svg: &[u8], opts: &ImportOptions) -> Result<Vec<u64>, String> {
+        Ok(self.import_svg_sources(svg, opts)?.into_iter().map(|(id, _)| id).collect())
+    }
+
+    /// `import_svg`, also saying which SVG element each new item came from.
+    pub fn import_svg_sources(&mut self, svg: &[u8], opts: &ImportOptions) -> Result<Vec<(u64, Source)>, String> {
         let mut ids = Vec::new();
-        for piece in parse(svg, opts)? {
-            ids.push(match piece {
+        let mut out = Vec::new();
+        for (source, piece) in parse(svg, opts)? {
+            let id = match piece {
                 Piece::Path { name, op, contours } => {
                     let layer = self.new_item_layer(Some(op));
                     self.add_to(layer, &name, Shape::Path { contours })
@@ -105,14 +126,16 @@ impl Document {
                     }
                     id
                 }
-            });
+            };
+            ids.push(id);
+            out.push((id, source));
         }
-        self.selection = ids.clone();
-        Ok(ids)
+        self.selection = ids;
+        Ok(out)
     }
 }
 
-fn parse(svg: &[u8], opts: &ImportOptions) -> Result<Vec<Piece>, String> {
+fn parse(svg: &[u8], opts: &ImportOptions) -> Result<Vec<(Source, Piece)>, String> {
     let tol = opts.tolerance;
     if !(tol.is_finite() && tol > 0.0) || !(opts.scale.is_finite() && opts.scale > 0.0) || opts.width.is_some_and(|w| !(w.is_finite() && w > 0.0)) {
         return Err("tolerance, scale and width must be positive numbers".into());
@@ -126,38 +149,39 @@ fn parse(svg: &[u8], opts: &ImportOptions) -> Result<Vec<Piece>, String> {
     };
     let off = [opts.x.map_or(0.0, |x| x - bbox.x() as f64 * k), opts.y.map_or(0.0, |y| y - bbox.y() as f64 * k)];
     let mut pieces = Vec::new();
-    walk(tree.root(), Map { t: usvg::Transform::identity(), k, off }, tol, &mut pieces)?;
+    walk(tree.root(), Map { t: usvg::Transform::identity(), k, off }, tol, &mut 0, &mut pieces)?;
     if pieces.is_empty() {
         return Err("the SVG has no paths or images to import".into());
     }
     Ok(pieces)
 }
 
-fn walk(group: &usvg::Group, map: Map, tol: f64, out: &mut Vec<Piece>) -> Result<(), String> {
+/// Collect the pieces under `group`; `element` counts the paths and images seen so far.
+fn walk(group: &usvg::Group, map: Map, tol: f64, element: &mut usize, out: &mut Vec<(Source, Piece)>) -> Result<(), String> {
     for node in group.children() {
+        let source = |id: &str| Source { svg_id: id.into(), element: *element };
         match node {
-            Node::Group(g) => walk(g, map, tol, out)?,
-            Node::Text(t) => walk(t.flattened(), map, tol, out)?,
-            Node::Path(p) if p.is_visible() && (p.fill().is_some() || p.stroke().is_some()) => {
+            Node::Group(g) => walk(g, map, tol, element, out)?,
+            Node::Text(t) => walk(t.flattened(), map, tol, element, out)?,
+            // usvg hides paths with neither fill nor stroke; they still come in, as helpers.
+            Node::Path(p) if p.is_visible() || (p.fill().is_none() && p.stroke().is_none()) => {
                 let contours = contours(p.data(), map.with(p.abs_transform()), tol);
+                // An open line has no area to engrave, even with SVG's default black fill.
+                let area = contours.iter().any(|c| c.closed);
+                let fill = p.fill().filter(|f| area && f.opacity().get() > 0.0).map(|f| fill_op(f.paint()));
+                // A black stroke on an engraved area adds nothing.
+                let line = p.stroke().map(|s| stroke_op(s.paint())).filter(|op| fill != Some(*op));
+                // No paint at all (or a lone fill on open lines): a helper, not lasered.
+                let ops = if fill.is_none() && line.is_none() { vec![Op::NoOutput] } else { fill.into_iter().chain(line).collect() };
                 if !contours.is_empty() {
-                    // An open line has no area to engrave, even with SVG's default black fill.
-                    let area = p.fill().is_some() && contours.iter().any(|c| c.closed);
-                    let line = p.stroke().map(|s| stroke_op(s.paint())).filter(|op| !(area && *op == Op::Engrave));
-                    if area {
-                        out.push(Piece::Path { name: name(p.id()), op: Op::Engrave, contours: contours.clone() });
-                    }
-                    // A black stroke on an engraved area adds nothing; a lone fill on open lines is not lasered.
-                    match line {
-                        Some(op) => out.push(Piece::Path { name: name(p.id()), op, contours }),
-                        None if !area => out.push(Piece::Path { name: name(p.id()), op: Op::NoOutput, contours }),
-                        None => {}
-                    }
+                    out.extend(ops.into_iter().map(|op| (source(p.id()), Piece::Path { name: name(p.id()), op, contours: contours.clone() })));
                 }
             }
-            Node::Path(_) => {}
-            Node::Image(i) if i.is_visible() => out.push(image(i, map.with(i.abs_transform()))?),
-            Node::Image(_) => {}
+            Node::Image(i) if i.is_visible() => out.push((source(i.id()), image(i, map.with(i.abs_transform()))?)),
+            Node::Path(_) | Node::Image(_) => {}
+        }
+        if matches!(node, Node::Path(_) | Node::Image(_)) {
+            *element += 1;
         }
     }
     Ok(())
@@ -165,6 +189,36 @@ fn walk(group: &usvg::Group, map: Map, tol: f64, out: &mut Vec<Piece>) -> Result
 
 fn name(id: &str) -> String {
     if id.is_empty() { "SVG".into() } else { id.into() }
+}
+
+/// A contour from `start` through Bézier segments: each is (control points, end point) with no
+/// control point for a line, one for a quadratic and two for a cubic curve; curves are fitted as
+/// arcs within `tol` mm, like an imported SVG's. None when it has fewer than two distinct points.
+pub fn bezier_contour(start: Point, segments: &[(Vec<Point>, Point)], closed: bool, tol: f64) -> Option<Contour> {
+    let mut v = vec![Vertex::new(start[0], start[1], 0.0)];
+    let mut segs = Vec::new();
+    for (controls, to) in segments {
+        segs.clear();
+        curve_to(xy(v.last().unwrap()), controls, *to, tol, &mut segs);
+        for (p, bulge) in &segs {
+            biarc::push(&mut v, *p, *bulge);
+        }
+    }
+    let mut out = Vec::new();
+    finish(&mut v, closed, tol, &mut out);
+    out.pop()
+}
+
+/// The segments from `a` to `b`: a line, or a quadratic (one control) or cubic (two) curve as arcs.
+fn curve_to(a: Point, controls: &[Point], b: Point, tol: f64, out: &mut Vec<biarc::Seg>) {
+    match *controls {
+        [c] => {
+            let lerp = |p: Point| [p[0] + (c[0] - p[0]) * 2.0 / 3.0, p[1] + (c[1] - p[1]) * 2.0 / 3.0];
+            biarc::fit_cubic([a, lerp(a), lerp(b), b], tol, out);
+        }
+        [c1, c2] => biarc::fit_cubic([a, c1, c2, b], tol, out),
+        _ => out.push((b, 0.0)),
+    }
 }
 
 /// One contour per subpath; quadratic and cubic curves fitted as arcs.
@@ -181,13 +235,9 @@ fn contours(data: &usvg::tiny_skia_path::Path, map: Map, tol: f64) -> Vec<Contou
                 finish(&mut v, false, tol, &mut out);
                 v.push(Vertex::new(pt(p)[0], pt(p)[1], 0.0));
             }
-            (PathSegment::LineTo(p), Some(_)) => segs.push((pt(p), 0.0)),
-            (PathSegment::QuadTo(c, p), Some(a)) => {
-                let (c, b) = (pt(c), pt(p));
-                let lerp = |p: Point, q: Point| [p[0] + (q[0] - p[0]) * 2.0 / 3.0, p[1] + (q[1] - p[1]) * 2.0 / 3.0];
-                biarc::fit_cubic([a, lerp(a, c), lerp(b, c), b], tol, &mut segs);
-            }
-            (PathSegment::CubicTo(c1, c2, p), Some(a)) => biarc::fit_cubic([a, pt(c1), pt(c2), pt(p)], tol, &mut segs),
+            (PathSegment::LineTo(p), Some(a)) => curve_to(a, &[], pt(p), tol, &mut segs),
+            (PathSegment::QuadTo(c, p), Some(a)) => curve_to(a, &[pt(c)], pt(p), tol, &mut segs),
+            (PathSegment::CubicTo(c1, c2, p), Some(a)) => curve_to(a, &[pt(c1), pt(c2)], pt(p), tol, &mut segs),
             (PathSegment::Close, _) => finish(&mut v, true, tol, &mut out),
             _ => {}
         }
