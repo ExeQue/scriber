@@ -7,6 +7,7 @@ mod command;
 mod constraint_bars;
 mod dimensions;
 mod fonts;
+mod geometry_cache;
 mod glyphs;
 mod grips;
 mod labels;
@@ -69,6 +70,8 @@ struct App {
     view: View,
     canvas_rect: Rect,
     textures: HashMap<u64, egui::TextureHandle>,
+    /// Flattened outlines and fill meshes per item, kept between frames.
+    geometry: geometry_cache::GeometryCache,
     /// The properties panel is in the middle of an edit (one undo step per edit).
     panel_editing: bool,
     message: String,
@@ -148,6 +151,7 @@ impl App {
             view: View { offset: Vec2::ZERO, zoom: 3.0, auto_fit: true, fit_size: Vec2::ZERO },
             canvas_rect: Rect::NOTHING,
             textures: HashMap::new(),
+            geometry: geometry_cache::GeometryCache::default(),
             panel_editing: false,
             message: String::new(),
             show_agents: false,

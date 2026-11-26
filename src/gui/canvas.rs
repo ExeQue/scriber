@@ -250,6 +250,8 @@ impl App {
         };
         self.paint_material(&painter, state.width, state.height);
         let tol = (0.5 / self.view.zoom as f64).clamp(0.002, 1.0);
+        let ids: Vec<u64> = state.items.iter().map(|i| i.id).collect();
+        self.geometry.retain(&ids);
         for item in &state.items {
             let selected = selection.contains(&item.id);
             self.paint_item(ui.ctx(), &painter, &state.images, item, selected, tol);
@@ -311,23 +313,25 @@ impl App {
 
     fn paint_item(&mut self, ctx: &egui::Context, painter: &egui::Painter, images: &std::collections::BTreeMap<u64, std::sync::Arc<Img>>, item: &Item, selected: bool, tol: f64) {
         let color = op_color(item.op);
-        let screen = |line: &Vec<Point>| line.iter().map(|p| self.w2s(*p)).collect::<Vec<Pos2>>();
+        let (offset, zoom) = (self.canvas_rect.min + self.view.offset, self.view.zoom);
+        let to_screen = move |p: &Point| offset + vec2(p[0] as f32, p[1] as f32) * zoom;
+        let geometry = self.geometry.get(item, tol);
         if selected {
-            for line in item.shape.outline(tol) {
-                painter.add(egui::Shape::line(screen(&line), Stroke::new(6.0, SELECTED.gamma_multiply(0.45))));
+            for line in &geometry.outline {
+                painter.add(egui::Shape::line(line.iter().map(to_screen).collect(), Stroke::new(6.0, SELECTED.gamma_multiply(0.45))));
             }
         }
         match &item.shape {
             // Text is drawn from its glyph outlines, the same shapes the laser gets.
             Shape::Path { .. } | Shape::Text { .. } => {
-                let outline = item.shape.outline(tol);
-                if item.fill {
+                if let Some((verts, indices)) = &geometry.fill {
                     let fill = if item.op == Op::Annotate { op_color(Op::Annotate).gamma_multiply(0.25) } else { Color32::from_gray(60) };
-                    fill_even_odd(painter, &outline.iter().map(screen).collect::<Vec<_>>(), fill);
+                    let vertices = verts.iter().map(|v| egui::epaint::Vertex { pos: offset + vec2(v[0], v[1]) * zoom, uv: egui::epaint::WHITE_UV, color: fill }).collect();
+                    painter.add(egui::Mesh { indices: indices.clone(), vertices, texture_id: egui::TextureId::default() });
                 }
                 let stroke = if item.op == Op::NoLine { Stroke::new(1.0, color.gamma_multiply(0.6)) } else { Stroke::new(1.5, color) };
-                for line in &outline {
-                    painter.add(egui::Shape::line(screen(line), stroke));
+                for line in &geometry.outline {
+                    painter.add(egui::Shape::line(line.iter().map(to_screen).collect(), stroke));
                 }
             }
             Shape::Image { image, x, y, w, h, rotation } => {
@@ -406,35 +410,6 @@ impl App {
     }
 }
 
-/// Fill polygons with the even-odd rule using horizontal spans, so holes stay empty.
-/// egui only fills convex shapes itself.
-fn fill_even_odd(painter: &egui::Painter, polys: &[Vec<Pos2>], color: Color32) {
-    let clip = painter.clip_rect();
-    let (mut top, mut bottom) = (f32::MAX, f32::MIN);
-    for p in polys.iter().flatten() {
-        top = top.min(p.y);
-        bottom = bottom.max(p.y);
-    }
-    let (top, bottom) = (top.max(clip.top()), bottom.min(clip.bottom()));
-    let mut y = top.floor() + 0.5;
-    let mut xs = Vec::new();
-    while y < bottom {
-        xs.clear();
-        for poly in polys {
-            for i in 0..poly.len() {
-                let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
-                if (a.y > y) != (b.y > y) {
-                    xs.push(a.x + (y - a.y) / (b.y - a.y) * (b.x - a.x));
-                }
-            }
-        }
-        xs.sort_by(f32::total_cmp);
-        for span in xs.as_chunks::<2>().0 {
-            painter.line_segment([pos2(span[0], y), pos2(span[1], y)], Stroke::new(1.0, color));
-        }
-        y += 1.0;
-    }
-}
 
 fn measure_overlay(painter: &egui::Painter, a: Pos2, b: Pos2, wa: Point, wb: Point) {
     let c = Color32::from_rgb(230, 0, 160);
