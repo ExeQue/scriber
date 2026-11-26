@@ -471,9 +471,9 @@ mod tests {
     fn groups_devices_per_material() {
         let (c, mut p) = sample();
         let mut f1 = p[0].clone();
-        f1["deviceCode"] = json!("GS003");
+        f1["deviceCode"] = json!("ZX998");
         for m in f1["machineParas"].as_array_mut().unwrap() {
-            m["deviceMode"] = json!({"code": "GS003"});
+            m["deviceMode"] = json!({"code": "ZX998"});
         }
         p.push(f1);
         let groups = group(parse(&c, &p));
@@ -492,7 +492,7 @@ mod tests {
 
         lib.machines.retain(|m| m.id != "xtool-m2");
         assert!(ply.targets(&lib, None).is_empty(), "the M2 is not in the library");
-        assert_eq!(ply.reason(&lib), "for xTool device GS003, xTool M2 — not in your machines");
+        assert_eq!(ply.reason(&lib), "for xTool M2, xTool device ZX998 — not in your machines");
     }
 
     /// A whole cache folder: database name metadata, both stores, and a record of another store that is never decoded.
