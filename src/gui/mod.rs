@@ -177,7 +177,7 @@ impl App {
     }
 
     fn open_dialog(&mut self) {
-        if let Some(path) = rfd::FileDialog::new().add_filter("Scriber", &["scriber"]).pick_file() {
+        if let Some(path) = rfd::FileDialog::new().add_filter("Scriber", &["scrbr"]).pick_file() {
             self.open_path(&path);
         }
     }
@@ -199,8 +199,8 @@ impl App {
         let current = self.doc.lock().unwrap().path.clone();
         let path = match current {
             Some(p) if !save_as => p,
-            _ => match rfd::FileDialog::new().add_filter("Scriber", &["scriber"]).set_file_name("design.scriber").save_file() {
-                Some(p) => p.with_extension("scriber"),
+            _ => match rfd::FileDialog::new().add_filter("Scriber", &["scrbr"]).set_file_name("design.scrbr").save_file() {
+                Some(p) => p.with_extension("scrbr"),
                 None => return false,
             },
         };

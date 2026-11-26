@@ -138,9 +138,10 @@ impl App {
         {
             let mut d = doc.lock().unwrap();
             match self.hit(&d, p) {
-                Some(id) if shift => d.selection.retain(|s| *s != id),
-                Some(id) if !d.selection.contains(&id) => d.selection.push(id),
-                Some(_) => {}
+                // Shift+click adds or removes; a plain click selects only that shape.
+                Some(id) if shift && d.selection.contains(&id) => d.selection.retain(|s| *s != id),
+                Some(id) if shift => d.selection.push(id),
+                Some(id) => d.selection = vec![id],
                 // A click on empty space clears the selection; window and crossing are made by dragging.
                 None if !shift => d.selection.clear(),
                 None => {}
@@ -173,8 +174,8 @@ impl App {
     }
 
     /// Window (left to right): items fully inside. Crossing (right to left): also items it touches.
-    /// With Shift the items are removed from the selection instead.
-    fn finish_box(&mut self, start: Point, end: Point, remove: bool) {
+    /// Without Shift the box replaces the selection; with Shift it adds to it.
+    fn finish_box(&mut self, start: Point, end: Point, add: bool) {
         let area = [start[0].min(end[0]), start[1].min(end[1]), (end[0] - start[0]).abs(), (end[1] - start[1]).abs()];
         let crossing = end[0] < start[0];
         let mut d = self.doc.lock().unwrap();
@@ -185,9 +186,11 @@ impl App {
             .filter(|i| contains_box(area, i.shape.metrics().bbox) || (crossing && touches(area, &i.shape.outline(0.1))))
             .map(|i| i.id)
             .collect();
-        if remove {
-            d.selection.retain(|id| !picked.contains(id));
-        } else {
+        // Without Shift the box replaces the selection; with Shift it adds to it.
+        if !add {
+            d.selection.clear();
+        }
+        {
             for id in picked {
                 if !d.selection.contains(&id) {
                     d.selection.push(id);

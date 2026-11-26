@@ -1,4 +1,4 @@
-//! The `.scriber` project file: a zip with `document.json` and the images as `images/<id>.png`.
+//! The `.scrbr` project file: a zip with `document.json` and the images as `images/<id>.png`.
 
 use super::{Document, Img, State};
 use std::io::{Read, Write};
@@ -10,7 +10,7 @@ pub const FORMAT_VERSION: u32 = 1;
 
 impl Document {
     pub fn save(&mut self, path: &Path) -> anyhow::Result<()> {
-        let tmp = path.with_extension("scriber.tmp");
+        let tmp = path.with_extension("scrbr.tmp");
         write_archive(&self.s, &tmp)?;
         // Write-then-rename, so a crash never leaves a half-written project.
         std::fs::rename(&tmp, path)?;
@@ -72,7 +72,7 @@ mod tests {
     fn round_trip() {
         let dir = std::env::temp_dir().join(format!("scriber-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("t.scriber");
+        let path = dir.join("t.scrbr");
         let mut d = Document::new(120.0, 80.0);
         d.s.notes = "hej".into();
         let img = crate::export::image::to_grey(&crate::export::image::encode_png(&image::GrayImage::new(3, 2)).unwrap()).unwrap();

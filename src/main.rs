@@ -9,7 +9,7 @@ use std::path::PathBuf;
 const USAGE: &str = "Scriber: 2D CAD for laser cutters, drivable by AI agents over MCP.
 
 Usage:
-  scriber [FILE.scriber]          open the editor
+  scriber [FILE.scrbr]            open the editor
   scriber mcp                     MCP server on stdio for AI agents (connects to the editor, starting it if needed)
   scriber mcp --headless          MCP server on stdio without a window
   scriber agents [list]           show detected AI agents and whether Scriber is connected

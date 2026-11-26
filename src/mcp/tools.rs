@@ -225,7 +225,7 @@ pub struct ExportPng {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SavePath {
-    /// Path to the .scriber file; missing = the current file.
+    /// Path to the .scrbr file; missing = the current file.
     pub path: Option<String>,
 }
 
@@ -678,7 +678,7 @@ impl Server {
         self.with(|d| ok(json!({"redone": d.redo()})))
     }
 
-    #[tool(description = "Save the document as a .scriber file (without path: the current file).")]
+    #[tool(description = "Save the document as a .scrbr file (without path: the current file).")]
     fn save(&self, Parameters(p): Parameters<SavePath>) -> ToolResult {
         self.with(|d| {
             let Some(path) = p.path.map(PathBuf::from).or_else(|| d.path.clone()) else {
@@ -691,7 +691,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Open a .scriber file, replacing the current document. Fails on unsaved changes unless force is set.")]
+    #[tool(description = "Open a .scrbr file, replacing the current document. Fails on unsaved changes unless force is set.")]
     fn open(&self, Parameters(p): Parameters<OpenFile>) -> ToolResult {
         self.with(|d| {
             if d.dirty && !p.force {

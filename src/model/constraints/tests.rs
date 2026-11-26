@@ -164,7 +164,7 @@ fn constraints_survive_save_open_undo_and_are_dropped_when_the_shape_changes() {
 
     let dir = std::env::temp_dir().join(format!("scriber-constraints-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("c.scriber");
+    let path = dir.join("c.scrbr");
     d.save(&path).unwrap();
     let e = Document::open(&path).unwrap();
     assert_eq!(e.s.constraints, d.s.constraints);

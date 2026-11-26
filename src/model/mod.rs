@@ -39,7 +39,7 @@ pub struct State {
     #[serde(default)]
     pub notes: String,
     pub items: Vec<Item>,
-    /// Stored as separate files in the .scriber archive; Arc keeps undo snapshots cheap.
+    /// Stored as separate files in the .scrbr archive; Arc keeps undo snapshots cheap.
     #[serde(skip)]
     pub images: BTreeMap<u64, Arc<Img>>,
     pub next_id: u64,
