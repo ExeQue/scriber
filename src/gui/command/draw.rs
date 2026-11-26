@@ -130,7 +130,7 @@ impl App {
             && let Some(at) = self.draft.first().copied()
         {
             let op = if self.new_op == Op::Cut { Op::NoLine } else { self.new_op };
-            let shape = Shape::Text { x: at[0], y: at[1], size: self.cmdline.text_height, text, rotation: 0.0 };
+            let shape = Shape::Text { x: at[0], y: at[1], size: self.cmdline.text_height, text, rotation: 0.0, font: self.cmdline.text_font.clone(), bold: false, italic: false };
             self.create("text", op, true, shape);
         }
         self.end();

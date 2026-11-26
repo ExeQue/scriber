@@ -1,18 +1,9 @@
 //! PNG export: renders the SVG export, so both always look the same.
 
 use crate::model::State;
+/// SVG options with the system fonts loaded once; shared with text outlines and SVG import.
+pub(super) use crate::model::text::usvg_options as options;
 use resvg::{tiny_skia, usvg};
-use std::sync::OnceLock;
-
-/// SVG options with the system fonts loaded once (loading them is slow).
-pub(super) fn options() -> &'static usvg::Options<'static> {
-    static OPT: OnceLock<usvg::Options<'static>> = OnceLock::new();
-    OPT.get_or_init(|| {
-        let mut opt = usvg::Options::default();
-        opt.fontdb_mut().load_system_fonts();
-        opt
-    })
-}
 
 /// Render the document at `dpi` on a white background.
 pub fn png(s: &State, dpi: f64, annotations: bool) -> anyhow::Result<Vec<u8>> {

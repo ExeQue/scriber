@@ -50,6 +50,7 @@ impl App {
                 });
             }
             (Cmd::Text, Step::Content) => {
+                self.text_font_field(ui);
                 ui.label("Text");
                 // Edits the command line's input, so Enter here or there places the text.
                 let field = ui.text_edit_singleline(&mut self.cmdline.input);
@@ -64,6 +65,7 @@ impl App {
                     ui.label("Height");
                     ui.add(mm_value(&mut self.cmdline.text_height));
                 });
+                self.text_font_field(ui);
             }
             (Cmd::Pline, Step::Draw) => {
                 ui.horizontal(|ui| {
@@ -164,6 +166,14 @@ impl App {
         })
         .response
         .on_hover_text("A number is a length (or angle) in the direction of the mouse. x,y is a point on the material; @dx,dy is relative to the last point; @length<angle goes that far at that angle.");
+    }
+
+    /// TEXT's font; kept for the next text.
+    fn text_font_field(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Font");
+            crate::gui::fonts::font_picker(ui, "text-font", &mut self.cmdline.text_font);
+        });
     }
 
     fn corner_buttons(&mut self, ui: &mut egui::Ui, step: Step) {

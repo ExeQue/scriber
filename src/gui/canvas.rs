@@ -318,7 +318,8 @@ impl App {
             }
         }
         match &item.shape {
-            Shape::Path { .. } => {
+            // Text is drawn from its glyph outlines, the same shapes the laser gets.
+            Shape::Path { .. } | Shape::Text { .. } => {
                 let outline = item.shape.outline(tol);
                 if item.fill {
                     let fill = if item.op == Op::Annotate { op_color(Op::Annotate).gamma_multiply(0.25) } else { Color32::from_gray(60) };
@@ -337,15 +338,6 @@ impl App {
                 mesh.add_rect_with_uv(r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
                 mesh.rotate(egui::emath::Rot2::from_angle(rotation.to_radians() as f32), r.center());
                 painter.add(mesh);
-            }
-            Shape::Text { x, y, size, text, rotation } => {
-                let px = self.px(*size).max(1.0);
-                let ink = if item.fill && item.op != Op::Annotate { Color32::from_gray(30) } else { color };
-                let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(px), ink);
-                let angle = rotation.to_radians() as f32;
-                // (x, y) is the baseline start; egui places text by its top-left corner.
-                let top_left = self.w2s([*x, *y]) + egui::emath::Rot2::from_angle(angle) * vec2(0.0, -px * 0.8);
-                painter.add(egui::epaint::TextShape::new(top_left, galley, ink).with_angle(angle));
             }
             Shape::Dimension { .. } => self.paint_dimension(painter, &item.shape, color),
         }

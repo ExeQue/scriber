@@ -1,7 +1,7 @@
 //! The MCP tools: one per document command, mirroring what the GUI can do.
 
 use crate::export;
-use crate::model::{BoolOp, Contour, Document, Op, Shape, Shared, Transform};
+use crate::model::{BoolOp, Contour, Document, Op, Shape, Shared, Transform, text};
 use base64::Engine;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
@@ -38,8 +38,21 @@ pub enum ShapeInput {
     Polyline { points: Vec<[f64; 2]>, #[serde(default)] closed: bool },
     /// Full control: one or more contours with arc bulges (several = compound path).
     Path { contours: Vec<Contour> },
-    /// Text; (x, y) is the start of the baseline; size is the font size in mm.
-    Text { x: f64, y: f64, size: f64, text: String, #[serde(default)] rotation: f64 },
+    /// Text; (x, y) is the start of the baseline; size is the font size in mm. font is an installed family
+    /// (see list_fonts) or sans-serif (default), serif or monospace. It is lasered as the glyph outlines.
+    Text {
+        x: f64,
+        y: f64,
+        size: f64,
+        text: String,
+        #[serde(default)]
+        rotation: f64,
+        font: Option<String>,
+        #[serde(default)]
+        bold: bool,
+        #[serde(default)]
+        italic: bool,
+    },
     /// A measurement from point 1 to point 2, drawn offset mm to the left of that direction.
     Dimension { x1: f64, y1: f64, x2: f64, y2: f64, #[serde(default = "default_dim_offset")] offset: f64 },
 }
@@ -60,8 +73,19 @@ impl ShapeInput {
             S::Polygon { cx, cy, r, sides, rotation } => ("polygon", Shape::path(Contour::polygon(cx, cy, r, sides, rotation))),
             S::Polyline { points, closed } => ("polyline", Shape::path(Contour::polyline(&points, closed))),
             S::Path { contours } => ("path", Shape::Path { contours }),
-            S::Text { x, y, size, text, rotation } => ("text", Shape::Text { x, y, size, text, rotation }),
+            S::Text { x, y, size, text, rotation, font, bold, italic } => {
+                let font = font.unwrap_or_else(|| text::DEFAULT_FONT.into());
+                ("text", Shape::Text { x, y, size, text, rotation, font, bold, italic })
+            }
             S::Dimension { x1, y1, x2, y2, offset } => ("dimension", Shape::Dimension { x1, y1, x2, y2, offset }),
+        }
+    }
+
+    /// Why the input cannot be used: a text font that is not installed.
+    fn font_error(&self) -> Option<String> {
+        match self {
+            ShapeInput::Text { font: Some(f), .. } => text::font_error(f),
+            _ => None,
         }
     }
 }
@@ -93,6 +117,8 @@ pub struct UpdateItem {
     pub note: Option<String>,
     /// Replace the geometry.
     pub shape: Option<ShapeInput>,
+    /// Text only: change the font family (see list_fonts), keeping everything else.
+    pub font: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -411,6 +437,11 @@ impl Server {
         ok(summary(&self.doc.lock().unwrap()))
     }
 
+    #[tool(description = "List the font families installed on this computer, for a text's font. sans-serif, serif and monospace also work and pick the system's default of that kind.")]
+    fn list_fonts(&self) -> ToolResult {
+        ok(json!({"fonts": text::families()}))
+    }
+
     #[tool(description = "Select items in the GUI (empty list clears the selection).")]
     fn select(&self, Parameters(p): Parameters<Ids>) -> ToolResult {
         self.with(|d| match d.resolve(&p.ids) {
@@ -425,6 +456,9 @@ impl Server {
 
     #[tool(description = "Add items (line, rect, circle, arc, polygon, polyline, path, text, dimension). Returns their ids. One undo step.")]
     fn add_items(&self, Parameters(p): Parameters<AddItems>) -> ToolResult {
+        if let Some(e) = p.items.iter().find_map(|it| it.shape.font_error()) {
+            return fail(e);
+        }
         self.with(|d| {
             d.checkpoint();
             let mut ids = Vec::new();
@@ -446,8 +480,15 @@ impl Server {
         })
     }
 
-    #[tool(description = "Change an item's name, op, fill, note or geometry.")]
+    #[tool(description = "Change an item's name, op, fill, note, geometry or (text only) font.")]
     fn update_item(&self, Parameters(p): Parameters<UpdateItem>) -> ToolResult {
+        if let Some(e) = p.shape.as_ref().and_then(ShapeInput::font_error).or_else(|| p.font.as_deref().and_then(text::font_error)) {
+            return fail(e);
+        }
+        let is_text = matches!(self.doc.lock().unwrap().item(p.id).map(|i| &i.shape), Some(Shape::Text { .. }));
+        if p.font.is_some() && !is_text && !matches!(p.shape, Some(ShapeInput::Text { .. })) {
+            return fail("font only applies to text items");
+        }
         self.edit_ids(&[p.id], |d, _| {
             let item = d.item_mut(p.id).unwrap();
             if let Some(n) = p.name {
@@ -464,6 +505,9 @@ impl Server {
             }
             if let Some(s) = p.shape {
                 item.shape = s.build().1;
+            }
+            if let (Some(f), Shape::Text { font, .. }) = (p.font, &mut item.shape) {
+                *font = f;
             }
             ok(serde_json::to_value(&*item).unwrap())
         })
@@ -532,7 +576,7 @@ impl Server {
             .filter(|i| ids.contains(&i.id))
             .map(|i| {
                 let m = i.shape.metrics();
-                if i.op.burns_lines() && matches!(i.shape, Shape::Path { .. }) {
+                if i.op.burns_lines() && matches!(i.shape, Shape::Path { .. } | Shape::Text { .. }) {
                     let key = format!("{}_length", serde_json::to_value(i.op).unwrap().as_str().unwrap());
                     let t = totals.get(&key).and_then(Value::as_f64).unwrap_or(0.0);
                     totals.insert(key, json!(t + m.length));

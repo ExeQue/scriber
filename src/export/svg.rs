@@ -74,28 +74,18 @@ fn element(s: &State, item: &Item, layer: Layer, stroke: f64) -> Option<String> 
                 "<image id=\"i{id}\" x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\" preserveAspectRatio=\"none\" transform=\"rotate({rotation} {cx} {cy})\" href=\"data:image/png;base64,{b64}\"/>\n"
             ))
         }
-        Shape::Path { contours } => {
-            let d: String = contours.iter().map(path_data).collect::<Vec<_>>().join(" ");
+        // Text goes out as its glyph outlines, so laser software does not need the font.
+        Shape::Path { .. } | Shape::Text { .. } => {
+            let d: String = item.shape.laser_contours().iter().map(path_data).collect::<Vec<_>>().join(" ");
+            if d.is_empty() {
+                return None;
+            }
             if layer == Layer::Fill && item.engraves_area() {
                 return Some(format!("<path id=\"i{id}-fill\" d=\"{d}\" fill=\"{BLACK}\" fill-rule=\"evenodd\" stroke=\"none\"/>\n"));
             }
             (Some(layer) == line_layer).then(|| {
                 format!("<path id=\"i{id}\" d=\"{d}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{stroke}\"/>\n", item.op.hex())
             })
-        }
-        Shape::Text { x, y, size, text, rotation } => {
-            // ponytail: text stays <text>; convert it to outlines (usvg can) when laser software needs paths.
-            let paint = if layer == Layer::Fill && item.engraves_area() {
-                format!("fill=\"{BLACK}\" stroke=\"none\"")
-            } else if Some(layer) == line_layer {
-                format!("fill=\"none\" stroke=\"{}\" stroke-width=\"{stroke}\"", item.op.hex())
-            } else {
-                return None;
-            };
-            Some(format!(
-                "<text id=\"i{id}\" x=\"{x}\" y=\"{y}\" font-size=\"{size}\" font-family=\"sans-serif\" {paint} transform=\"rotate({rotation} {x} {y})\">{}</text>\n",
-                escape(text)
-            ))
         }
         Shape::Dimension { .. } => {
             if layer != Layer::Annotate {
@@ -115,10 +105,6 @@ fn element(s: &State, item: &Item, layer: Layer, stroke: f64) -> Option<String> 
             ))
         }
     }
-}
-
-fn escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
 /// SVG path data for one contour; arcs stay real arcs.
@@ -154,7 +140,9 @@ mod tests {
         let mut d = Document::new(100.0, 50.0);
         d.add("hole", Op::Cut, false, Shape::path(Contour::circle(20.0, 20.0, 10.0)));
         d.add("arc", Op::Score, false, Shape::path(Contour::arc(60.0, 25.0, 10.0, 0.0, 270.0)));
-        d.add("t", Op::NoLine, true, Shape::Text { x: 5.0, y: 45.0, size: 5.0, text: "A&B".into(), rotation: 0.0 });
+        let text = Shape::Text { x: 5.0, y: 45.0, size: 5.0, text: "A&B".into(), rotation: 0.0, font: "sans-serif".into(), bold: false, italic: false };
+        let has_font = !text.laser_contours().is_empty();
+        d.add("t", Op::NoLine, true, text);
         d.add("dim", Op::Annotate, false, Shape::Dimension { x1: 10.0, y1: 40.0, x2: 30.0, y2: 40.0, offset: 5.0 });
         let plate = Shape::Path { contours: vec![Contour::rect(70.0, 5.0, 20.0, 20.0, 0.0), Contour::circle(80.0, 15.0, 3.0)] };
         d.add("coaster", Op::Cut, true, plate);
@@ -163,7 +151,9 @@ mod tests {
         assert!(s.contains("width=\"100mm\""));
         assert!(s.contains("A10 10 0 0 1 30 20"));
         assert!(s.contains("A10 10 0 1 1"), "270° arc needs the large-arc flag: {s}");
-        assert!(s.contains("A&amp;B"));
+        // Text is exported as filled glyph outlines, never as <text>.
+        assert!(!s.contains("<text") && !s.contains("A&"));
+        assert_eq!(s.contains("<path id=\"i3-fill\" d=\"M"), has_font, "{s}");
         assert!(!s.contains("20.00 mm"));
         assert!(svg(&d.s, true).contains("20.00 mm"));
         // The coaster is both a filled compound path and a cut line; fill comes before cut.

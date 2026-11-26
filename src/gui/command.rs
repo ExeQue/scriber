@@ -190,6 +190,8 @@ pub struct CommandLine {
     /// Corner radius for RECTANG.
     fillet: f64,
     text_height: f64,
+    /// Font family for new text; the last one picked.
+    text_font: String,
     /// The running command has made its undo step (one per command).
     checkpointed: bool,
     modify: modify::ModifyState,
@@ -214,6 +216,7 @@ impl CommandLine {
             last_point: None,
             fillet: 0.0,
             text_height: 10.0,
+            text_font: crate::model::text::DEFAULT_FONT.to_owned(),
             checkpointed: false,
             modify: modify::ModifyState::new(),
             arc_mode: curves::ArcMode::default(),

@@ -7,6 +7,7 @@ mod file;
 pub mod geom;
 pub mod item;
 pub mod ops;
+pub mod text;
 
 pub use geom::{BBox, Contour, Point, Transform};
 pub use item::{Item, Op, Shape};

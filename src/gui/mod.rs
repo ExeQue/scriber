@@ -6,6 +6,7 @@ mod canvas;
 mod command;
 mod constraint_bars;
 mod dimensions;
+mod fonts;
 mod glyphs;
 mod grips;
 mod labels;

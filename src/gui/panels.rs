@@ -281,7 +281,7 @@ fn laser_totals(s: &State) -> String {
     let mut parts: Vec<String> = [Op::Cut, Op::Score, Op::Engrave]
         .iter()
         .filter_map(|op| {
-            let len: f64 = s.items.iter().filter(|i| i.op == *op && matches!(i.shape, Shape::Path { .. })).map(|i| i.shape.metrics().length).sum();
+            let len: f64 = s.items.iter().filter(|i| i.op == *op && matches!(i.shape, Shape::Path { .. } | Shape::Text { .. })).map(|i| i.shape.metrics().length).sum();
             (len > 0.0).then(|| format!("{}: {:.0} mm", op_label(*op), len))
         })
         .collect();
@@ -300,6 +300,9 @@ fn field_label(key: &str) -> String {
         "text" => "Text",
         "rotation" => "Rotation",
         "offset" => "Distance",
+        "font" => "Font",
+        "bold" => "Bold",
+        "italic" => "Italic",
         _ => return key.to_string(),
     };
     label.to_string()
@@ -310,10 +313,27 @@ fn shape_editor(ui: &mut egui::Ui, shape: &mut Shape) -> bool {
     let mut v = serde_json::to_value(&*shape).unwrap();
     let mut changed = false;
     let obj = v.as_object_mut().unwrap();
+    if obj["kind"] == "text" {
+        // Left out of the JSON while false; show them anyway.
+        for key in ["bold", "italic"] {
+            obj.entry(key).or_insert(false.into());
+        }
+    }
     egui::Grid::new("shape").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
         for (key, val) in obj.iter_mut().filter(|(k, _)| !matches!(k.as_str(), "kind" | "image" | "contours")) {
             ui.label(field_label(key));
-            if let Some(n) = val.as_f64() {
+            if key == "font" {
+                let mut font = val.as_str().unwrap_or_default().to_string();
+                if super::fonts::font_picker(ui, "shape-font", &mut font) {
+                    *val = font.into();
+                    changed = true;
+                }
+            } else if let Some(mut b) = val.as_bool() {
+                if ui.checkbox(&mut b, "").changed() {
+                    *val = b.into();
+                    changed = true;
+                }
+            } else if let Some(n) = val.as_f64() {
                 let mut x = n;
                 let suffix = if key == "rotation" { "°" } else { " mm" };
                 if ui.add(egui::DragValue::new(&mut x).speed(0.1).max_decimals(3).suffix(suffix)).changed() {
