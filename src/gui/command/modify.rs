@@ -17,6 +17,8 @@ pub struct ModifyState {
     pub offset: f64,
     /// The item picked for OFFSET (waiting for the side) or as FILLET/CHAMFER's first object.
     pub(super) target: Option<u64>,
+    /// Where FILLET/CHAMFER's first object was picked (the pick decides which side is kept).
+    pub(super) target_at: Option<Point>,
     /// ARRAY: polar or rectangular, and the numbers typed so far on the command line.
     pub(super) polar: bool,
     args: Vec<f64>,
@@ -168,11 +170,12 @@ impl App {
             }
             (Cmd::Fillet | Cmd::Chamfer, Entry::Point(p)) => {
                 let id = self.item_at(p)?;
-                // Second pick (AutoCAD: "Select second object"): join the two objects at their corner.
+                // Second pick (AutoCAD: "Select second object"): fillet/chamfer between the two objects.
                 if let Some(first) = self.cmdline.modify.target.take()
                     && first != id
                 {
-                    return self.apply_to(&[first, id], |d, ids| corner(d, ids, None));
+                    let a = (first, self.cmdline.modify.target_at.take().unwrap_or(p));
+                    return self.apply_to(&[], |d, _| two_objects(d, cmd, a, (id, p), radius, chamfer).map(|_| ()));
                 }
                 // A corner inside one shape.
                 if self.apply_to(&[id], |d, ids| corner(d, ids, Some(p))).is_ok() {
@@ -187,6 +190,7 @@ impl App {
                     return self.apply_to(&[id, other], |d, ids| corner(d, ids, None));
                 }
                 self.cmdline.modify.target = Some(id);
+                self.cmdline.modify.target_at = Some(p);
                 Ok(())
             }
             (Cmd::Trim, Entry::Point(p)) => {
@@ -327,5 +331,13 @@ impl App {
             d.touch();
         }
         Ok(out)
+    }
+}
+
+/// FILLET or CHAMFER between two picked objects; each pick says which side of its object is kept.
+pub(super) fn two_objects(d: &mut Document, cmd: Cmd, a: (u64, Point), b: (u64, Point), radius: f64, chamfer: f64) -> Result<Vec<u64>, String> {
+    match cmd {
+        Cmd::Fillet => d.fillet_objects(a, b, radius),
+        _ => d.chamfer_objects(a, b, chamfer, chamfer),
     }
 }

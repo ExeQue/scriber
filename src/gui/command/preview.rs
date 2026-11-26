@@ -19,7 +19,10 @@ impl App {
         let mut trial = Document::default();
         trial.s = d.s.clone();
         let done = match m.target {
-            Some(first) if first != id => run(&mut trial, &[first, id], None).is_ok(),
+            Some(first) if first != id => {
+                let a = (first, m.target_at.unwrap_or(p));
+                super::modify::two_objects(&mut trial, cmd, a, (id, p), m.radius, m.chamfer).is_ok()
+            }
             _ => {
                 run(&mut trial, &[id], Some(p)).is_ok()
                     || self.other_end_at(&d, id, p).is_some_and(|other| run(&mut trial, &[id, other], None).is_ok())

@@ -49,7 +49,13 @@ impl App {
             }
             (Cmd::Text, Step::Content) => {
                 ui.label("Text");
-                ui.text_edit_singleline(&mut self.cmdline.input).request_focus();
+                // Edits the command line's input, so Enter here or there places the text.
+                let field = ui.text_edit_singleline(&mut self.cmdline.input);
+                if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    self.submit(None);
+                } else if !field.has_focus() && !ui.ctx().text_edit_focused() {
+                    field.request_focus();
+                }
             }
             (Cmd::Text, _) => {
                 ui.horizontal(|ui| {
