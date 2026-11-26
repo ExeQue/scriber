@@ -170,9 +170,9 @@ mod tests {
     #[test]
     fn guide_lines_are_never_exported() {
         let mut d = Document::new(100.0, 50.0);
-        d.add("xl", Op::Cut, false, Shape::Guide(crate::model::Guide::Xline { x: 10.0, y: 10.0, angle: 0.0 }));
+        d.add("xl", Op::Cut, Shape::Guide(crate::model::Guide::Xline { x: 10.0, y: 10.0, angle: 0.0 }));
         let mark = crate::model::Guide::Centermark { cx: 50.0, cy: 25.0, r: 5.0, of: None };
-        d.add("cm", Op::Cut, false, Shape::Guide(mark));
+        d.add("cm", Op::Cut, Shape::Guide(mark));
         for annotations in [false, true] {
             assert!(!svg(&d.s, annotations).contains("<path"), "{}", svg(&d.s, annotations));
         }

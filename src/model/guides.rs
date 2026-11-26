@@ -228,11 +228,11 @@ mod tests {
     #[test]
     fn centre_lines_and_marks_follow_their_items() {
         let mut d = Document::new(100.0, 100.0);
-        let a = d.add("a", Op::Cut, false, Shape::path(Contour::line([0.0, 0.0], [20.0, 0.0])));
-        let b = d.add("b", Op::Cut, false, Shape::path(Contour::line([20.0, 10.0], [0.0, 10.0])));
-        let c = d.add("c", Op::Cut, false, Shape::path(Contour::circle(50.0, 50.0, 10.0)));
-        let cl = d.add("cl", Op::NoLine, false, Shape::Guide(Guide::Centerline { x1: 0.0, y1: 0.0, x2: 0.0, y2: 0.0, of: vec![a, b] }));
-        let cm = d.add("cm", Op::NoLine, false, Shape::Guide(Guide::Centermark { cx: 0.0, cy: 0.0, r: 0.0, of: Some(c) }));
+        let a = d.add("a", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [20.0, 0.0])));
+        let b = d.add("b", Op::Cut, Shape::path(Contour::line([20.0, 10.0], [0.0, 10.0])));
+        let c = d.add("c", Op::Cut, Shape::path(Contour::circle(50.0, 50.0, 10.0)));
+        let cl = d.add("cl", Op::NoOutput, Shape::Guide(Guide::Centerline { x1: 0.0, y1: 0.0, x2: 0.0, y2: 0.0, of: vec![a, b] }));
+        let cm = d.add("cm", Op::NoOutput, Shape::Guide(Guide::Centermark { cx: 0.0, cy: 0.0, r: 0.0, of: Some(c) }));
         assert_eq!(d.item(cl).unwrap().shape, Shape::Guide(Guide::Centerline { x1: 0.0, y1: 5.0, x2: 20.0, y2: 5.0, of: vec![a, b] }));
         d.transform(&[c], &Transform { scale_x: 2.0, scale_y: 2.0, ..Default::default() });
         let Shape::Guide(Guide::Centermark { cx, cy, r, .. }) = d.item(cm).unwrap().shape else { panic!() };

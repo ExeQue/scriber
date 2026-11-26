@@ -72,7 +72,7 @@ impl Document {
         Ok(changed)
     }
 
-    /// A new item like `base` (name, op, fill, group) with another shape, right after it in the list.
+    /// A new item like `base` (name, op, group) with another shape, right after it in the list.
     fn spawn(&mut self, base: &Item, shape: Shape) -> u64 {
         let id = self.s.next_id;
         self.s.next_id += 1;
@@ -294,15 +294,15 @@ mod tests {
     use super::*;
 
     fn line(d: &mut Document, a: Point, b: Point) -> u64 {
-        d.add("line", Op::Cut, false, Shape::path(Contour::line(a, b)))
+        d.add("line", Op::Cut, Shape::path(Contour::line(a, b)))
     }
 
     #[test]
     fn stretch_moves_only_enclosed_points() {
         let mut d = Document::new(100.0, 100.0);
-        let r = d.add("r", Op::Cut, false, Shape::path(Contour::rect(0.0, 0.0, 10.0, 10.0, 0.0)));
-        let far = d.add("far", Op::Cut, false, Shape::path(Contour::rect(50.0, 50.0, 10.0, 10.0, 0.0)));
-        let dim = d.add("dim", Op::Annotate, false, Shape::Dimension { x1: 0.0, y1: 20.0, x2: 10.0, y2: 20.0, offset: 5.0 });
+        let r = d.add("r", Op::Cut, Shape::path(Contour::rect(0.0, 0.0, 10.0, 10.0, 0.0)));
+        let far = d.add("far", Op::Cut, Shape::path(Contour::rect(50.0, 50.0, 10.0, 10.0, 0.0)));
+        let dim = d.add("dim", Op::NoOutput, Shape::Dimension { x1: 0.0, y1: 20.0, x2: 10.0, y2: 20.0, offset: 5.0 });
         let changed = d.stretch(&[], [8.0, -1.0, 5.0, 30.0], 5.0, 0.0).unwrap();
         assert_eq!(changed, vec![r, dim]);
         assert_eq!(d.bbox(&[r]).unwrap(), [0.0, 0.0, 15.0, 10.0]);
@@ -314,7 +314,7 @@ mod tests {
     #[test]
     fn explode_and_join_round_trip() {
         let mut d = Document::new(100.0, 100.0);
-        let r = d.add("r", Op::Score, false, Shape::path(Contour::rect(0.0, 0.0, 20.0, 10.0, 2.0)));
+        let r = d.add("r", Op::Score, Shape::path(Contour::rect(0.0, 0.0, 20.0, 10.0, 2.0)));
         let parts = d.explode(&[r]).unwrap();
         assert_eq!(parts.len(), 8);
         assert!(d.s.items.iter().all(|i| i.op == Op::Score && shape_kind(&i.shape) != "closed shape"));
@@ -324,7 +324,7 @@ mod tests {
         assert!(c.closed && c.vertices.len() == 8);
         assert!((c.area() - Contour::rect(0.0, 0.0, 20.0, 10.0, 2.0).area()).abs() < 1e-9);
         // A compound path explodes into its contours; a lone line does not explode.
-        let plate = d.add("p", Op::Cut, false, Shape::Path { contours: vec![Contour::rect(50.0, 50.0, 20.0, 20.0, 0.0), Contour::circle(60.0, 60.0, 3.0)] });
+        let plate = d.add("p", Op::Cut, Shape::Path { contours: vec![Contour::rect(50.0, 50.0, 20.0, 20.0, 0.0), Contour::circle(60.0, 60.0, 3.0)] });
         assert_eq!(d.explode(&[plate]).unwrap().len(), 2);
         let l = line(&mut d, [0.0, 50.0], [10.0, 50.0]);
         assert!(d.explode(&[l]).is_err());
@@ -353,7 +353,7 @@ mod tests {
         let ids = d.break_item(l, [10.0, 0.0], Some([20.0, 0.0])).unwrap();
         assert_eq!(ids.len(), 2);
         assert!((d.item(ids[1]).unwrap().shape.metrics().length - 10.0).abs() < 1e-9);
-        let wall = d.add("wall", Op::NoLine, false, Shape::Guide(Guide::Xline { x: 50.0, y: 0.0, angle: 90.0 }));
+        let wall = d.add("wall", Op::NoOutput, Shape::Guide(Guide::Xline { x: 50.0, y: 0.0, angle: 90.0 }));
         d.extend(ids[1], [29.0, 0.0], &[]).unwrap();
         assert!((d.item(ids[1]).unwrap().shape.metrics().length - 30.0).abs() < 1e-9, "extended to the guide line");
         d.lengthen(ids[0], [9.0, 0.0], None, Some(4.0)).unwrap();
@@ -366,7 +366,7 @@ mod tests {
         let mut d = Document::new(100.0, 100.0);
         let a = line(&mut d, [0.0, 0.0], [10.0, 0.0]);
         let b = line(&mut d, [0.0, 5.0], [40.0, 5.0]);
-        let c = d.add("c", Op::Score, false, Shape::path(Contour::circle(50.0, 50.0, 5.0)));
+        let c = d.add("c", Op::Score, Shape::path(Contour::circle(50.0, 50.0, 5.0)));
         d.group(&[a, c]).unwrap();
         assert_eq!(d.expand_groups(&[c]), vec![c, a]);
         let copies = d.duplicate(&[a, c], 1.0, 1.0);

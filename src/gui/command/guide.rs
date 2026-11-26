@@ -16,7 +16,7 @@ fn angle(a: Point, b: Point) -> f64 {
 impl App {
     fn add_guide(&mut self, name: &str, g: Guide) -> Result<(), String> {
         self.apply_ids(&[], |d, _| {
-            let id = d.add(name, Op::NoLine, false, Shape::Guide(g));
+            let id = d.add(name, Op::NoOutput, Shape::Guide(g));
             d.selection = vec![id];
             Ok(())
         })
