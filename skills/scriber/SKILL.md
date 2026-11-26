@@ -77,8 +77,10 @@ Tools that change items reply compactly (id, name, layer, op, kind, bounding box
 - **Undo is shared.** `undo` takes back the last change, whoever made it, the person's included.
   Only undo your own step, right after you made it; if the person edited in between, fix your change
   with a new edit instead.
-- `open` and `new_document` replace what the person sees, and `save` writes their file: do these
-  only when asked. Both refuse unsaved changes unless forced; never force without asking.
+- `open` and `new_document` open a new tab and leave the person's active tab as it is (`activate`
+  defaults to false; pass `activate: true` only when they want to see it). `save` writes their file
+  and `close_document` refuses unsaved changes unless told to discard them: do these only when asked,
+  and never discard changes without asking.
 - Leave layers the person locked or hid as they are.
 
 ## Review comments
@@ -119,8 +121,17 @@ To follow a review:
 - `search_xtool_materials` searches xTool Studio's local cache (only materials the person opened
   there); `import_xtool_materials` copies the ones they pick into their Scriber library for one of
   their machines. `import_xtool_project` takes the settings of an `.xs` project.
-- `export_library` and `import_library` write and merge `.scrlib` files to share machines and
-  materials with other Scriber users.
+- `export_library` and `import_library` write and merge `.scrlib` files (or library zips, `.zip`)
+  to share machines and materials with other Scriber users.
+- **Library sources**: people can subscribe to machine and material libraries published in public
+  GitHub repositories with `subscribe_library` (`owner/repo`, `owner/repo@v1.2` or a link; a `track`
+  follows a branch, a tag, the latest release or one commit). Their items are read-only; saving one
+  with `save_machine`/`save_material` under the same id makes the person's own copy, which wins.
+  The editor syncs sources at start at most once a day; `sync_library_sources` syncs now and says
+  what changed. `list_library_sources` shows them, `set_library_source` changes the track or turns
+  one off, `unsubscribe_library` removes one (ask first).
+- To publish their own machines and materials, `export_library_repository` writes them into a
+  folder (new, or an existing git repository updated in place); the person commits and pushes.
 - Add or correct a material with `save_material` and `set_material_setting`. Ask before changing
   numbers the person already tuned.
 
