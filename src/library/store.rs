@@ -67,7 +67,22 @@ pub fn load(path: &Path) -> anyhow::Result<Library> {
     };
     anyhow::ensure!(file.version <= VERSION, "the library was saved by a newer Scriber (version {}); please update", file.version);
     migrate_engrave(&mut file);
+    fill_xtool_ids(&mut file);
     Ok(merged(file))
+}
+
+/// Edited built-in machines saved before the xTool ids existed get them from the built-in.
+fn fill_xtool_ids(file: &mut LibraryFile) {
+    let builtin = builtin_machines();
+    for m in &mut file.machines {
+        let Some(b) = builtin.iter().find(|b| b.id == m.id) else { continue };
+        if m.xtool.is_none() {
+            m.xtool = b.xtool.clone();
+        }
+        for l in m.lasers.iter_mut().filter(|l| l.xtool_laser.is_none()) {
+            l.xtool_laser = b.laser(&l.id).and_then(|bl| bl.xtool_laser.clone());
+        }
+    }
 }
 
 /// "engrave" (line) and "fill" both read as Engrave now; drop the duplicates that leaves.
@@ -114,8 +129,8 @@ mod tests {
     }
 
     fn k40() -> Machine {
-        let laser = Laser { id: "co2".into(), name: "CO2 tube".into(), kind: LaserKind::Co2, power_w: 40.0, ops: Operation::ALL.to_vec(), area: None };
-        Machine { id: "k40".into(), name: "K40".into(), vendor: String::new(), model: String::new(), width: 300.0, height: 200.0, lasers: vec![laser], notes: String::new(), source: String::new() }
+        let laser = Laser { id: "co2".into(), name: "CO2 tube".into(), kind: LaserKind::Co2, power_w: 40.0, ops: Operation::ALL.to_vec(), area: None, xtool_laser: None };
+        Machine { id: "k40".into(), name: "K40".into(), vendor: String::new(), model: String::new(), width: 300.0, height: 200.0, lasers: vec![laser], notes: String::new(), source: String::new(), xtool: None }
     }
 
     #[test]
@@ -153,6 +168,21 @@ mod tests {
         assert!(back.material("black-acrylic-3mm").is_none(), "deleted built-ins stay deleted");
         assert!(back.material("basswood-plywood-3mm").is_some());
         assert_eq!(back.machines.len(), builtin_machines().len(), "an edited built-in is not listed twice");
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn edited_m2_from_before_xtool_ids_gets_them() {
+        let path = temp("xtool-ids");
+        let mut m2 = builtin_machines().into_iter().find(|m| m.id == "xtool-m2").unwrap();
+        m2.xtool = None;
+        m2.lasers.iter_mut().for_each(|l| l.xtool_laser = None);
+        m2.notes = "mine".into();
+        let file = serde_json::json!({"version": 1, "machines": [m2]});
+        std::fs::write(&path, file.to_string()).unwrap();
+        let back = load(&path).unwrap();
+        let m = back.machine("xtool-m2").unwrap();
+        assert_eq!((m.notes.as_str(), m.xtool_device(), m.lasers[3].xtool_laser.as_deref()), ("mine", Some("JS002"), Some("laser_red_3W")));
         std::fs::remove_dir_all(path.parent().unwrap()).ok();
     }
 

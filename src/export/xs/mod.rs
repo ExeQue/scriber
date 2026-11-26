@@ -7,7 +7,7 @@ mod path;
 #[cfg(test)]
 mod tests;
 
-use crate::library::{Library, Operation, Setting, xtool};
+use crate::library::{Library, Operation, Setting};
 use crate::model::layer::op_operation;
 use crate::model::{Op, Shape, State, geom};
 use anyhow::{Context, bail};
@@ -70,16 +70,16 @@ struct Group {
 }
 
 /// The xTool device code, its short name, the module string ("laser_blue_10W") and watts.
-fn machine(s: &State, lib: &Library, notes: &mut Vec<String>) -> anyhow::Result<(&'static str, String, String, f64)> {
+fn machine(s: &State, lib: &Library, notes: &mut Vec<String>) -> anyhow::Result<(String, String, String, f64)> {
     let Some(id) = s.machine.as_deref() else {
         notes.push("No machine chosen: written for the xTool M2 with the 10 W blue laser.".into());
-        return Ok(("JS002", "M2".into(), "laser_blue_10W".into(), 10.0));
+        return Ok(("JS002".into(), "M2".into(), "laser_blue_10W".into(), 10.0));
     };
-    let code = xtool::device_for(id).with_context(|| format!("xTool Studio export needs an xTool machine; {id} is not one (supported: xtool-m2)"))?;
     let m = lib.machine(id).with_context(|| format!("unknown machine {id}"))?;
+    let code = m.xtool_device().with_context(|| format!("{} has no xTool device code; set the xTool device code for this machine in Machines & materials", m.name))?;
     let laser = s.laser.as_deref().and_then(|l| m.laser(l)).or(m.lasers.first()).with_context(|| format!("{} has no laser module", m.name))?;
-    let w = laser.power_w;
-    Ok((code, m.model.clone(), format!("laser_{}_{w}W", xtool::source_for(laser.kind)), w))
+    let name = m.xtool.as_ref().map(|x| x.name.trim()).filter(|n| !n.is_empty()).unwrap_or(&m.model);
+    Ok((code.to_string(), name.to_string(), laser.xtool_module(), laser.power_w))
 }
 
 /// The patch overrides: xTool's defaults for the type with the layer's numbers on top.
@@ -227,7 +227,7 @@ pub fn xs(s: &State, lib: &Library, name: &str) -> anyhow::Result<Xs> {
     zip.add_directory(format!("{canvas_dir}/"), opts)?;
     file(&mut zip, &format!("{canvas_dir}/displays-0.json"), json!({"canvasId": canvas_id, "chunkIndex": 0, "displays": displays}).to_string().as_bytes())?;
     zip.add_directory("devices/", opts)?;
-    let device = files::device(code, &ext_name, watts, &canvas_id, &profile_ids, patches, bindings);
+    let device = files::device(&code, &ext_name, watts, &canvas_id, &profile_ids, patches, bindings);
     file(&mut zip, &format!("devices/device-{device_id}.json"), device.to_string().as_bytes())?;
     if cover.is_some() || !resources.is_empty() {
         zip.add_directory("resources/", opts)?;

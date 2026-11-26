@@ -39,23 +39,22 @@ pub struct XtoolMaterial {
     pub settings: Vec<XtoolSetting>,
 }
 
-/// xTool device codes → Scriber machine ids. Unknown devices are listed but cannot be imported.
-const DEVICES: [(&str, &str); 1] = [("JS002", "xtool-m2")];
-
-pub fn machine_for(device: &str) -> Option<&'static str> {
-    DEVICES.iter().find(|(d, _)| *d == device).map(|(_, m)| *m)
+/// The machine in `lib` whose xTool device code is `device` (set in the machine's definition).
+/// Devices without one are listed but cannot be imported.
+pub fn machine_for<'a>(lib: &'a Library, device: &str) -> Option<&'a str> {
+    lib.machines.iter().find(|m| m.xtool_device() == Some(device)).map(|m| m.id.as_str())
 }
 
-/// Scriber machine id → xTool device code ("xtool-m2" → "JS002").
-pub fn device_for(machine: &str) -> Option<&'static str> {
-    DEVICES.iter().find(|(_, m)| *m == machine).map(|(d, _)| *d)
-}
+/// Names of device codes seen in xTool's cache that no machine definition has yet.
+const DEVICE_NAMES: [(&str, &str); 1] = [("ZH009", "xTool M1 Ultra")];
 
-/// Names of the device codes seen in xTool's cache; the others are shown by code.
-const DEVICE_NAMES: [(&str, &str); 2] = [("JS002", "xTool M2"), ("ZH009", "xTool M1 Ultra")];
-
-pub fn device_name(device: &str) -> String {
-    DEVICE_NAMES.iter().find(|(d, _)| *d == device).map_or_else(|| format!("xTool device {device}"), |(_, n)| n.to_string())
+/// A device code's name: the machine's (the library's, else a built-in's), else a known name, else the code.
+pub fn device_name(lib: &Library, device: &str) -> String {
+    let named = |ms: &[super::Machine]| ms.iter().find(|m| m.xtool_device() == Some(device)).map(|m| m.name.clone());
+    named(&lib.machines)
+        .or_else(|| named(&super::builtin_machines()))
+        .or_else(|| DEVICE_NAMES.iter().find(|(d, _)| *d == device).map(|(_, n)| n.to_string()))
+        .unwrap_or_else(|| format!("xTool device {device}"))
 }
 
 /// One xTool material with its parameter sets, one per xTool machine type that has settings for it.
@@ -84,18 +83,18 @@ pub fn group(list: Vec<XtoolMaterial>) -> Vec<XtoolGroup> {
 
 impl XtoolGroup {
     /// The machines in `lib` it can be imported for, with their parameter set; `first` (the document's machine) first.
-    pub fn targets<'a>(&'a self, lib: &Library, first: Option<&str>) -> Vec<(&'static str, &'a XtoolMaterial)> {
-        let mut out: Vec<_> = self.sets.iter().filter_map(|x| machine_for(&x.device).filter(|m| !modules(lib, m, x).is_empty()).map(|m| (m, x))).collect();
+    pub fn targets<'a>(&'a self, lib: &'a Library, first: Option<&str>) -> Vec<(&'a str, &'a XtoolMaterial)> {
+        let mut out: Vec<_> = self.sets.iter().filter_map(|x| machine_for(lib, &x.device).filter(|m| !modules(lib, m, x).is_empty()).map(|m| (m, x))).collect();
         out.sort_by_key(|(m, _)| Some(*m) != first);
         out
     }
 
     /// Why it cannot be imported, e.g. "for xTool F1 — not in your machines".
     pub fn reason(&self, lib: &Library) -> String {
-        let mut names: Vec<String> = self.sets.iter().map(|x| device_name(&x.device)).collect();
+        let mut names: Vec<String> = self.sets.iter().map(|x| device_name(lib, &x.device)).collect();
         names.dedup();
         let shown = if names.len() > 3 { format!("{} and {} more", names[..3].join(", "), names.len() - 3) } else { names.join(", ") };
-        if self.sets.iter().any(|x| machine_for(&x.device).is_some_and(|m| lib.machine(m).is_some())) {
+        if self.sets.iter().any(|x| machine_for(lib, &x.device).is_some()) {
             format!("for {shown} — none of its laser modules match yours")
         } else {
             format!("for {shown} — not in your machines")
@@ -125,15 +124,6 @@ fn kind_of(source: &str) -> Option<LaserKind> {
     }
 }
 
-/// xTool's laser source for a module kind (the reverse of `kind_of`).
-pub fn source_for(kind: LaserKind) -> &'static str {
-    match kind {
-        LaserKind::Diode => "blue",
-        LaserKind::Infrared => "red",
-        LaserKind::Co2 => "co2",
-        LaserKind::Fiber => "fiber",
-    }
-}
 
 /// xTool processing types: vector cut → cut, vector engrave (a line) → score, fill → engrave.
 /// Bitmap (image) engraving is skipped: its numbers are tuned for dithered photos, not filled shapes.
@@ -389,10 +379,10 @@ fn source_tag(key: &str) -> String {
 /// Add (or with `overwrite`, replace the earlier import of) an xTool material; returns its Scriber id.
 /// `origin` says where it came from, e.g. "cache" or "project Coaster.xs". Modules the machine lacks are dropped.
 pub fn import(lib: &mut Library, x: &XtoolMaterial, origin: &str, overwrite: bool) -> Result<String, String> {
-    let machine = machine_for(&x.device).ok_or_else(|| format!("{}: xTool device {} has no Scriber machine profile yet", x.name, x.device))?;
-    if lib.machine(machine).is_none() {
-        return Err(format!("{}: the machine {machine} is not in the library", x.name));
-    }
+    let machine = machine_for(lib, &x.device)
+        .map(String::from)
+        .ok_or_else(|| format!("{}: no machine in the library has the xTool device code {} ({})", x.name, x.device, device_name(lib, &x.device)))?;
+    let machine = machine.as_str();
     let settings: Vec<Setting> = x
         .settings
         .iter()

@@ -21,7 +21,7 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
         let lib = &mut ed.lib;
         match action {
             Some(ListAction::Add) => {
-                let m = Machine { id: lib.new_id("New machine"), name: "New machine".into(), vendor: String::new(), model: String::new(), width: 400.0, height: 300.0, lasers: vec![new_laser("laser-1".into())], notes: String::new(), source: String::new() };
+                let m = Machine { id: lib.new_id("New machine"), name: "New machine".into(), vendor: String::new(), model: String::new(), width: 400.0, height: 300.0, lasers: vec![new_laser("laser-1".into())], notes: String::new(), source: String::new(), xtool: None };
                 lib.machines.push(m);
                 ed.machine = lib.machines.len() - 1;
             }
@@ -49,7 +49,7 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
 }
 
 fn new_laser(id: String) -> Laser {
-    Laser { id, name: "Laser".into(), kind: LaserKind::Diode, power_w: 10.0, ops: Operation::ALL.to_vec(), area: None }
+    Laser { id, name: "Laser".into(), kind: LaserKind::Diode, power_w: 10.0, ops: Operation::ALL.to_vec(), area: None, xtool_laser: None }
 }
 
 fn form(ui: &mut egui::Ui, m: &mut Machine, index: usize, confirm: &mut Option<Confirm>) {
@@ -74,7 +74,33 @@ fn form(ui: &mut egui::Ui, m: &mut Machine, index: usize, confirm: &mut Option<C
         });
     });
     section(ui, "Lasers", "The laser modules this machine can use, and what each one can do.", |ui| lasers(ui, m, index, confirm));
+    section(ui, "Other software", "How other laser software knows this machine; needed to export projects for it.", |ui| other_software(ui, m));
     notes_section(ui, &mut m.notes, &mut m.source);
+}
+
+/// xTool Studio's device code and name, and each laser's module string (empty = derived, shown greyed).
+fn other_software(ui: &mut egui::Ui, m: &mut Machine) {
+    egui::Grid::new("machine_other").num_columns(2).spacing([8.0, 8.0]).show(ui, |ui| {
+        let x = m.xtool.get_or_insert_with(Default::default);
+        field_label(ui, "xTool device code").on_hover_text("xTool Studio's code for this machine, e.g. JS002 for the M2; needed for .xs export");
+        ui.add(egui::TextEdit::singleline(&mut x.device).desired_width(120.0).hint_text("e.g. JS002"));
+        ui.end_row();
+        field_label(ui, "xTool name").on_hover_text("xTool Studio's short name; empty = the model");
+        ui.add(egui::TextEdit::singleline(&mut x.name).desired_width(120.0).hint_text(m.model.as_str()));
+        ui.end_row();
+        for (i, l) in m.lasers.iter_mut().enumerate() {
+            field_label(ui, &format!("xTool module: {}", l.name)).on_hover_text("xTool Studio's name for this laser module; empty = derived from type and power");
+            let mut text = l.xtool_laser.clone().unwrap_or_default();
+            if ui.add(egui::TextEdit::singleline(&mut text).id_salt(("xtool_laser", i)).desired_width(160.0).hint_text(l.xtool_default())).changed() {
+                l.xtool_laser = (!text.trim().is_empty()).then_some(text);
+            }
+            ui.end_row();
+        }
+    });
+    // An untouched section adds nothing to the machine.
+    if m.xtool.as_ref().is_some_and(|x| x.device.is_empty() && x.name.is_empty()) {
+        m.xtool = None;
+    }
 }
 
 /// One table row per laser module.
