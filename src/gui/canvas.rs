@@ -63,8 +63,9 @@ impl App {
             pointer
         };
         self.pointer_mm = pointer;
+        // Keep drawing while the pointer rests: the acquire ring fills and the point is taken in time.
         if self.tracker.waiting() {
-            ctx.request_repaint_after(super::tracking::ACQUIRE);
+            ctx.request_repaint();
         }
         self.dropped_files(&ctx, pointer);
         self.dimension_input(&response);

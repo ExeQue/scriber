@@ -177,6 +177,15 @@ impl Tracker {
         }
     }
 
+    /// The point being rested on and how far the rest timer has run (0..1), for a small progress ring.
+    pub fn progress(&self, now: Instant) -> Option<(Point, f32)> {
+        let (k, since, done) = self.rest?;
+        if done || !k[2].is_infinite() {
+            return None;
+        }
+        Some(([k[0], k[1]], (now.duration_since(since).as_secs_f32() / ACQUIRE.as_secs_f32()).min(1.0)))
+    }
+
     /// Something is about to be acquired (the canvas must repaint once the time is up).
     pub fn waiting(&self) -> bool {
         self.rest.is_some_and(|(_, _, done)| !done)
@@ -267,6 +276,17 @@ impl App {
     /// Acquired points (+), and the dashed path(s) the pointer is locked to with what they are.
     pub(super) fn paint_tracking(&self, painter: &egui::Painter, rect: egui::Rect) {
         let plus = Stroke::new(1.5, Color32::from_rgb(255, 170, 0));
+        // While the pointer rests on a snap point: a ring that fills up until the point is acquired.
+        if self.aids.otrack
+            && let Some((p, f)) = self.tracker.progress(Instant::now())
+        {
+            let c = self.w2s(p);
+            let pts: Vec<_> = (0..=32).map(|k| {
+                let a = -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * f * k as f32 / 32.0;
+                c + vec2(a.cos(), a.sin()) * 9.0
+            }).collect();
+            painter.add(egui::Shape::line(pts, plus));
+        }
         if self.aids.otrack {
             for p in &self.tracker.points {
                 let at = self.w2s(*p);
