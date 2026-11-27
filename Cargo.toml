@@ -1,6 +1,6 @@
 [package]
 name = "scriber"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.95"
 description = "2D CAD for laser cutters, drivable by AI agents over MCP"
