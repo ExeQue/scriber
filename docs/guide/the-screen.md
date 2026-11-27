@@ -32,9 +32,17 @@ The ribbon under the menu bar holds every tool, grouped in tabs:
 | **Laser** | Machine and material, export, Machines & materials… |
 | **View** | Zoom, Preview, toggles for the grid, guide lines, comments, measure on hover and the command line, and **Theme ▾** |
 
+![The Laser tab of the ribbon: machine, laser and material pickers, the export buttons and Machines & materials](/screenshots/ribbon-laser.webp)
+
+*The Laser tab: machine, laser module and material, the export buttons, and the library.*
+
 Hover a button for its name, a one-line help and its shortcut. Buttons with a small arrow (circle,
 arc, rectangle, polygon) have several ways of drawing; see [Drawing](./drawing). The ⌃ at the right
 folds the ribbon to just the tab names.
+
+![The Circle split button held down: a flyout lists Centre and radius, 2 points (diameter) and 3 points](/screenshots/split-button-flyout.webp)
+
+*Hold the Circle button down to get its ways of drawing.*
 
 ## Themes
 
@@ -64,6 +72,10 @@ length and angle, width and height, radius and diameter, an arc's angle. To use 
 - type a number: it goes into the first field;
 - <kbd>Tab</kbd> locks it and moves to the next field (the rest keeps following the mouse);
 - <kbd>Enter</kbd> places the point.
+
+![Line tool after the first point: the card with Length and Angle, and the same fields at the cursor](/screenshots/dynamic-input.webp)
+
+*Drawing a line: the card (top left) and the box at the cursor show the length and angle.*
 
 A length, width, height, radius or diameter you type stays locked as a dimension of the new shape
 (see [Constraints and dimensions](./constraints)).
@@ -95,10 +107,18 @@ Right-click on the canvas:
 
 Right-clicking a shape selects it first.
 
+![The right-click menu on a selected shape, with the selection grips and the properties panel](/screenshots/context-menu.webp)
+
+*Right-click on a selected shape with no tool running.*
+
 ## Selecting
 
 - Click a shape to select it; hovering highlights what a click would pick and, after a moment,
   shows its name, laser operation and size.
+
+![Hovering a circle: it glows and a tooltip gives its name, layer, size, length, area and constraints](/screenshots/hover-tooltip.webp)
+
+*Hovering the coaster: the highlight shows what a click would pick, the tooltip describes it.*
 - Drag **left to right** for a window selection: only shapes fully inside.
 - Drag **right to left** for a crossing selection: anything the box touches.
 - <kbd>Shift</kbd>+click removes a shape from the selection.

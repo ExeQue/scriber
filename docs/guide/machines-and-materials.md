@@ -31,6 +31,10 @@ A list on the left, the selected machine's form on the right: name, brand, model
 laser modules (type, power in watts, what each can do: cut, score, engrave). You can change the
 built-in machines; your version wins over the built-in one.
 
+![The Machines & materials window on the Machines page: the machine list, and the form for the xTool M2 with its laser modules](/screenshots/library-machines.webp)
+
+*The Machines page.*
+
 ### Materials
 
 Per material: name, **kind** (paper & card, wood, plywood & MDF, acrylic, leather, fabric & felt,

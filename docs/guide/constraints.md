@@ -54,6 +54,10 @@ They work on the selection when it fits (two lines selected + Parallel = paralle
 each selected line horizontal), otherwise they ask you to click. The first thing you pick stays put,
 the second moves. Right-click → *Add constraint ▸* offers the same.
 
+![The Add constraint submenu of the right-click menu, listing geometric and dimensional constraints with their icons](/screenshots/context-add-constraint.webp)
+
+*Right-click → Add constraint ▸.*
+
 **Auto constrain** looks at the selection and adds the constraints it can see (horizontal and
 vertical lines, joined ends, …) within a small tolerance. Useful before changing a size, so the
 shape keeps its form.

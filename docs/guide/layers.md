@@ -31,6 +31,10 @@ On the right, above the properties. Per layer:
 - move up and down, delete (only when the layer is empty and not the last one);
 - a fold-out with the layer's own laser settings (below).
 
+![The Layers dialog: each layer with colour, name, show and lock toggles, operation, move and delete buttons](/screenshots/edit-layers.webp)
+
+*Edit layers… opens this dialog with the same controls, plus Add layer.*
+
 **Add layer** adds one with the current layer's operation and makes it current. To move shapes,
 select them and pick a layer in the properties panel (*Move to layer* for several).
 
