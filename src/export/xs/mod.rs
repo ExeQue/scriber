@@ -111,32 +111,42 @@ fn overrides(kind: Kind, laser: &str, s: Option<&Setting>) -> Map<String, Value>
     v
 }
 
-/// The nearest colour to `rgb` that `taken` does not hold: one channel moved by ±1, ±2, … (xTool keys
-/// its layers by colour, so two Scriber layers with one colour would merge).
-fn free_colour(rgb: [u8; 3], taken: impl Fn(&str) -> bool) -> [u8; 3] {
-    let tag = |[r, g, b]: [u8; 3]| format!("#{r:02x}{g:02x}{b:02x}");
-    if !taken(&tag(rgb)) {
-        return rgb;
+/// xTool Studio's layer palette, in its order (`router.*.js` in xTool Studio 1.9.11: the map of
+/// layer colours to index 1-16). On open xTool snaps every layer colour to the nearest of these
+/// (squared RGB distance, first wins on a tie), so two near colours become one layer.
+const PALETTE: [[u8; 3]; 16] = [
+    [0xeb, 0x3d, 0xba], [0xfe, 0x00, 0x02], [0xff, 0x7f, 0x56], [0xe1, 0xc0, 0x00],
+    [0xc2, 0x99, 0x00], [0x96, 0xd7, 0x1d], [0x00, 0xc7, 0x15], [0x00, 0x89, 0x7b],
+    [0x23, 0x66, 0xff], [0x00, 0xbe, 0xfe], [0x81, 0x70, 0xef], [0xa9, 0x58, 0xff],
+    [0x58, 0x2f, 0xa8], [0xd9, 0xd9, 0xd9], [0x84, 0x8b, 0x96], [0x00, 0x00, 0x00],
+];
+
+fn hex(tag: &str) -> [u8; 3] {
+    let v = u32::from_str_radix(&tag[1..], 16).unwrap_or(0);
+    [(v >> 16) as u8, (v >> 8) as u8, v as u8]
+}
+
+fn distance(a: [u8; 3], b: [u8; 3]) -> i32 {
+    (0..3).map(|i| (a[i] as i32 - b[i] as i32).pow(2)).sum()
+}
+
+/// The palette slot xTool snaps `rgb` to.
+fn slot(rgb: [u8; 3]) -> usize {
+    (0..PALETTE.len()).min_by_key(|&i| distance(rgb, PALETTE[i])).unwrap()
+}
+
+/// The colour a layer is written with: its own when no earlier layer snaps to the same palette slot,
+/// else the nearest palette colour no earlier layer holds. None when all 16 slots are taken.
+fn layer_colour(rgb: [u8; 3], taken: &[usize]) -> Option<[u8; 3]> {
+    if !taken.contains(&slot(rgb)) {
+        return Some(rgb);
     }
-    for step in 1..=255i16 {
-        for ch in 0..3 {
-            for v in [rgb[ch] as i16 + step, rgb[ch] as i16 - step] {
-                let mut c = rgb;
-                c[ch] = match u8::try_from(v) {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                };
-                if !taken(&tag(c)) {
-                    return c;
-                }
-            }
-        }
-    }
-    rgb // ponytail: only reached with 766+ layers of one colour
+    (0..PALETTE.len()).filter(|i| !taken.contains(i)).min_by_key(|&i| distance(rgb, PALETTE[i])).map(|i| PALETTE[i])
 }
 
 /// The document as an xTool Studio project. Every shown layer becomes its own xTool colour layer
-/// (a colour another layer already has is nudged to the nearest free one). No-output layers go in
+/// (xTool snaps layer colours to its 16-colour palette, so a layer whose colour lands on an
+/// earlier layer's palette slot gets the nearest free palette colour). No-output layers go in
 /// as reference unless `include_no_output` is false: bound as score (images as image engraving) with
 /// a faint patch and listed in `ignoredDisplayIds`, as xTool Studio stores "no output";
 /// hidden layers, guides and dimensions are left out; text goes out as its glyph outlines; images
@@ -152,7 +162,11 @@ pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyh
     let mut resources = std::collections::BTreeMap::new();
     let mut z = 0;
     for layer in s.layers.iter().filter(|l| l.visible && (include_no_output || l.op != Op::NoOutput)) {
-        let [r, g, b] = free_colour(layer.rgb(), |t| layer_data.contains_key(t));
+        let taken: Vec<usize> = layer_data.keys().map(|t| slot(hex(t))).collect();
+        let [r, g, b] = layer_colour(layer.rgb(), &taken).unwrap_or_else(|| {
+            notes.push(format!("Layer {}: xTool Studio has 16 layer colours, all in use; it shares one with another layer.", layer.name));
+            layer.rgb()
+        });
         let tag = format!("#{r:02x}{g:02x}{b:02x}");
         let lasered = layer.op != Op::NoOutput;
         for item in s.items.iter().filter(|i| i.layer == layer.id) {

@@ -157,30 +157,34 @@ fn round_trip() {
 
 #[test]
 fn same_colour_layers_stay_apart() {
+    // Three cut layers with the default cut colour: xTool snaps colours to its palette, so each must
+    // get its own palette slot or xTool merges them.
     let mut d = Document::new(100.0, 100.0);
-    d.add("a", Op::Cut, Shape::path(Contour::rect(10.0, 10.0, 20.0, 20.0, 0.0)));
+    d.add("a", Op::Cut, Shape::path(Contour::rect(10.0, 10.0, 10.0, 10.0, 0.0)));
     let second = d.add_layer("Second cut", Op::Cut);
-    d.add_to(second, "b", Shape::path(Contour::rect(50.0, 10.0, 20.0, 20.0, 0.0)));
-    let rgb = d.s.layers.iter().find(|l| l.op == Op::Cut).unwrap().rgb();
-    d.s.layer_mut(second).unwrap().color = Some(rgb);
-    let x = xs(&d.s, &lib(), "Twins", true).unwrap();
-    assert_eq!(x.layers, 2);
+    d.add_to(second, "b", Shape::path(Contour::rect(30.0, 10.0, 10.0, 10.0, 0.0)));
+    let third = d.add_layer("Third cut", Op::Cut);
+    d.add_to(third, "c", Shape::path(Contour::rect(50.0, 10.0, 10.0, 10.0, 0.0)));
+    let x = xs(&d.s, &lib(), "Triplets", true).unwrap();
+    assert_eq!(x.layers, 3);
     let mut zip = archive(&x.bytes);
     let canvas = read(&mut zip, "project.json")["activeCanvasId"].as_str().unwrap().to_string();
     let layer_data = read(&mut zip, &format!("canvases/{canvas}.json"))["layerData"].clone();
     let names: Vec<&str> = layer_data.as_object().unwrap().values().map(|l| l["name"].as_str().unwrap()).collect();
-    assert!(names.contains(&"Second cut") && names.len() == 2, "{names:?}");
+    assert!(names.contains(&"Second cut") && names.contains(&"Third cut") && names.len() == 3, "{names:?}");
     let displays = read(&mut zip, &format!("canvases/{canvas}/displays-0.json"))["displays"].as_array().unwrap().clone();
     let tags: Vec<&str> = displays.iter().map(|el| el["layerTag"].as_str().unwrap()).collect();
-    assert_ne!(tags[0], tags[1]);
+    assert_eq!(super::hex(tags[0]), Op::Cut.rgb(), "the first layer keeps its colour");
     for el in &displays {
         let tag = el["layerTag"].as_str().unwrap();
         assert!(layer_data.get(tag).is_some());
         assert_eq!(format!("#{:06x}", el["stroke"]["color"].as_u64().unwrap()), tag, "the element's colour is its layer's");
     }
-    // The nudge is one step on one channel.
-    let ch = |t: &str| (0..3).map(|i| u8::from_str_radix(&t[1 + 2 * i..3 + 2 * i], 16).unwrap() as i32).collect::<Vec<_>>();
-    assert_eq!(ch(tags[0]).iter().zip(ch(tags[1])).map(|(a, b)| (a - b).abs()).sum::<i32>(), 1);
+    // Distinct after xTool's snap to its palette.
+    let mut slots: Vec<usize> = tags.iter().map(|t| super::slot(super::hex(t))).collect();
+    slots.sort();
+    slots.dedup();
+    assert_eq!(slots.len(), 3, "{tags:?}");
 }
 
 #[test]
