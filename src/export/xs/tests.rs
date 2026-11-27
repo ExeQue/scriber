@@ -96,6 +96,7 @@ fn round_trip() {
     let back = read_project(&path).unwrap();
     std::fs::remove_file(&path).ok();
     let set = &back[0].settings;
+    assert_eq!(set.iter().filter(|s| s.operation == Operation::Score).count(), 1, "the no-output patch is no material setting: {set:?}");
     let get = |op| set.iter().find(|s| s.operation == op).unwrap();
     let (c, s, e) = (get(Operation::Cut), get(Operation::Score), get(Operation::Engrave));
     assert_eq!((c.power, c.speed, c.passes, c.watts, c.source.as_str()), (100.0, 4.0, 2, 10.0, "blue"));
@@ -132,12 +133,24 @@ fn round_trip() {
     assert_eq!(layer_data.as_object().unwrap().len(), x.layers);
     assert_eq!(x.layers, 4, "cut, score, engrave and the no-output layer");
 
-    // The no-output note: on the canvas, ignored, in no binding, on its own named layer.
+    // The no-output note: on the canvas, ignored, and bound as score with a faint patch and two
+    // shadows, as xTool Studio stores "no output"; on its own named layer.
     let ignored = mode["ignoredDisplayIds"].as_array().unwrap();
     assert_eq!(ignored.len(), 1);
     let el = displays.iter().find(|el| el["id"] == ignored[0]).unwrap();
     assert!(close(path_bbox(el["dPath"].as_str().unwrap()), [0.0, 0.0, 5.0, 5.0]));
-    assert!(mode["bindings"].as_array().unwrap().iter().all(|b| !b["displayIds"].as_array().unwrap().contains(&ignored[0])));
+    let bindings = mode["bindings"].as_array().unwrap();
+    let bases: Vec<&Value> = bindings.iter().filter(|b| b["displayIds"].as_array().unwrap().contains(&ignored[0])).collect();
+    assert_eq!(bases.len(), 1);
+    let base = bases[0];
+    assert!(base.get("shadowOf").is_none());
+    assert_eq!(profiles[base["baseProfileId"].as_str().unwrap()]["processingType"], "VECTOR_ENGRAVING");
+    assert_eq!(base["displayIds"].as_array().unwrap().len(), 1, "only the no-output element");
+    let patch = &mode["patches"][base["patchIds"][0].as_str().unwrap()];
+    assert_eq!((&patch["profileId"], &patch["overrides"]["power"], &patch["overrides"]["speed"], &patch["overrides"]["repeat"]), (&base["baseProfileId"], &json!(5.0), &json!(300.0), &json!(1)));
+    let shadows: Vec<&Value> = bindings.iter().filter(|b| b["shadowOf"] == base["bindingId"]).collect();
+    assert_eq!(shadows.len(), 2);
+    assert!(shadows.iter().all(|b| b["displayIds"].as_array().unwrap().is_empty()));
     let name = &d.s.layers.iter().find(|l| l.id == note_layer).unwrap().name;
     assert_eq!(layer_data[el["layerTag"].as_str().unwrap()]["name"], json!(name));
 }
@@ -226,10 +239,25 @@ fn images_become_bitmaps() {
     (d.s.machine, d.s.laser, d.s.material) = (Some("xtool-m2".into()), Some("diode-10w".into()), Some("felt".into()));
     let mut png = std::io::Cursor::new(Vec::new());
     image::GrayImage::from_fn(40, 20, |x, _| image::Luma([(x * 6) as u8])).write_to(&mut png, image::ImageFormat::Png).unwrap();
-    d.place_image(crate::model::Img { png: png.into_inner(), w: 40, h: 20 }, [10.0, 20.0], Some(40.0), "photo");
+    let png = png.into_inner();
+    d.place_image(crate::model::Img { png: png.clone(), w: 40, h: 20 }, [10.0, 20.0], Some(40.0), "photo");
     d.s.layers.iter_mut().find(|l| l.op == Op::Engrave).unwrap().settings = Overrides { power: Some(30.0), speed: Some(200.0), passes: Some(1) };
     let x = xs(&d.s, &lib(), "Img", true).unwrap();
     assert!(x.skipped.is_empty() && x.elements == 1, "{:?}", x.skipped);
+    // An image on a no-output layer: bound to image engraving (no shadows) and ignored.
+    let reference = d.place_image(crate::model::Img { png, w: 40, h: 20 }, [60.0, 20.0], Some(20.0), "reference");
+    let no_output = d.s.layers.iter().find(|l| l.op == Op::NoOutput).unwrap().id;
+    d.s.items.iter_mut().find(|i| i.id == reference).unwrap().layer = no_output;
+    let x2 = xs(&d.s, &lib(), "Img", true).unwrap();
+    let mut zip2 = archive(&x2.bytes);
+    let canvas2 = read(&mut zip2, "project.json")["activeCanvasId"].as_str().unwrap().to_string();
+    let mode2 = read(&mut zip2, "devices/device-JS002-1.json")["processing"][&canvas2]["modes"]["LASER_PLANE"].clone();
+    let bindings2 = mode2["bindings"].as_array().unwrap();
+    assert_eq!((x2.elements, bindings2.len()), (2, 2), "two bitmap bindings, no shadows");
+    let ignored2 = mode2["ignoredDisplayIds"].as_array().unwrap();
+    assert_eq!(ignored2.len(), 1);
+    assert_eq!(bindings2.iter().filter(|b| b["displayIds"].as_array().unwrap().contains(&ignored2[0])).count(), 1);
+    assert_eq!(bindings2[0]["baseProfileId"], bindings2[1]["baseProfileId"]);
     let mut zip = archive(&x.bytes);
     let project = read(&mut zip, "project.json");
     let canvas = project["activeCanvasId"].as_str().unwrap().to_string();

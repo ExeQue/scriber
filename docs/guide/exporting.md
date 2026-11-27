@@ -20,8 +20,10 @@ settings from your [material library](./machines-and-materials) (and the layer's
 
 - Cut → vector cutting, Score → vector engraving, Engrave → fill engraving (lines per cm become
   xTool's density). Open shapes on an engrave layer are scored.
-- *No output* layers come along as reference: their shapes are on the xTool canvas, marked not to
-  be processed, so they never reach the laser. Over MCP, `include_no_output: false` leaves them out.
+- *No output* layers come along as reference: their shapes are on the xTool canvas with output
+  switched off, so they never reach the laser (as when you switch output off in xTool, they keep a
+  faint score setting of 5 % at 300 mm/s in case output is switched back on). Over MCP,
+  `include_no_output: false` leaves them out.
 - xTool groups layers by colour. When two Scriber layers have the same colour, the later one gets a
   colour one step away (e.g. `#fe0003` next to `#fe0002`), so they stay separate layers in xTool.
 - Images are engraved as bitmaps. Rotated images are skipped, and the export says so.

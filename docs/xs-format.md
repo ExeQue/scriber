@@ -55,7 +55,7 @@ display.groupTags[] ─► canvas.groupData key
   "extendInfo": {"version":"2.16.5","minCanvasVersion":"0.0.0","displayProcessConfigMap":{},"rulerPluginData":{"rulerGuide":[]},"type":"2d"},
   "chunkLayout": {"displayCount":N,"chunkCount":1,"chunkIndexes":[0]} }
 ```
-- `layerData` is keyed by lowercase `#rrggbb`; xTool Studio's "layers" are colours: `name` is the upper-case hex (a user rename is possible, **guess**), `order` is 1-based display order, `visible` the eye toggle. `batchData.entryType` was `BATCH_TEMPLATE` in one sample and `VARIABLE_DESIGN` in another (meaning unknown, likely irrelevant).
+- `layerData` is keyed by lowercase `#rrggbb`; xTool Studio's "layers" are colours: `name` is the upper-case hex (a user rename is possible, **guess**; the `re-saved` project kept upper-case hex names, but the Scriber export it came from already wrote them, so whether xTool rewrites other names on save is **unseen**; Scriber writes its layer names), `order` is 1-based display order, `visible` the eye toggle. `batchData.entryType` was `BATCH_TEMPLATE` in one sample and `VARIABLE_DESIGN` in another (meaning unknown, likely irrelevant).
 - `groupData`: every group the elements belong to, keyed by tag. A group has no parent or member list; membership and nesting live only in each display's `groupTags` (section 2e). Group `rotation` was seen as `-12.566...` (= -4 pi; unit unclear, radians vs degrees) in an older sample and as `0` in `unknowns-3`.
 
 ### `displays-<k>.json`
@@ -67,7 +67,7 @@ Types seen: `PATH`, `LINE`, and the native primitives `RECT`, `CIRCLE`, `STAR`, 
 
 - `PATH` extra fields: `points: []`, `fillRule` (`"nonzero"` / `"evenodd"`), `graphicX`,`graphicY` (equal to `offsetX`/`offsetY` in samples), `isCompoundPath` (multi-contour), `pathCornerData: null`, `sourceId` (optional; shared by pieces that came from one split path), and exactly one of
   - `dPath`: inline SVG path string (absolute coordinates, `M L H V C Z` seen; commas not needed), or
-  - `vectorRef: {"vectorHash": "<sha256 hex>", "bucketType": "svg", "originalField": "dPath"}`: the long path string moved to `vectors/svg/data-0.json`. Seen only on a 63 KB path; short ones stay inline (threshold unknown, **guess** a size limit). Prefer inline for export; if a file is accepted with arbitrarily long inline `dPath`, no vector store is needed.
+  - `vectorRef: {"vectorHash": "<sha256 hex>", "bucketType": "svg", "originalField": "dPath"}`: the long path string moved to `vectors/svg/data-0.json`. Seen on a 63 KB path, and in `re-saved` xTool moved a 14 KB path there on saving while paths up to 2.5 KB stayed inline (exact threshold unknown; Scriber moves paths over 8 KB). Prefer inline for export; if a file is accepted with arbitrarily long inline `dPath`, no vector store is needed.
 - `LINE` extra field: `endPoint {x,y}`: a straight segment from local (0,0) to `endPoint` (before `transform`), `height` 0.001.
 
 ### Coordinates and transform (verified numerically on the samples)
@@ -184,7 +184,7 @@ Each binding: `{bindingId:"binding:<12>", canvasId, mode:"LASER_PLANE", baseProf
 - A **base binding** (no `shadowOf`) lists in `displayIds` the elements processed with `baseProfileId` and in `patchIds` the patch(es) holding the values. This is the element -> type assignment.
 - **Shadow bindings** (`shadowOf: <base bindingId>`, `displayIds: []`) carry the *other two* profiles' patches for the same element set, so switching the type in the UI keeps their values. In every sample each base has two shadows (one per other type), sharing patch ids with other bindings. Seen again in `unknowns` (one base on VECTOR_ENGRAVING with 7 displays + two empty shadows, without `patchIds`). Whether shadows are mandatory is **unknown** (guess: optional; if you write them, mimic the pattern).
 - Stale ids: bindings and `ignoredDisplayIds` kept ids of deleted displays in all samples. Harmless; do not rely on referential integrity, but write none.
-- `ignoredDisplayIds[]`: elements that are in the project but not processed (the user marked reference outlines "don't process"). This is xTool's no-output; such a display was *also* listed in a base binding. Maps to Scriber's No output.
+- `ignoredDisplayIds[]`: elements that are in the project but not processed (the user marked reference outlines "don't process"). This is xTool's no-output; such a display was *also* listed in a base binding. Maps to Scriber's No output. Confirmed by `re-saved` (a Scriber export re-saved by xTool Studio 1.9.11 after the user switched a score layer's output off in xTool): its 20 displays sit in `ignoredDisplayIds` **and** stay in their normal base binding on the `VECTOR_ENGRAVING` profile with one custom patch (power 5, speed 300, repeat 1; the full 10-key score value set) and the two usual empty `shadowOf` bindings, exactly like a processed score layer. Switching output off only adds the ids to `ignoredDisplayIds`.
 - Output order: no explicit order field. xTool orders per processing type and by layer `order`/`zOrder`; `fillPlanning:"separate"` and `pathPlanning:"auto"` let the planner decide **(guess)**. Scriber's layer order -> `layerData.order` and `zOrder` is the best available mapping.
 
 ## 4. Minimal one-rectangle cut (derived, made-up ids)
@@ -245,11 +245,13 @@ Resolved by the `unknowns` sample: native `RECT`/`CIRCLE`/`STAR`/`REGULAR_POLYGO
 
 Resolved by `unknowns-2`: text storage (2c: `style`, `fontData`, `charJSONs` outlines stored, `fontSize = 72 * scale`), bitmap storage (`resources/<sha256>.png` + sidecar, size/dpi from `scale`), image adjustments, `BITMAP_ENGRAVING` profile and the `bitmapMode` enum (2d). Resolved by `unknowns-3` (section 2e): `angle` in degrees, clockwise positive, `transform = rotation matrix about the top-left`, `x,y = offsetX/Y = e,f` (rotated RECT only); nested groups via `groupTags` innermost first; groups do not affect bindings; a custom-values patch. Not in that sample, still unknown: rotated group, rotation of PATH/STAR/TEXT/BITMAP, library material (the part of A.1 and the group/material parts below), bitmap crop, other `bitmapMode` names, multi-line/aligned text.
 
+Seen in `re-saved` (a Scriber export, re-saved by xTool Studio 1.9.11; the user's design, not kept in the repo): no-output = `ignoredDisplayIds` plus a normal binding (B4, section 3); a 14 KB path moved to `vectors/svg`; `profiles.json` reordered to cutting, vector engraving, fill; numbers written as integers (`75` for `75.0`); a score speed of 400 mm/s came back as 300 (clamped by xTool or edited by the user, **unknown**); every display's `fillColor`/`lineColor` rewritten to another colour per layer (`#9928ff`/`0x9926ff` on the red layer, `#f9932b`/`0xfa9228` on the green one; display state only, `layerTag`, `layerColor`, `originColor` and `stroke.color` stayed the layer colour; not mirrored); `versionInfo.ua` replaced with xTool's own; layer names unchanged; nothing else changed.
+
 A. Still unknown
 1. Rotation of STAR, PATH, TEXT, BITMAP (RECT, CIRCLE, REGULAR_POLYGON seen; `pivot` always 0), group `rotation` unit and whether rotating a group rewrites members' `angle`/`transform`.
 2. QR, bitmap crop, further `bitmapMode` names, multi-line text, patches with a library `material` object (`unknowns-3` had none; only the shape in section 3, seen in earlier samples).
 3. `CIRCLE` scale 0.01 oddity (seen again in `unknowns-3`: consistent, but cause unknown); orientation of `REGULAR_POLYGON`; per-corner radii in `primitiveCornerData`.
-4. Whether an element in no binding is accepted; whether shadow bindings are required.
+4. Whether an element in no binding is accepted (Scriber no longer writes one: no-output elements are bound too, see B4); whether shadow bindings are required.
 5. Machine bed origin versus canvas origin: a file has no bed reference; export at its own x,y and let the user position the job (guess).
 6. Meaning of `batchData.entryType`, `displayProcessConfigMap`, `rulerGuide`, `xcsUsed`, `chunkLayout` (multi-chunk), `layerData` name rules and non-palette colours.
 7. Output ordering rules; `focalLen` formula (`null` when no material/thickness is set).
@@ -258,7 +260,7 @@ B. Risks that could make xTool Studio reject or "repair" a file
 1. Wrong `type` strings or missing type fields: for native types copy the full field list above; when unsure use `PATH`.
 2. Missing optional-looking fields (the app may crash instead of defaulting): copy the full common field list verbatim.
 3. `minRequiredVersion: "2.6.0"` in `versionInfo`: copy it.
-4. Referential integrity: a display id in `bindings` but absent from displays is tolerated; a display in no binding is **unknown** (xTool binds ignored ones too); Scriber binds every processed element and lists no-output ones only in `ignoredDisplayIds`, in no binding, so they can never be processed. If xTool turns out to need a binding, add them to a base binding as well.
+4. Referential integrity: a display id in `bindings` but absent from displays is tolerated; a display in no binding is **unknown**. **Resolved by `re-saved`:** xTool keeps ignored displays in a normal base binding (with patch and shadows) and lists them in `ignoredDisplayIds`; Scriber now writes no-output elements the same way, so every display is bound.
 5. Float formatting: <= 6 decimals for geometry in native fields; path strings carry full doubles; colours ints.
 6. Zip: deflate, directory entries, `.format` last; other layouts untested.
 7. Account data: none in the samples (`ua` string only); never copy `projectId`s or `ua` from user files.
@@ -280,7 +282,7 @@ B. Risks that could make xTool Studio reject or "repair" a file
 | Op Cut | binding on VECTOR_CUTTING; element stroke visible, no fill |
 | Op Score | binding on VECTOR_ENGRAVING; stroke visible |
 | Op Engrave (closed paths) | binding on FILL_VECTOR_ENGRAVING; `fill.visible=true`, `stroke.visible=false`, `isFill=true`; open engrave path -> score |
-| Op No output | own colour layer; its elements are displays listed in `devices/device-<code>-1.json` → `processing[<canvasId>].modes.LASER_PLANE.ignoredDisplayIds`, and in **no** binding (xTool's own samples also bound them; unbound ignored displays are untested in the app). Left out with `include_no_output: false` |
+| Op No output | own colour layer; as xTool stores it (`re-saved`): its paths get their own base binding on `VECTOR_ENGRAVING` (score) with one custom patch (power 5 %, speed 300 mm/s, repeat 1, the rest the score defaults; the numbers xTool kept in `re-saved`: faint and fast, harmless if someone switches output back on) and the two shadow bindings, its images a base binding on `BITMAP_ENGRAVING` with the same numbers and no shadows; all its display ids are also in `devices/device-<code>-1.json` → `processing[<canvasId>].modes.LASER_PLANE.ignoredDisplayIds`, so xTool shows them but never processes them. Left out with `include_no_output: false`. The library importer (`xs.rs`) skips patches whose displays are all ignored, so the 5 % patch never becomes a material setting |
 | Hidden layer | not exported |
 | Setting power %, speed mm/s, passes | patch `overrides.power`, `.speed`, `.repeat` (profile values otherwise as in profiles.json) |
 | Engrave line interval mm | `overrides.density = 10 / interval` (lines per cm); `dpiX = dpiY`: samples only show density 100 with dpi 254, so write `round(density * 2.54)` (guess); `lineSpacing` in `data` stays 0.025 |

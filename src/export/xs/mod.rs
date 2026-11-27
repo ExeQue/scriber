@@ -16,9 +16,9 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use std::io::Write;
 
-/// Longer path strings go to the `vectors/svg` store, as xTool does with long ones (it moved a 63 KB
-/// path; its threshold is unknown, short ones stay inline).
-const INLINE_MAX: usize = 32 * 1024;
+/// Longer path strings go to the `vectors/svg` store, as xTool does with long ones (on saving it moved
+/// a 14 KB path and kept 2.5 KB ones inline; its exact threshold is unknown).
+const INLINE_MAX: usize = 8 * 1024;
 
 /// The finished project and what went into it.
 pub struct Xs {
@@ -68,6 +68,16 @@ struct Group {
     kind: Kind,
     displays: Vec<Value>,
     setting: Option<Setting>,
+    /// A no-output layer: bound like any layer but listed in `ignoredDisplayIds`.
+    ignored: bool,
+}
+
+/// The patch of a no-output layer, as xTool Studio keeps one when output is switched off: a faint,
+/// fast single pass (5 %, 300 mm/s, as in a project xTool re-saved), harmless if someone turns
+/// output back on in xTool.
+fn no_output_setting(kind: Kind) -> Setting {
+    let op = if kind == Kind::Bitmap { Operation::Engrave } else { Operation::Score };
+    Setting { power: 5.0, speed: 300.0, passes: 1, ..Setting::new("", "", op) }
 }
 
 /// The xTool device code, its short name, the module string ("laser_blue_10W") and watts.
@@ -127,7 +137,8 @@ fn free_colour(rgb: [u8; 3], taken: impl Fn(&str) -> bool) -> [u8; 3] {
 
 /// The document as an xTool Studio project. Every shown layer becomes its own xTool colour layer
 /// (a colour another layer already has is nudged to the nearest free one). No-output layers go in
-/// as reference (listed in `ignoredDisplayIds`, in no binding) unless `include_no_output` is false;
+/// as reference unless `include_no_output` is false: bound as score (images as image engraving) with
+/// a faint patch and listed in `ignoredDisplayIds`, as xTool Studio stores "no output";
 /// hidden layers, guides and dimensions are left out; text goes out as its glyph outlines; images
 /// are engraved in greyscale (rotated ones are skipped and listed in `skipped`).
 pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyhow::Result<Xs> {
@@ -136,8 +147,6 @@ pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyh
     let (code, ext_name, laser, watts) = machine(s, lib, &mut notes)?;
     let canvas_id = uuid();
     let mut groups: Vec<Group> = Vec::new();
-    // No-output elements: on the canvas, never processed.
-    let mut reference: Vec<Value> = Vec::new();
     let mut layer_data = Map::new();
     let mut vectors = Map::new();
     let mut resources = std::collections::BTreeMap::new();
@@ -176,6 +185,7 @@ pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyh
                 let kind = match (layer.op.on(&item.shape), area) {
                     (Op::Cut, _) => Kind::Cut,
                     (_, true) => Kind::Fill,
+                    // No output too is bound as score, as xTool does.
                     _ => Kind::Line,
                 };
                 let d = path::dpath(&contours);
@@ -193,12 +203,9 @@ pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyh
             };
             let n = layer_data.len() + 1;
             layer_data.entry(tag.clone()).or_insert_with(|| json!({"name": layer.name, "order": n, "visible": true}));
-            if !lasered {
-                reference.push(display);
-                continue;
-            }
             match groups.iter_mut().find(|g| g.layer == layer.id && g.kind == kind) {
                 Some(g) => g.displays.push(display),
+                None if !lasered => groups.push(Group { layer: layer.id, kind, displays: vec![display], setting: Some(no_output_setting(kind)), ignored: true }),
                 None => {
                     let operation = match kind {
                         Kind::Line => Operation::Score,
@@ -210,7 +217,7 @@ pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyh
                     if setting.is_none() {
                         notes.push(format!("Layer {}: no power, speed and passes for {} (none on the layer or in the material library); xTool's defaults are used.", layer.name, operation.label().to_lowercase()));
                     }
-                    groups.push(Group { layer: layer.id, kind, displays: vec![display], setting });
+                    groups.push(Group { layer: layer.id, kind, displays: vec![display], setting, ignored: false });
                 }
             }
         }
@@ -233,9 +240,9 @@ pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyh
             bindings.push(json!({"bindingId": short_id("binding"), "canvasId": canvas_id, "mode": "LASER_PLANE", "baseProfileId": profile_of(k), "displayIds": [], "shadowOf": binding}));
         }
     }
-    let processed = groups.len();
-    let ignored: Vec<Value> = reference.iter().map(|d| d["id"].clone()).collect();
-    let displays: Vec<Value> = groups.into_iter().flat_map(|g| g.displays).chain(reference).collect();
+    let processed = groups.iter().filter(|g| !g.ignored).count();
+    let ignored: Vec<Value> = groups.iter().filter(|g| g.ignored).flat_map(|g| g.displays.iter().map(|d| d["id"].clone())).collect();
+    let displays: Vec<Value> = groups.into_iter().flat_map(|g| g.displays).collect();
     let elements = displays.len();
     let layers = layer_data.len();
     let profiles: Map<String, Value> = kinds

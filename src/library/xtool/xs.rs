@@ -36,7 +36,18 @@ pub fn read_project(path: &Path) -> Result<Vec<XtoolMaterial>, String> {
             for mode in canvas["modes"].as_object().into_iter().flat_map(|m| m.values()) {
                 let data = &mode["data"];
                 let mut list = Vec::new();
-                for patch in mode["patches"].as_object().into_iter().flat_map(|p| p.values()) {
+                let ignored: Vec<&Value> = mode["ignoredDisplayIds"].as_array().into_iter().flatten().collect();
+                let bindings: Vec<&Value> = mode["bindings"].as_array().into_iter().flatten().collect();
+                for (id, patch) in mode["patches"].as_object().into_iter().flatten() {
+                    // A patch only "no output" elements use (xTool keeps their binding) is no material setting.
+                    let users: Vec<&Value> = bindings
+                        .iter()
+                        .filter(|b| b["patchIds"].as_array().is_some_and(|p| p.iter().any(|p| p == id.as_str())))
+                        .flat_map(|b| b["displayIds"].as_array().into_iter().flatten())
+                        .collect();
+                    if !users.is_empty() && users.iter().all(|d| ignored.contains(d)) {
+                        continue;
+                    }
                     let profile = &profiles["profiles"][patch["profileId"].as_str().unwrap_or_default()];
                     let Some(op) = operation(profile["processingType"].as_str().unwrap_or_default()) else { continue };
                     let mut values = profile["values"].as_object().cloned().unwrap_or_default();
