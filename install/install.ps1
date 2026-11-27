@@ -39,9 +39,10 @@
     $onPath = $pathParts | Where-Object { $_.TrimEnd('\') -ieq $dir.TrimEnd('\') }
 
     if ($uninstall) {
-        foreach ($f in 'scriber.exe', 'scriber.exe.old', 'LICENSE', 'README.md') {
+        foreach ($f in 'scriber.exe', 'LICENSE', 'README.md') {
             Remove-Item (Join-Path $dir $f) -Force -ErrorAction SilentlyContinue
         }
+        Get-ChildItem $dir -Filter 'scriber.exe.old*' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
         if ((Test-Path $dir) -and -not (Get-ChildItem $dir -Force)) { Remove-Item $dir }
         Remove-Item $shortcut -Force -ErrorAction SilentlyContinue
         if ($onPath) {
@@ -85,9 +86,10 @@
         if (-not (Test-Path (Join-Path $pkg 'scriber.exe'))) { throw "$asset has no scriber.exe." }
 
         New-Item -ItemType Directory $dir -Force | Out-Null
-        # A running Scriber locks its exe, but Windows lets it be renamed; the old copy goes next time.
-        Remove-Item "$exe.old" -Force -ErrorAction SilentlyContinue
-        if (Test-Path $exe) { Move-Item $exe "$exe.old" -Force }
+        # A running Scriber locks its exe, but Windows lets it be renamed; old copies go once nothing runs them.
+        # One may still be running (renamed by an earlier update), so the new old copy gets its own name.
+        Get-ChildItem $dir -Filter 'scriber.exe.old*' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+        if (Test-Path $exe) { Move-Item $exe "$exe.old-$(Get-Date -Format 'yyyyMMddHHmmss')" -Force }
         Copy-Item (Join-Path $pkg '*') $dir -Force
         Unblock-File $exe -ErrorAction SilentlyContinue
     } finally {
