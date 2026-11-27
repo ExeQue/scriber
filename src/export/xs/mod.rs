@@ -167,7 +167,11 @@ pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyh
     let mut layer_data = Map::new();
     let mut vectors = Map::new();
     let mut resources = std::collections::BTreeMap::new();
-    let mut z = 0;
+    // Images go under every vector: an opaque picture (white where nothing burns) would hide the cut
+    // and score lines in xTool Studio's canvas, which draws higher zOrder on top. Within each kind the
+    // layer order stays.
+    let mut z_image = 0;
+    let mut z = s.items.iter().filter(|i| matches!(i.shape, Shape::Image { .. })).count();
     for layer in s.layers.iter().filter(|l| l.visible && (include_no_output || l.op != Op::NoOutput)) {
         let taken: Vec<usize> = layer_data.keys().map(|t| slot(hex(t))).collect();
         let [r, g, b] = layer_colour(layer.rgb(), &taken).unwrap_or_else(|| {
@@ -192,8 +196,8 @@ pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyh
                     continue;
                 };
                 let file = format!("{}.png", hash_bytes(&png.0));
-                z += 1;
-                let display = files::bitmap(&uuid(), &tag, [r, g, b], z, &format!("resources/{file}"), png.1, [x, y, w, h]);
+                z_image += 1;
+                let display = files::bitmap(&uuid(), &tag, [r, g, b], z_image, &format!("resources/{file}"), png.1, [x, y, w, h]);
                 resources.insert(file, png.0);
                 (Kind::Bitmap, display)
             } else {
