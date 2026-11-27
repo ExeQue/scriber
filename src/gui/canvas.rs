@@ -261,12 +261,14 @@ impl App {
         }
     }
 
-    /// Images and SVG drawings are imported where they are dropped (a DXF asks for its layers' ops first); .scrbr files are opened.
+    /// Images and SVG drawings are imported where they are dropped (a DXF asks for its layers' ops first); .scrbr files are opened, .xs projects open in a new tab.
     fn dropped_files(&mut self, ctx: &egui::Context, pointer: Option<Point>) {
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
         for path in dropped {
             if path.extension().is_some_and(|e| e == "scrbr") {
                 self.open_path(&path);
+            } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("xs")) {
+                self.open_xs(&path);
             } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg") || e.eq_ignore_ascii_case("svgz")) {
                 self.import_svg_at(&path, pointer.unwrap_or([10.0, 10.0]));
             } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("dxf")) {

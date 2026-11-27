@@ -3809,6 +3809,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "skrifa 0.49.0",
+ "svgtypes",
  "tokio",
  "toml_edit",
  "tower-service",

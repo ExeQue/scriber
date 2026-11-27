@@ -8,7 +8,7 @@
 | `machines/*.json` | Built-in machines | Shipped with Scriber |
 | `.svg`, `.png` | Exports for laser software | File → Export |
 | `.dxf` | CAD drawing, in and out | File → Import ▸ DXF…, File → Export ▸ DXF… |
-| `.xs` | xTool Studio project | File → Export ▸ xTool Studio (.xs)… |
+| `.xs` | xTool Studio project, in and out | File → Import ▸ xTool Studio project (.xs)…, File → Export ▸ xTool Studio (.xs)… |
 
 ## `.scrbr` projects
 
@@ -75,3 +75,13 @@ its colour. Paper space is ignored. Units: `$INSUNITS` (none = mm). See
 [Importing DXF](../guide/drawing#importing-dxf) for the layer dialog.
 - **`.xs`**: see [Exporting](../guide/exporting#xtool-studio-projects) and the
   [.xs format notes](../xs-format).
+
+## xTool Studio import
+
+Reads the active canvas of an `.xs` project (other canvases are left out, with a note). Element
+types: `PATH` (inline `dPath` or the `vectors/svg` store; `M L H V C S Q T A Z`, absolute or
+relative), `LINE`, `RECT` (`radius` or `primitiveCornerData`), `CIRCLE`, `REGULAR_POLYGON`, `STAR`,
+`TEXT` (its `charJSONs` glyph paths) and `BITMAP` (`resources/<sha256>.png`). Each element's
+`transform` is applied to its local outline, so rotation, scale and the `CIRCLE` 0.01 scale come out
+right. Other types (QR, …) are skipped and listed. The mapping is in the
+[.xs format notes](../xs-format) (section 6).

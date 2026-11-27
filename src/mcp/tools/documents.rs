@@ -25,6 +25,7 @@ use std::time::UNIX_EPOCH;
 const GLOBAL: &[&str] = &[
     "list_documents",
     "open",
+    "import_xs",
     "new_document",
     "list_recent_projects",
     "list_fonts",
@@ -51,6 +52,15 @@ pub struct OpenProject {
     /// Path to the .scrbr file.
     pub path: String,
     /// Show it to the person (make it the active tab). Default false: leave their view alone unless they asked.
+    #[serde(default)]
+    pub activate: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ImportXsProject {
+    /// Path to the xTool Studio project (.xs).
+    pub path: String,
+    /// Show it to the person (make it the active tab). Default false.
     #[serde(default)]
     pub activate: bool,
 }
@@ -182,6 +192,26 @@ impl Server {
             }
             Err(e) => fail(format!("cannot open {}: {e}", p.path)),
         }
+    }
+
+    #[tool(description = "Open an xTool Studio project (.xs) as a new, unsaved document in a new tab: its elements (paths, lines, rectangles, circles/ellipses, polygons, stars, text as its glyph outlines, images) at their positions, one layer per xTool colour layer and processing type (cutting → cut, vector engraving → score, fill engraving → engrave, bitmap → engrave with the image; elements set not to be processed → no_output) with the project's power, speed, passes and line interval, groups (the outermost), and the machine from the device code (the material is its work area, or the drawing plus a margin). Returns the document id, per layer its id, name, op and item count, skipped elements with the reason, and notes. activate: true shows it (default false). For only the laser settings use import_xtool_project.")]
+    fn import_xs(&self, Parameters(p): Parameters<ImportXsProject>) -> ToolResult {
+        let lib = crate::library::get().clone();
+        let r = match crate::export::xs_import::read_file(Path::new(&p.path), &lib) {
+            Ok(r) => r,
+            Err(e) => return fail(format!("cannot import {}: {e}", p.path)),
+        };
+        let (w, h, machine, laser) = (r.doc.s.width, r.doc.s.height, r.doc.s.machine.clone(), r.doc.s.laser.clone());
+        let id = self.ws.add(r.doc, p.activate);
+        (self.repaint)();
+        let mut v = entry(id, &self.ws.get(id).unwrap(), self.ws.active_id());
+        v["material"] = json!([w, h]);
+        v["machine"] = json!(machine);
+        v["laser"] = json!(laser);
+        v["layers"] = json!(r.layers);
+        v["skipped"] = json!(r.skipped);
+        v["notes"] = json!(r.notes);
+        ok(v)
     }
 
     #[tool(description = "Start a new empty document in a new tab (material size in mm, default 300 × 200). Returns its document id. activate: true shows it to the person (default false).")]

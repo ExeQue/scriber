@@ -68,6 +68,26 @@ impl App {
         }
     }
 
+    /// Open an xTool Studio project as a new, unsaved document in a new tab.
+    pub(super) fn open_xs(&mut self, path: &std::path::Path) {
+        let lib = crate::library::get().clone();
+        match crate::export::xs_import::read_file(path, &lib) {
+            Ok(r) => {
+                self.ws.add(r.doc, true);
+                let items: usize = r.layers.iter().map(|l| l.items).sum();
+                let mut msg = format!("Opened {}: {items} items on {} layers.", path.display(), r.layers.len());
+                if !r.skipped.is_empty() {
+                    msg += &format!(" Left out: {}.", r.skipped.join("; "));
+                }
+                for n in &r.notes {
+                    msg += &format!(" {n}");
+                }
+                self.message = msg;
+            }
+            Err(e) => self.message = format!("Could not open the xTool project: {e}"),
+        }
+    }
+
     /// Reopen the files that were open at exit (missing ones are skipped).
     pub(super) fn restore_session(&mut self, files: &[PathBuf]) {
         for f in files.iter().filter(|f| f.is_file()) {

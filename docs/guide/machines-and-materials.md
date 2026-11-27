@@ -54,7 +54,7 @@ Press **Save** to keep your changes. Every delete asks first.
 
 ### Import and Export
 
-- **Import ▾ → From xTool Studio…** and **xTool project (.xs)…**: see
+- **Import ▾ → From xTool Studio…** and **Laser settings from an xTool project (.xs)…**: see
   [Importing from xTool Studio](../importing-xtool-materials).
 - **Import ▾ → Scriber library file…** and **Export ▾**: see [Share a library](../library/share-a-library).
 

@@ -19,9 +19,10 @@ xTool Studio only keeps the materials you have looked at. For each material you 
 - **With an AI agent:** ask it to find the material; it uses `search_xtool_materials` and
   `import_xtool_materials`.
 
-You can also import the settings stored in an xTool Studio project: **Import ▾ → xTool project (.xs)…**
+You can also import the settings stored in an xTool Studio project: **Import ▾ → Laser settings from an xTool project (.xs)…**
 (agents: `import_xtool_project`). The project does not hold the material's name, so the new material
-gets the file's name; rename it afterwards.
+gets the file's name; rename it afterwards. To open the whole drawing instead, use File → Import ▸
+xTool Studio project (.xs)… (see [Drawing](./guide/drawing#opening-xtool-studio-projects)).
 
 ## What gets imported
 

@@ -296,15 +296,25 @@ B. Risks that could make xTool Studio reject or "repair" a file
 | Notes/guides/dimensions | not exported |
 
 ### .xs -> Scriber (import)
+Implemented in `src/export/xs_import/` (File → Import ▸ xTool Studio project (.xs)…, drag and drop, MCP `import_xs`): a new, unsaved document in a new tab. The settings-only reader `src/library/xtool/xs.rs` (Machines & materials → "Laser settings from an xTool project (.xs)…", MCP `import_xtool_project`) is separate.
+
 | .xs | Scriber |
 |---|---|
-| each display `RECT`/`CIRCLE` | rect contour (rounded by `radius`; arcs as bulge) / ellipse at (`offsetX/Y`, `width`, `height`) after `transform` (apply `scale` if not 1: the CIRCLE oddity means trust `width`/`height`; if `angle` != 0 rotate the box about its top-left `(e,f)` by `angle` degrees clockwise, i.e. use `transform`; `x,y` is not the bbox then) |
-| `STAR`/`REGULAR_POLYGON` | generate vertices from `count`, `starInnerScale` in the `oWidth` x `oHeight` box at `offsetX/Y`, then fit to the tight bbox `x,y,width,height` (orientation guess: first vertex up) |
-| each display (`PATH`/`LINE`) | one item; world geometry = `transform * dPath` (resolve `vectorRef` via `vectors/svg`), parse `M L H V C Q A Z` (cubics fitted to arcs as the SVG import does); `isCompoundPath` / several `M` -> several contours; `fillRule` evenodd/nonzero |
-| binding `baseProfileId` type | op: VECTOR_CUTTING -> cut, VECTOR_ENGRAVING -> score, FILL_VECTOR_ENGRAVING -> engrave; bitmap -> image; element in `ignoredDisplayIds` -> no output |
-| display `layerTag` + `layerData` | Scriber layer (name, colour); but the op comes from the binding, so one xTool colour can yield several Scriber layers (colour x op) |
-| patch `overrides` (over `profiles.values`) | layer setting: power, speed, `repeat`->passes, `density`->line interval (10/density) |
-| `data.material`, `.thickness` | material (existing reader `xs.rs` makes a library entry named after the file) |
-| `device.power`, `laser` | machine module |
-| `groupTags`/`groupData` | groups (name `groupName`); `zOrder` -> stacking |
-| fill visible & `isFill` | engrave area; stroke only -> line |
+| canvas | the active canvas (`project.activeCanvasId`); other canvases are left out with a note. Displays from every `displays-N.json`, drawn in `zOrder` order |
+| any display | outline built in the element's local coordinates as lines/Béziers, then `transform` [a,b,c,d,e,f] applied to every point (world = (a x + c y + e, b x + d y + f)), then fitted as bulge arcs (biarc code of the SVG import, 0.002 mm). Local sizes are `width / |(a,b)|`, `height / |(c,d)|`, so rotation, non-uniform scale and the `CIRCLE` 0.01 scale all follow from the transform alone (`angle`, `scale`, `x`, `y` are not read) |
+| `PATH` | `dPath` or `vectorRef.vectorHash` → `vectors/svg/data-*.json` `entries[hash]`; parsed with `svgtypes` (all SVG commands, relative too; `A` becomes cubics); one contour per subpath, `Z` closes |
+| `LINE` | (0,0) → `endPoint`, both transformed |
+| `RECT` | `width` × `height` box, corners rounded by `radius` (else `primitiveCornerData.defaultCorner.desiredRadius`; per-corner radii ignored) |
+| `CIRCLE` | ellipse inscribed in the `width` × `height` box |
+| `REGULAR_POLYGON`, `STAR` | vertices on the ellipse inscribed in the nominal `oWidth` × `oHeight` box, first vertex up (star: `2·count` vertices, inner radius × `starInnerScale`); verified against the tight `width`/`height` of a triangle and a 5-star (exact to 1e-6). If apex-up does not give the tight size, the shape turned half a step is used (even counts, **guess**). Rounded star/polygon corners are ignored |
+| `TEXT` | all `charJSONs[*]` glyph `PATH`s (each with its own transform) as one compound path, named after `text` |
+| `BITMAP` | `resourcePath` PNG → greyscale image; corners of the `originWidth` × `originHeight` pixel box under `transform` give position, size and rotation (mirroring ignored) |
+| other types (`QR`, …) | skipped, listed with the reason |
+| base binding (`shadowOf` absent) `baseProfileId` → `processingType` | `VECTOR_CUTTING` → Cut, `VECTOR_ENGRAVING` → Score, `FILL_VECTOR_ENGRAVING` → Engrave, `BITMAP_ENGRAVING` → Engrave (image). A bitmap takes its bitmap binding, a vector element its first other binding (stale ids in bindings are ignored) |
+| `ignoredDisplayIds`, or in no binding | No output (no binding gets a note) |
+| `layerTag` + `layerData` | one Scriber layer per (colour, processing type, settings): name = `layerData.name` (else the upper-case hex), " (Cut)"/" (Score)"/" (Engrave)"/" (Image)"/" (No output)" appended when a colour yields several; colour = the tag; `visible`; ordered by `layerData.order`, then type |
+| patch of the base binding (`patchIds` entry with the base `profileId`), over `profiles.values` | layer settings: `power` (clamped 0..100), `speed`, `repeat` → passes, `density` → line interval `10 / density` mm (fill and bitmap). No patch: no layer settings (the profile's `power: 1` is a placeholder), the material library's preset applies. `bitmapMode` and the other fields are not kept |
+| `groupTags` | Scriber groups are flat: grouped by the outermost tag (last entry); groups of one are dropped |
+| `deviceCode`, `power`, profile `laser` | machine = the library machine whose xTool device code matches; laser = the module whose `xtool_module()` equals the profile's `laser`, else the one with the device's watts, else the first |
+| material size | the machine's work area (enlarged, with a note, when the drawing reaches beyond it); no machine: drawing extent + 10 mm |
+| `data.material`, `thickness` | not linked (note); the settings reader makes a library material from them |

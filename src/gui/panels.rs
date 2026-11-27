@@ -50,6 +50,9 @@ impl App {
                     if ui.button("DXF…").clicked() {
                         self.import_dxf_dialog(ui.ctx());
                     }
+                    if ui.button("xTool Studio project (.xs)…").on_hover_text("Open the drawing, layers and settings of an xTool Studio project in a new tab").clicked() {
+                        self.dialog.pick(ui.ctx(), super::Want::ImportXs, rfd::FileDialog::new().add_filter("xTool Studio project", &["xs"]));
+                    }
                 });
                 ui.menu_button("Export", |ui| {
                     if ui.button("SVG for the laser…").clicked() {

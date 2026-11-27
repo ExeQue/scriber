@@ -152,7 +152,7 @@ pub(super) fn menus(ui: &mut egui::Ui, ed: &mut Editor) {
                 Err(e) => ed.error = e,
             }
         }
-        if ui.button("xTool project (.xs)…").on_hover_text("The laser settings of an xTool Studio project, as a material named after the file").clicked() {
+        if ui.button("Laser settings from an xTool project (.xs)…").on_hover_text("The laser settings of an xTool Studio project, as a material named after the file").clicked() {
             st.dialog.pick(&ctx, Want::XtoolProject, filter("xTool Studio project", &["xs"]));
         }
         if ui.button("Scriber library file…").on_hover_text("Machines and materials another Scriber user exported").clicked() {

@@ -60,7 +60,7 @@ last point) or `@40<30` (40 mm at 30°). A plain number uses the pointer's direc
 - **Note dimension** (Annotate): a measurement drawn for people, on a *No output* layer. It does not
   drive the shape; for that use a [locked size](./constraints).
 
-## Images, SVG and DXF files
+## Images, SVG, DXF and xTool files
 
 - File → **Import ▸ Image…** places a PNG, JPEG or other picture. It is turned to greyscale and is
   engraved.
@@ -69,6 +69,8 @@ last point) or `@40<30` (40 mm at 30°). A plain number uses the pointer's direc
   shape is engraved. You can also paste SVG text straight onto the canvas.
 - File → **Import ▸ DXF…** reads drawings from CAD programs (or drop a `.dxf` on the canvas). See
   below.
+- File → **Import ▸ xTool Studio project (.xs)…** opens an xTool Studio project in a new tab (or
+  drop a `.xs` on the canvas). See below.
 
 ### Importing DXF
 
@@ -92,3 +94,31 @@ several colours is split into one row per colour.
 - TEXT and MTEXT become text items in the default sans-serif font (the DXF's own font is not
   matched).
 - Points, hatches, dimensions, leaders and images are left out; the dialog lists what was skipped.
+
+### Opening xTool Studio projects
+
+An `.xs` project opens as a new, unsaved document in its own tab; save it as a Scriber project
+(`.scrbr`) to keep it. What comes over:
+
+- **Shapes** at the same place and size: paths, lines, rectangles (with rounded corners), circles and
+  ellipses, polygons and stars, also rotated or stretched. Curves become arcs within 0.002 mm.
+- **Text** as its letter outlines (xTool stores them in the project, so no font is needed); the item
+  is named after the text.
+- **Images** as greyscale pictures at the same position and size.
+- **Layers**: one Scriber layer per xTool colour layer, with its name and colour, and its op from
+  xTool's processing type: Cutting → Cut, Vector engraving → Score, Fill engraving → Engrave, Image
+  engraving → Engrave. When one colour holds several processing types (or different settings), it
+  is split into one layer per type, named like "#00BEFE (Score)". Elements set not to be processed
+  go on their own **No output** layer.
+- **Settings**: the power, speed and passes xTool uses for each layer (and the line interval for
+  engraving: 10 / lines per cm) become the layer's own settings. Where the project kept xTool's
+  untouched defaults, the layer has none and the material library's preset applies.
+- **Groups**: grouped elements are grouped in Scriber too. Scriber has no groups in groups, so a
+  nested group becomes part of its outermost group.
+- **Machine**: the xTool device code picks your machine with that code (Machines & materials →
+  xTool device code), and the material is its work area. Without one, the material is the drawing
+  plus a 10 mm margin.
+
+Elements Scriber cannot read (QR codes, for instance) are left out; the status line lists them. The
+project's xTool material is not linked: to copy its settings into your library, use **Laser settings
+from an xTool project (.xs)…** in Machines & materials.

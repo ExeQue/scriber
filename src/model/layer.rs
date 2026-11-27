@@ -48,6 +48,9 @@ pub struct Layer {
     /// Power, speed and passes for this layer; missing ones come from the material library.
     #[serde(default, skip_serializing_if = "Overrides::is_empty")]
     pub settings: Overrides,
+    /// Distance between engraved lines in mm for this layer (engrave and images); missing = the material's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_interval: Option<f64>,
     /// The material's profile to use (e.g. "Photo"); missing or unknown = the default one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
@@ -65,7 +68,7 @@ fn yes() -> bool {
 
 impl Layer {
     pub fn new(id: u64, name: &str, op: Op) -> Self {
-        Self { id, name: name.into(), op, color: None, settings: Overrides::default(), profile: None, visible: true, locked: false }
+        Self { id, name: name.into(), op, color: None, settings: Overrides::default(), line_interval: None, profile: None, visible: true, locked: false }
     }
 
     pub fn rgb(&self) -> [u8; 3] {
@@ -94,6 +97,9 @@ impl Layer {
         out.power = o.power.unwrap_or(out.power);
         out.speed = o.speed.unwrap_or(out.speed);
         out.passes = o.passes.unwrap_or(out.passes);
+        if own {
+            out.line_interval = self.line_interval.or(out.line_interval);
+        }
         (!out.power.is_nan() && !out.speed.is_nan() && out.passes > 0).then_some(out)
     }
 }

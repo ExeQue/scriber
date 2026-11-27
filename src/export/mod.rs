@@ -5,6 +5,7 @@ mod png;
 mod preview;
 pub(crate) mod svg;
 pub mod xs;
+pub mod xs_import;
 pub mod svg_import;
 pub mod dxf;
 

@@ -120,7 +120,8 @@ To follow a review:
 
 - `search_xtool_materials` searches xTool Studio's local cache (only materials the person opened
   there); `import_xtool_materials` copies the ones they pick into their Scriber library for one of
-  their machines. `import_xtool_project` takes the settings of an `.xs` project.
+  their machines. `import_xtool_project` takes the settings of an `.xs` project; `import_xs` opens
+  the whole project (shapes, text, images, layers with their settings, groups) as a new document.
 - `export_library` and `import_library` write and merge `.scrlib` files (or library zips, `.zip`)
   to share machines and materials with other Scriber users.
 - **Library sources**: people can subscribe to machine and material libraries published in public
