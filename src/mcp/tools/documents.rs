@@ -134,9 +134,21 @@ impl Server {
     }
 
     pub(super) async fn call(&self, request: CallToolRequestParams, context: RequestContext<RoleServer>) -> Result<CallToolResponse, McpError> {
-        match self.for_call(request.arguments.as_ref()) {
-            Ok(s) => s.tool_router.call(ToolCallContext::new(&s, request, context)).await,
-            Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(e)]).into()),
+        let s = match self.for_call(request.arguments.as_ref()) {
+            Ok(s) => s,
+            Err(e) => return Ok(CallToolResult::error(vec![ContentBlock::text(e)]).into()),
+        };
+        // A tool that panics fails alone instead of closing the connection (or, through a poisoned
+        // lock, the editor). Document changes catch their panics in `with`, restoring the document.
+        let doc = s.doc.clone();
+        let run = tokio::spawn(async move { s.tool_router.call(ToolCallContext::new(&s, request, context)).await });
+        match run.await {
+            Ok(r) => r,
+            Err(e) => {
+                doc.clear_poison();
+                let msg = if e.is_panic() { crate::model::panic_message(e.into_panic().as_ref()) } else { e.to_string() };
+                Ok(CallToolResult::error(vec![ContentBlock::text(msg)]).into())
+            }
         }
     }
 

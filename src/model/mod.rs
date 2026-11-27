@@ -32,6 +32,12 @@ use std::sync::{Arc, Mutex};
 
 const UNDO_LIMIT: usize = 200;
 
+/// The text of a caught panic.
+pub fn panic_message(p: &(dyn std::any::Any + Send)) -> String {
+    let msg = p.downcast_ref::<&str>().copied().or_else(|| p.downcast_ref::<String>().map(String::as_str)).unwrap_or("unknown panic");
+    format!("internal error: {msg}")
+}
+
 /// The document as shared between the GUI and MCP connections.
 pub type Shared = Arc<Mutex<Document>>;
 
@@ -102,6 +108,22 @@ pub struct Document {
 impl Document {
     pub fn new(width: f64, height: f64) -> Self {
         Self { s: State { width, height, ..State::default() }, ..Self::default() }
+    }
+
+    /// Run `f`; if it panics, put the document back as it was and return the panic message, so a
+    /// bug in one command neither half-changes the drawing nor takes the program down.
+    pub fn guarded<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> Result<T, String> {
+        let (s, undo, redo, dirty, selection) = (self.s.clone(), self.undo.len(), self.redo.clone(), self.dirty, self.selection.clone());
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(self))).map_err(|p| {
+            self.s = s;
+            self.undo.truncate(undo);
+            self.redo = redo;
+            self.dirty = dirty;
+            self.selection = selection;
+            self.hold.clear();
+            self.rev += 1;
+            panic_message(p.as_ref())
+        })
     }
 
     // ---------- history ----------

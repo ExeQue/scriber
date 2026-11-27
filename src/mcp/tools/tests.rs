@@ -196,3 +196,17 @@ fn dxf_round_trip_with_chosen_layer_ops() {
     assert_eq!(doc.lock().unwrap().s.items.len(), before + 2);
     assert!(error(s.import_dxf(args(json!({"path": "/nonexistent.dxf"})))).contains("cannot read"));
 }
+
+#[test]
+fn a_panicking_tool_fails_alone_and_leaves_the_document_as_it_was() {
+    let (s, doc) = server();
+    let ids = squares(&s, 1);
+    // The panic message below is expected in the test output.
+    let r = s.edit_ids(&ids, |d, ids| {
+        d.delete(&ids);
+        panic!("boom")
+    });
+    assert!(error(r).contains("boom"));
+    assert_eq!(doc.lock().expect("the lock is not poisoned").s.items.len(), 1, "the half-done delete is rolled back");
+    assert_eq!(squares(&s, 1).len(), 1, "the next call works");
+}

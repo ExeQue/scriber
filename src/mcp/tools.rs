@@ -562,7 +562,8 @@ impl Server {
     pub(super) fn with_select(&self, selects: bool, f: impl FnOnce(&mut Document) -> ToolResult) -> ToolResult {
         let mut d = self.doc.lock().unwrap();
         let before = d.selection.clone();
-        let r = f(&mut d);
+        // A panic is caught while the lock is still held, so the document is restored and never poisoned.
+        let r = d.guarded(f).unwrap_or_else(fail);
         let settled = d.settle(true);
         if !selects {
             let s = &d.s;
