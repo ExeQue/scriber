@@ -2,6 +2,7 @@
 name = "scriber"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.95"
 description = "2D CAD for laser cutters, drivable by AI agents over MCP"
 license = "MIT"
 repository = "https://github.com/ExeQue/scriber"

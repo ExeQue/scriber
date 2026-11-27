@@ -95,24 +95,82 @@ Scriber is not code-signed yet, so the operating system may warn the first time 
 
 ## Build from source
 
-You need [Rust](https://rustup.rs) (edition 2024, so Rust 1.85 or newer). On Linux, install the
-headers the window toolkit builds against first; on Debian and Ubuntu:
+### What you need
 
-```sh
-sudo apt-get install pkg-config libfontconfig1-dev libxkbcommon-dev libwayland-dev \
-  libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libgl1-mesa-dev
-```
+- **Rust 1.95 or newer** (edition 2024): install [rustup](https://rustup.rs), then
+  `rustup toolchain install stable`. `rustup update` brings an older toolchain up to date.
+- **Linux**: a C compiler and the headers the window toolkit builds against.
+  - Debian and Ubuntu:
+    ```sh
+    sudo apt-get install build-essential pkg-config libfontconfig1-dev libxkbcommon-dev \
+      libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libgl1-mesa-dev
+    ```
+  - Fedora:
+    ```sh
+    sudo dnf install gcc make pkgconf-pkg-config fontconfig-devel libxkbcommon-devel \
+      wayland-devel libxcb-devel mesa-libGL-devel
+    ```
+  - Arch:
+    ```sh
+    sudo pacman -S --needed base-devel fontconfig libxkbcommon wayland libxcb mesa
+    ```
+- **macOS**: the Xcode command line tools: `xcode-select --install`.
+- **Windows**: the [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+  with the **Desktop development with C++** workload (rustup offers to install them).
 
-Then:
+### Build and install
+
+**Linux and macOS**:
 
 ```sh
 git clone https://github.com/ExeQue/scriber.git
 cd scriber
-cargo build --release
-./target/release/scriber              # opens the editor
+make install
 ```
 
-Copy `target/release/scriber` to a folder on your `PATH` to run it as `scriber`.
+This builds a release binary and puts it in `~/.local/bin/scriber`; on Linux it also adds Scriber to
+your application launcher, the same as the install script. `make uninstall` removes both again. Set
+`PREFIX` to install elsewhere, for example `make install PREFIX=/usr/local` (with `sudo`); packagers
+can also set `DATADIR` and `DESTDIR`. `make help` lists every target.
+
+**Without make** (also on Windows), let Cargo install it in `~/.cargo/bin`, which rustup puts on your
+`PATH`:
+
+```sh
+git clone https://github.com/ExeQue/scriber.git
+cd scriber
+cargo install --path . --locked
+```
+
+This adds no launcher entry. `cargo uninstall scriber` removes it.
+
+### Working on Scriber
+
+To work on Scriber itself (more in
+[CONTRIBUTING.md](https://github.com/ExeQue/scriber/blob/main/CONTRIBUTING.md)):
+
+```sh
+make dev        # debug build: target/debug/scriber
+make run        # debug build, then open the editor; make run ARGS=box.scrbr opens a project
+make test       # all tests; they open no window and need no internet
+make headless   # the MCP server without a window, on a throwaway settings folder
+make check      # what must pass before a pull request
+make install-dev  # install the debug build as ~/.local/bin/scriber, to try a branch for real
+```
+
+The debug build is optimised (Scriber at `opt-level = 1`, its dependencies at `opt-level = 3`), so
+it is fast enough to draw with while it still builds quickly.
+
+A debug build shares settings, library and MCP port with an installed Scriber. To keep them apart:
+
+- `SCRIBER_CONFIG_DIR=/some/folder` gives it its own settings, library and themes.
+- `SCRIBER_PORT=47822` gives it its own MCP port. Only one editor can serve a port: a second editor
+  on the same port still opens, but serves no MCP and says so in the status bar, so agents keep
+  talking to the first one. Run `scriber mcp` with the same `SCRIBER_PORT` to reach the second.
+
+```sh
+SCRIBER_CONFIG_DIR=$(mktemp -d) SCRIBER_PORT=47822 make run
+```
 
 ## Uninstall
 

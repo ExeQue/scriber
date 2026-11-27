@@ -54,6 +54,11 @@ cargo build
 cargo test
 ```
 
+The `Makefile` wraps these (`make help` lists the targets): `make build`, `make test`, `make lint`,
+`make docs-build`, `make mcp-docs`, `make headless` (on a throwaway config folder) and `make check`
+(tests + docs build). Pass cargo flags with `CARGO_FLAGS="-j 4"`. Never use `make run` or
+`make install*` from an agent: `run` opens an editor, `install` overwrites the user's `scriber`.
+
 - Unit tests sit next to the code (`#[cfg(test)]` modules and `tests.rs` files). MCP tools are
   tested in `src/mcp/tools/tests.rs` against an in-memory `Workspace`, without a window.
 - Under `cfg(test)` the config folder is a temp folder and GUI settings are defaults, so tests never

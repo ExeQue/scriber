@@ -58,15 +58,15 @@ scriber --help           # all commands
 
 ### Build from source
 
-With [Rust](https://rustup.rs) (edition 2024); on Linux see the
-[installation guide](https://exeque.github.io/scriber/guide/installation#build-from-source) for the
-system packages it needs.
+With [Rust](https://rustup.rs) 1.95 or newer; the
+[installation guide](https://exeque.github.io/scriber/guide/installation#build-from-source) lists
+the system packages it needs.
 
 ```sh
 git clone https://github.com/ExeQue/scriber.git
 cd scriber
-cargo build --release
-./target/release/scriber
+make install                  # ~/.local/bin/scriber and a launcher entry; make uninstall removes them
+cargo install --path . --locked   # without make (also Windows): ~/.cargo/bin/scriber
 ```
 
 ## Connecting an agent

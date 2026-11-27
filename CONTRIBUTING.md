@@ -14,6 +14,14 @@ npm run docs:install        # once
 npm run docs:build          # the docs site; fails on dead links
 ```
 
+On Linux and macOS the `Makefile` wraps the same commands; `make help` lists them. The usual ones:
+`make dev` (debug build), `make run` (open the editor from the debug build; `ARGS=file.scrbr`),
+`make test`, `make lint`, `make headless`, `make install-dev` (install the debug build as your
+`scriber`) and `make check` (tests and docs build: what must pass before a pull request). Cargo
+flags go in `CARGO_FLAGS`, for example `make test CARGO_FLAGS="-j 4"`. More on development builds,
+such as running one next to an installed Scriber, in the
+[installation guide](https://exeque.github.io/scriber/guide/installation#working-on-scriber).
+
 Tests run with a temporary config folder, so they never touch your own library or settings. To try
 the MCP tools without a window, run `target/debug/scriber mcp --headless` with
 `SCRIBER_CONFIG_DIR` pointing at a scratch folder. More on the code layout in [AGENTS.md](AGENTS.md).
