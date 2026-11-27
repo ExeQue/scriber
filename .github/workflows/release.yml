@@ -1,8 +1,7 @@
 name: Build and release
 
-# Every push to main builds and tests the same matrix, so the Rust caches it saves are there for the
-# next tag (a tag run can read the default branch's caches, not another tag's). Only a `v*` tag, or a
-# manual run with a tag, publishes a release.
+# Pushes to main and pull requests run the tests only. A `v*` tag (or a manual run with a tag) also
+# builds the release binaries for every target and publishes them as a GitHub release.
 on:
   push:
     branches: [main]
@@ -11,8 +10,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to build and release (e.g. v0.1.0); empty builds without releasing
-        required: false
+        description: Existing tag to build and release (e.g. v0.1.0)
+        required: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -46,6 +45,7 @@ jobs:
 
   # Runs alongside the tests; the release job waits for both.
   build:
+    if: ${{ inputs.tag || startsWith(github.ref, 'refs/tags/v') }}
     strategy:
       fail-fast: false
       matrix:
@@ -70,8 +70,7 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ${{ matrix.target }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          key: ${{ matrix.target }}
       - run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Package
         run: |
@@ -102,7 +101,6 @@ jobs:
 
   release:
     needs: [test, build]
-    if: ${{ (inputs.tag != '' && inputs.tag != null) || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
