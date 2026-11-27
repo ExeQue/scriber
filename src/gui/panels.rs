@@ -75,10 +75,10 @@ impl App {
             });
             ui.menu_button("Edit", |ui| {
                 if ui.button("Undo  (Ctrl+Z)").clicked() {
-                    self.doc.lock().unwrap().undo();
+                    self.doc.lock().undo();
                 }
                 if ui.button("Redo  (Ctrl+Y)").clicked() {
-                    self.doc.lock().unwrap().redo();
+                    self.doc.lock().redo();
                 }
                 ui.separator();
                 if ui.button("Cut  (Ctrl+X)").clicked() {
@@ -129,7 +129,7 @@ impl App {
 
     pub(super) fn properties(&mut self, ui: &mut egui::Ui) {
         let doc = self.doc.clone();
-        let mut d = doc.lock().unwrap();
+        let mut d = doc.lock();
         let before = d.s.clone();
         let sel = d.selection.clone();
         let mut changed = false;

@@ -42,7 +42,7 @@ impl App {
     /// Open a new empty tab with the current material size.
     pub(super) fn new_tab(&mut self) {
         let (w, h) = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             (d.s.width, d.s.height)
         };
         self.ws.add(Document::new(w, h), true);
@@ -50,7 +50,7 @@ impl App {
 
     /// Close a tab; unsaved changes ask first.
     pub(super) fn close_tab(&mut self, id: u64) {
-        let dirty = self.ws.get(id).is_some_and(|d| d.lock().unwrap().dirty);
+        let dirty = self.ws.get(id).is_some_and(|d| d.lock().dirty);
         if dirty {
             self.ws.activate(id);
             self.closing = Some(id);
@@ -123,7 +123,7 @@ impl App {
             .docs()
             .iter()
             .map(|(id, d)| {
-                let d = d.lock().unwrap();
+                let d = d.lock();
                 (*id, title(&d), d.dirty, d.path.clone())
             })
             .collect();
@@ -177,7 +177,7 @@ impl App {
             self.closing = None;
             return;
         }
-        let name = self.ws.get(id).map(|d| title(&d.lock().unwrap())).unwrap_or_default();
+        let name = self.ws.get(id).map(|d| title(&d.lock())).unwrap_or_default();
         egui::Modal::new(egui::Id::unique("close-tab")).show(ctx, |ui| {
             ui.heading("Save changes?");
             ui.label(format!("{name} has changes that are not saved."));

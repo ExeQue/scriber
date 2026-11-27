@@ -560,9 +560,9 @@ impl Server {
 
     /// Like `with`; `selects` = the tool sets the selection on purpose, so it is kept.
     pub(super) fn with_select(&self, selects: bool, f: impl FnOnce(&mut Document) -> ToolResult) -> ToolResult {
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let before = d.selection.clone();
-        // A panic is caught while the lock is still held, so the document is restored and never poisoned.
+        // A panic is caught while the lock is still held, so the document is restored, not left half-changed.
         let r = d.guarded(f).unwrap_or_else(fail);
         let settled = d.settle(true);
         if !selects {
@@ -612,7 +612,7 @@ impl Server {
 impl Server {
     #[tool(description = "Get the document: material size, notes, layers, the user's selection, and every item (or only ids) with op, bounding box, rotation and its geometry. geometry: false gives a summary without geometry; a large document gets the summary unless geometry is set, with a note saying so: then ask for the geometry of particular ids.")]
     fn get_document(&self, Parameters(p): Parameters<GetDocument>) -> ToolResult {
-        ok(reply::document(&self.doc.lock().unwrap(), &p.ids, p.geometry))
+        ok(reply::document(&self.doc.lock(), &p.ids, p.geometry))
     }
 
     #[tool(description = "List the font families installed on this computer, for a text's font. sans-serif, serif and monospace also work and pick the system's default of that kind; generic says which installed family each one draws with.")]
@@ -688,7 +688,7 @@ impl Server {
         if let Some(e) = p.shape.as_ref().and_then(ShapeInput::input_error).or_else(|| p.font.as_deref().and_then(text::font_error)) {
             return fail(e);
         }
-        let is_text = matches!(self.doc.lock().unwrap().item(p.id).map(|i| &i.shape), Some(Shape::Text { .. }));
+        let is_text = matches!(self.doc.lock().item(p.id).map(|i| &i.shape), Some(Shape::Text { .. }));
         if p.font.is_some() && !is_text && !matches!(p.shape, Some(ShapeInput::Text { .. })) {
             return fail("font only applies to text items");
         }
@@ -777,7 +777,7 @@ impl Server {
 
     #[tool(description = "Measure items (empty ids = the selection, or everything when nothing is selected): bounding box, outline length and area per item, plus the total laser path length per op. Pass from/to to measure a distance.")]
     fn measure(&self, Parameters(p): Parameters<Measure>) -> ToolResult {
-        let d = self.doc.lock().unwrap();
+        let d = self.doc.lock();
         let ids: Vec<u64> = match (p.ids.is_empty(), d.selection.is_empty()) {
             (true, true) => d.s.items.iter().map(|i| i.id).collect(),
             (true, false) => d.selection.clone(),
@@ -860,7 +860,7 @@ impl Server {
 
     #[tool(description = "Export the document as SVG in mm for laser software (red = cut, blue = score, black = engrave lines and filled areas), one group (Inkscape layer) per shown layer in laser order; hidden layers are left out.")]
     fn export_svg(&self, Parameters(p): Parameters<ExportSvg>) -> ToolResult {
-        let svg = export::svg(&self.doc.lock().unwrap().s, p.include_annotations);
+        let svg = export::svg(&self.doc.lock().s, p.include_annotations);
         match std::fs::write(&p.path, svg) {
             Ok(()) => ok(json!({"path": p.path})),
             Err(e) => fail(format!("cannot write {}: {e}", p.path)),
@@ -869,7 +869,7 @@ impl Server {
 
     #[tool(description = "Export the document as DXF (ASCII, AutoCAD 2004, $INSUNITS = mm) for CAD programs and laser software: one DXF layer per shown layer (its name, and its colour as AutoCAD colour index plus true colour), contours as LWPOLYLINE with arcs (bulges), full circles as CIRCLE, text as its outlines. The DXF origin is the material's bottom-left corner (y up). Hidden layers, guides, dimensions and images are left out; no_output layers only with include_no_output.")]
     fn export_dxf(&self, Parameters(p): Parameters<ExportDxf>) -> ToolResult {
-        let out = match export::dxf::dxf(&self.doc.lock().unwrap().s, p.include_no_output) {
+        let out = match export::dxf::dxf(&self.doc.lock().s, p.include_no_output) {
             Ok(o) => o,
             Err(e) => return fail(e),
         };
@@ -881,7 +881,7 @@ impl Server {
 
     #[tool(description = "Export the document as an xTool Studio project (.xs) for the document's xTool machine and laser module: one xTool colour layer per shown layer, named after it (a colour another exported layer already has is nudged by one step per channel so layers never merge), each cut/score/engrave layer with its processing type (cut, score = vector engraving, engrave = fill) and the layer's power, speed and passes (and lines per cm). no_output layers go in as reference: on the canvas but never processed (xTool's ignoredDisplayIds); include_no_output: false leaves them out. Text goes out as outlines; hidden layers, guides and dimensions are left out; rotated or unreadable images are skipped (listed in `skipped`).")]
     fn export_xs(&self, Parameters(p): Parameters<ExportXs>) -> ToolResult {
-        let state = self.doc.lock().unwrap().s.clone();
+        let state = self.doc.lock().s.clone();
         let name = PathBuf::from(&p.path).file_stem().map_or("Scriber".into(), |s| s.to_string_lossy().into_owned());
         let lib = crate::library::get().clone(); // not locked while xs renders the cover (it locks the library)
         let x = match export::xs(&state, &lib, &name, p.include_no_output.unwrap_or(true)) {
@@ -896,7 +896,7 @@ impl Server {
 
     #[tool(description = "Render the document to PNG (preview: true shows what the laser makes). With a path it is written to that file; without, the image is returned so you can see the drawing.")]
     fn export_png(&self, Parameters(p): Parameters<ExportPng>) -> ToolResult {
-        let state = self.doc.lock().unwrap().s.clone();
+        let state = self.doc.lock().s.clone();
         let dpi = export::png_dpi(&state, p.dpi, p.path.is_none());
         let png = if p.preview { export::preview_png(&state, dpi) } else { export::png(&state, dpi, p.include_annotations.unwrap_or(true)) };
         let png = match png {

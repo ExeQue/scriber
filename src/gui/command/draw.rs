@@ -131,7 +131,7 @@ impl App {
             && let Some(at) = self.draft.first().copied()
         {
             // Text is engraved unless the current layer does something else than cut.
-            let current = { let d = self.doc.lock().unwrap(); d.s.layer(d.current_layer()).map(|l| l.op) };
+            let current = { let d = self.doc.lock(); d.s.layer(d.current_layer()).map(|l| l.op) };
             let op = (current == Some(Op::Cut)).then_some(Op::Engrave);
             let shape = Shape::Text { x: at[0], y: at[1], size: self.cmdline.text_height, text, rotation: 0.0, font: self.cmdline.text_font.clone(), bold: false, italic: false };
             self.create("text", op, shape);

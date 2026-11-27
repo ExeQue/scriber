@@ -51,7 +51,8 @@ use crate::{agents, export, mcp};
 use eframe::egui::{self, Event, Key, Modifiers, Pos2, Rect, Vec2};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use select::Drag;
 use tools::Tool;
 
@@ -404,7 +405,7 @@ impl App {
     /// Save a tab, asking for a file name when it has none (or `save_as`), then do `after`.
     fn save_then(&mut self, ctx: &egui::Context, id: u64, save_as: bool, after: AfterSave) {
         let Some(doc) = self.ws.get(id) else { return };
-        let current = doc.lock().unwrap().path.clone();
+        let current = doc.lock().path.clone();
         match current {
             Some(p) if !save_as => self.save_to(id, p, after),
             _ => self.dialog.save(ctx, Want::Save(id, after), rfd::FileDialog::new().add_filter("Scriber", &["scrbr"]).set_file_name("design.scrbr")),
@@ -413,7 +414,7 @@ impl App {
 
     fn save_to(&mut self, id: u64, path: PathBuf, after: AfterSave) {
         let Some(doc) = self.ws.get(id) else { return };
-        let result = doc.lock().unwrap().save(&path);
+        let result = doc.lock().save(&path);
         match result {
             Ok(()) => {
                 self.ws.remember(&path);
@@ -433,7 +434,7 @@ impl App {
     fn save_all_and_quit(&mut self, ctx: &egui::Context) {
         for (id, doc) in self.ws.docs() {
             let (dirty, path) = {
-                let d = doc.lock().unwrap();
+                let d = doc.lock();
                 (d.dirty, d.path.clone())
             };
             match (dirty, path) {
@@ -466,7 +467,7 @@ impl App {
             Ok(img) => {
                 let name = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
                 {
-                    let mut d = self.doc.lock().unwrap();
+                    let mut d = self.doc.lock();
                     d.checkpoint();
                     let id = d.place_image(img, at, None, &name);
                     d.selection = vec![id];
@@ -484,7 +485,7 @@ impl App {
 
     fn export_svg_to(&mut self, id: u64, path: &Path) {
         let Some(doc) = self.ws.get(id) else { return };
-        let svg = export::svg(&doc.lock().unwrap().s, false);
+        let svg = export::svg(&doc.lock().s, false);
         self.message = match std::fs::write(path, svg) {
             Ok(()) => format!("{} {}", "Exported", path.display()),
             Err(e) => format!("{}: {e}", "Export failed"),
@@ -497,7 +498,7 @@ impl App {
 
     fn export_dxf_to(&mut self, id: u64, path: &Path) {
         let Some(doc) = self.ws.get(id) else { return };
-        let out = export::dxf::dxf(&doc.lock().unwrap().s, false);
+        let out = export::dxf::dxf(&doc.lock().s, false);
         self.message = match out.and_then(|o| std::fs::write(path, &o.bytes).map(|()| o).map_err(|e| e.to_string())) {
             Ok(o) if o.skipped == 0 => format!("Exported {} ({} entities on {} layers)", path.display(), o.entities, o.layers),
             Ok(o) => format!("Exported {} ({} entities on {} layers); {} images left out", path.display(), o.entities, o.layers, o.skipped),
@@ -511,7 +512,7 @@ impl App {
 
     fn export_png_to(&mut self, id: u64, path: &Path) {
         let Some(doc) = self.ws.get(id) else { return };
-        let state = doc.lock().unwrap().s.clone();
+        let state = doc.lock().s.clone();
         self.message = match export::png(&state, 254.0, false).and_then(|png| Ok(std::fs::write(path, png)?)) {
             Ok(()) => format!("{} {} (254 DPI)", "Exported", path.display()),
             Err(e) => format!("{}: {e}", "Export failed"),
@@ -524,7 +525,7 @@ impl App {
 
     fn export_xs_to(&mut self, id: u64, path: &Path) {
         let Some(doc) = self.ws.get(id) else { return };
-        let state = doc.lock().unwrap().s.clone();
+        let state = doc.lock().s.clone();
         let path = path.with_extension("xs");
         let name = path.file_stem().map_or("Scriber".into(), |s| s.to_string_lossy().into_owned());
         let lib = crate::library::get().clone(); // not locked while xs renders the cover (it locks the library)
@@ -539,7 +540,7 @@ impl App {
 
     /// Run a command on the selection as one undo step; does nothing when nothing is selected.
     fn on_selection(&mut self, f: impl FnOnce(&mut Document, Vec<u64>)) {
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let ids = d.selection.clone();
         if !ids.is_empty() {
             d.checkpoint();
@@ -563,7 +564,7 @@ impl App {
         let mut err = None;
         self.on_selection(|d, ids| err = d.combine(&ids).err());
         if let Some(e) = err {
-            self.doc.lock().unwrap().undo();
+            self.doc.lock().undo();
             self.message = e;
         }
     }
@@ -572,19 +573,19 @@ impl App {
         let mut err = None;
         self.on_selection(|d, ids| err = ids.first().and_then(|id| d.break_apart(*id).err()));
         if let Some(e) = err {
-            self.doc.lock().unwrap().undo();
+            self.doc.lock().undo();
             self.message = e;
         }
     }
 
     fn select_all(&mut self) {
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         d.selection = d.s.items.iter().filter(|i| d.s.editable(i)).map(|i| i.id).collect();
     }
 
     /// Add a drawn shape on the current layer (or, with an `op`, a layer with that op; see `new_item_layer`).
     fn create(&mut self, name: &str, op: Option<Op>, shape: Shape) -> u64 {
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         d.checkpoint();
         let layer = d.new_item_layer(op);
         let id = d.add_to(layer, name, shape);
@@ -611,9 +612,9 @@ impl App {
         self.clipboard_events(ctx, pointer);
         // Most specific first: Ctrl+Shift+Z must not also count as Ctrl+Z.
         match () {
-            _ if consume(ctrl_shift, Key::Z) => _ = self.doc.lock().unwrap().redo(),
-            _ if consume(ctrl, Key::Z) => _ = self.doc.lock().unwrap().undo(),
-            _ if consume(ctrl, Key::Y) => _ = self.doc.lock().unwrap().redo(),
+            _ if consume(ctrl_shift, Key::Z) => _ = self.doc.lock().redo(),
+            _ if consume(ctrl, Key::Z) => _ = self.doc.lock().undo(),
+            _ if consume(ctrl, Key::Y) => _ = self.doc.lock().redo(),
             _ if consume(ctrl_shift, Key::S) => self.save(ctx, true),
             _ if consume(ctrl, Key::S) => self.save(ctx, false),
             _ if consume(ctrl, Key::O) => self.open_dialog(ctx),
@@ -652,7 +653,7 @@ impl App {
     }
 
     fn close_dialog(&mut self, ctx: &egui::Context) {
-        let unsaved = self.ws.docs().iter().filter(|(_, d)| d.lock().unwrap().dirty).count();
+        let unsaved = self.ws.docs().iter().filter(|(_, d)| d.lock().dirty).count();
         egui::Modal::new(egui::Id::unique("close")).show(ctx, |ui| {
             ui.heading("Save changes?");
             ui.label(if unsaved > 1 { format!("{unsaved} drawings have changes that are not saved.") } else { "The drawing has changes that are not saved.".into() });
@@ -685,7 +686,7 @@ impl eframe::App for App {
         self.follow_active();
         self.library_synced();
         let title = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             let name = d.path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
             let name = name.unwrap_or_else(|| "Untitled".into());
             format!("{name}{} — Scriber", if d.dirty { " •" } else { "" })
@@ -694,7 +695,7 @@ impl eframe::App for App {
         if std::mem::take(&mut self.quit_after_save) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
-        let dirty = self.ws.docs().iter().any(|(_, d)| d.lock().unwrap().dirty);
+        let dirty = self.ws.docs().iter().any(|(_, d)| d.lock().dirty);
         if ctx.input(|i| i.viewport().close_requested()) && dirty && !self.allow_close {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.confirm_close = true;

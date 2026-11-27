@@ -467,11 +467,12 @@ mod tests {
     fn otrack_works_with_polar_off() {
         use crate::gui::command::Cmd;
         use crate::model::{Contour, Document, Op, Shape};
-        use std::sync::{Arc, Mutex};
+        use parking_lot::Mutex;
+        use std::sync::Arc;
         let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
         let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
-        doc.lock().unwrap().add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 0.0])));
-        let items = doc.lock().unwrap().s.items.clone();
+        doc.lock().add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 0.0])));
+        let items = doc.lock().s.items.clone();
         app.aids.polar = false;
         app.start(Cmd::Line);
         let t0 = Instant::now();
@@ -495,15 +496,16 @@ mod tests {
     fn otrack_acquires_on_rest_and_snaps_to_crossing_guides() {
         use crate::gui::command::Cmd;
         use crate::model::{Contour, Document, Op, Shape};
-        use std::sync::{Arc, Mutex};
+        use parking_lot::Mutex;
+        use std::sync::Arc;
         let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
         let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
         {
-            let mut d = doc.lock().unwrap();
+            let mut d = doc.lock();
             d.add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 0.0])));
             d.add("", Op::Cut, Shape::path(Contour::line([100.0, 60.0], [100.0, 80.0])));
         }
-        let items = doc.lock().unwrap().s.items.clone();
+        let items = doc.lock().s.items.clone();
         app.start(Cmd::Line);
         let t0 = Instant::now();
         let ms = |n: u64| t0 + Duration::from_millis(n);
@@ -552,10 +554,11 @@ mod tests {
     #[test]
     fn an_acquired_end_gives_labelled_paths_that_remember_their_segment() {
         use crate::model::{Contour, Document, Op, Shape};
-        use std::sync::{Arc, Mutex};
+        use parking_lot::Mutex;
+        use std::sync::Arc;
         let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
-        let a = doc.lock().unwrap().add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 0.0])));
-        let items = doc.lock().unwrap().s.items.clone();
+        let a = doc.lock().add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 0.0])));
+        let items = doc.lock().s.items.clone();
         let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
         app.aids.osnap = true;
         app.start(crate::gui::command::Cmd::Line);

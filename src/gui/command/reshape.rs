@@ -12,7 +12,7 @@ impl App {
     pub(super) fn reshape_step(&mut self, cmd: Cmd, entry: Entry, pointer: Option<Point>) -> Result<(), String> {
         match (cmd, &entry) {
             (Cmd::Align, Entry::Empty) if self.cmdline.ux.pts.len() == 2 => return self.align_now(),
-            (Cmd::MatchProp, Entry::Empty) if self.cmdline.ux.pick.is_some() && !self.doc.lock().unwrap().selection.is_empty() => {
+            (Cmd::MatchProp, Entry::Empty) if self.cmdline.ux.pick.is_some() && !self.doc.lock().selection.is_empty() => {
                 let (source, _) = self.cmdline.ux.pick.unwrap();
                 self.apply(|d, ids| d.match_properties(source, ids))?;
                 self.end();
@@ -190,7 +190,7 @@ impl App {
                 ui.label(RichText::new("Click near the end of a line or arc; a negative change shortens it.").small().weak());
             }
             Cmd::MatchProp if u.pick.is_some() => {
-                let has_selection = !self.doc.lock().unwrap().selection.is_empty();
+                let has_selection = !self.doc.lock().selection.is_empty();
                 if has_selection && ui.button("Apply to the selection").clicked() {
                     self.answer(Entry::Empty, None);
                 }

@@ -88,7 +88,7 @@ impl Server {
             Ok(l) => l,
             Err(e) => return fail(e),
         };
-        let first = self.doc.lock().unwrap().s.machine.clone();
+        let first = self.doc.lock().s.machine.clone();
         let lib = library::get();
         let words: Vec<String> = p.query.unwrap_or_default().to_lowercase().split_whitespace().map(str::to_string).collect();
         let hits: Vec<_> = xtool::group(list)
@@ -118,7 +118,7 @@ impl Server {
             Ok(l) => l,
             Err(e) => return fail(e),
         };
-        let first = p.machine.clone().or_else(|| self.doc.lock().unwrap().s.machine.clone());
+        let first = p.machine.clone().or_else(|| self.doc.lock().s.machine.clone());
         let groups = xtool::group(list);
         let (mut chosen, mut errors) = (Vec::new(), Vec::new());
         {

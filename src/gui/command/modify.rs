@@ -59,7 +59,7 @@ impl App {
             _ => {
                 self.begin(cmd, Step::Choose);
                 self.tool = Tool::Select;
-                if !self.doc.lock().unwrap().selection.is_empty() {
+                if !self.doc.lock().selection.is_empty() {
                     self.chosen(cmd);
                 }
             }
@@ -118,7 +118,7 @@ impl App {
                 if entry != Entry::Empty {
                     return Err("Click the objects (or drag a box around them), then press Enter.".into());
                 }
-                if self.doc.lock().unwrap().selection.is_empty() {
+                if self.doc.lock().selection.is_empty() {
                     self.end();
                     return Err("Nothing selected.".into());
                 }
@@ -156,14 +156,14 @@ impl App {
         match (cmd, entry) {
             (_, Entry::Empty) => {
                 // FILLET/CHAMFER with two lines selected joins them, as AutoCAD does with two picks.
-                if matches!(cmd, Cmd::Fillet | Cmd::Chamfer) && self.doc.lock().unwrap().selection.len() == 2 {
+                if matches!(cmd, Cmd::Fillet | Cmd::Chamfer) && self.doc.lock().selection.len() == 2 {
                     self.apply(|d, ids| corner(d, ids, None))?;
                 }
                 self.end();
                 Ok(())
             }
             (Cmd::Fillet | Cmd::Chamfer, Entry::Word(w)) if is_option(&w, "All") => {
-                if self.doc.lock().unwrap().selection.is_empty() {
+                if self.doc.lock().selection.is_empty() {
                     return Err("Select the shapes first, then use All.".into());
                 }
                 self.apply(|d, ids| corner(d, ids, None))?;
@@ -185,7 +185,7 @@ impl App {
                 }
                 // A click where two separate lines meet: use both.
                 let other = {
-                    let d = self.doc.lock().unwrap();
+                    let d = self.doc.lock();
                     self.other_end_at(&d, id, p)
                 };
                 if let Some(other) = other {
@@ -278,7 +278,7 @@ impl App {
 
     /// The item under a clicked point.
     pub(super) fn item_at(&self, p: Point) -> Result<u64, String> {
-        let d = self.doc.lock().unwrap();
+        let d = self.doc.lock();
         self.hit(&d, p).ok_or_else(|| "Nothing there; click on a shape.".into())
     }
 
@@ -293,7 +293,7 @@ impl App {
 
     /// +1 for outside a closed shape (or left of an open one, as the model offsets it), -1 otherwise.
     fn offset_side(&self, id: u64, p: Point) -> f64 {
-        let d = self.doc.lock().unwrap();
+        let d = self.doc.lock();
         let Some(item) = d.item(id) else { return 1.0 };
         if let Shape::Path { contours } = &item.shape
             && contours.iter().all(|c| c.closed)
@@ -317,7 +317,7 @@ impl App {
 
     /// Run an op on the selection; it becomes the command's undo step only if it succeeds.
     pub(super) fn apply<T>(&mut self, f: impl FnOnce(&mut Document, &[u64]) -> Result<T, String>) -> Result<T, String> {
-        let ids = self.doc.lock().unwrap().selection.clone();
+        let ids = self.doc.lock().selection.clone();
         self.apply_ids(&ids, f)
     }
 
@@ -327,7 +327,7 @@ impl App {
     }
 
     pub(super) fn apply_ids<T>(&mut self, ids: &[u64], f: impl FnOnce(&mut Document, &[u64]) -> Result<T, String>) -> Result<T, String> {
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let before = d.s.clone();
         let out = f(&mut d, ids)?;
         if !self.cmdline.checkpointed {

@@ -105,7 +105,7 @@ impl App {
     /// Right-click on a badge or dimension label.
     pub(super) fn constraint_menu_for(&mut self, ui: &mut egui::Ui, id: u64) {
         let (label, dimension) = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             let Some(c) = d.constraint(id) else { return };
             (describe(&d.s, c, &[]), c.kind.is_dimension())
         };

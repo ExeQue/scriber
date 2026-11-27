@@ -9,17 +9,17 @@ impl App {
     pub(super) fn open_agents(&mut self) {
         self.show_agents = true;
         let list = self.agents.clone();
-        *list.lock().unwrap() = None;
+        *list.lock() = None;
         std::thread::spawn(move || {
             let found = agents::detect();
-            *list.lock().unwrap() = Some(found);
+            *list.lock() = Some(found);
         });
     }
 
     pub(super) fn agents_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_agents;
         let mut refresh = false;
-        let list = self.agents.lock().unwrap().clone();
+        let list = self.agents.lock().clone();
         egui::Window::new("Connect AI agents").id(self.popouts.id("agents")).pivot(egui::Align2::CENTER_CENTER).default_pos(ctx.content_rect().center()).open(&mut open).default_width(580.0).show(ctx, |ui| {
             ui.label("Scriber found these AI agents on this computer. Click Connect, then restart the agent: it can then draw in this window.");
             ui.add_space(6.0);

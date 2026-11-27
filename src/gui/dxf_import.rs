@@ -32,7 +32,7 @@ impl App {
 
     /// The DXF file was chosen (or dropped at `at`): read it and ask what to do with its layers.
     pub(super) fn dxf_file_chosen(&mut self, path: PathBuf, at: Option<Point>) {
-        let height = self.doc.lock().unwrap().s.height;
+        let height = self.doc.lock().s.height;
         let read = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| import::read(&b, height, TOLERANCE));
         match read {
             Ok(dxf) => {
@@ -96,7 +96,7 @@ impl App {
         let ops: BTreeMap<String, Option<Op>> = s.dxf.groups.iter().zip(&s.ops).map(|(g, op)| (g.name.clone(), *op)).collect();
         let at = s.place.then_some([s.x, s.y]);
         let result = {
-            let mut d = self.doc.lock().unwrap();
+            let mut d = self.doc.lock();
             let before = d.s.clone();
             d.import_dxf(&s.dxf, &ops, at).inspect(|_| d.push_undo(before))
         };

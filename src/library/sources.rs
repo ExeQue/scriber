@@ -13,7 +13,7 @@ use rmcp::schemars::{self, JsonSchema};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub const MANIFEST: &str = ".scriber.json";
@@ -166,7 +166,7 @@ pub fn list(dir: &Path) -> Vec<Source> {
 
 /// Change the list and save it (write-then-rename), one change at a time.
 fn edit<T>(dir: &Path, f: impl FnOnce(&mut Vec<Source>) -> Result<T, String>) -> Result<T, String> {
-    let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = LOCK.lock();
     let mut list = list(dir);
     let out = f(&mut list)?;
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -900,17 +900,17 @@ mod tests {
 
     impl Fake {
         fn set(&self, url: &str, status: u16, body: impl Into<Vec<u8>>, etag: &str) {
-            self.replies.lock().unwrap().insert(url.into(), (status, body.into(), etag.into()));
+            self.replies.lock().insert(url.into(), (status, body.into(), etag.into()));
         }
         fn downloads(&self) -> usize {
-            self.calls.lock().unwrap().iter().filter(|c| c.contains("codeload")).count()
+            self.calls.lock().iter().filter(|c| c.contains("codeload")).count()
         }
     }
 
     impl Http for Fake {
         fn get(&self, url: &str, _: &str, etag: &str, limit: u64) -> Result<Reply, String> {
-            self.calls.lock().unwrap().push(url.into());
-            let (status, body, tag) = self.replies.lock().unwrap().get(url).cloned().unwrap_or((404, Vec::new(), String::new()));
+            self.calls.lock().push(url.into());
+            let (status, body, tag) = self.replies.lock().get(url).cloned().unwrap_or((404, Vec::new(), String::new()));
             if !etag.is_empty() && etag == tag {
                 return Ok(Reply { status: 304, body: Vec::new(), etag: tag });
             }
@@ -1083,16 +1083,16 @@ mod tests {
         let r = set_track(&dir, &fake, "acme-presets", Track::Release("latest".into())).unwrap();
         assert!(r.changed);
         assert_eq!(list(&dir)[0].release, "v2 (Spring set)");
-        let calls = fake.calls.lock().unwrap().len();
+        let calls = fake.calls.lock().len();
         assert!(!sync(&dir, &fake, "acme-presets", true).unwrap().changed, "same release (304)");
-        assert_eq!(fake.calls.lock().unwrap().len(), calls + 1, "one small call");
+        assert_eq!(fake.calls.lock().len(), calls + 1, "one small call");
 
         // Locked to a commit: sync makes no call at all.
         fake.set(&format!("{API}/commits/{C2}"), 200, C2, "");
         set_track(&dir, &fake, "acme-presets", Track::Commit(C2.into())).unwrap();
-        let calls = fake.calls.lock().unwrap().len();
+        let calls = fake.calls.lock().len();
         assert!(!sync(&dir, &fake, "acme-presets", true).unwrap().changed);
-        assert_eq!(fake.calls.lock().unwrap().len(), calls);
+        assert_eq!(fake.calls.lock().len(), calls);
 
         fake.set(&format!("{API}/tags?per_page=100"), 200, r#"[{"name": "v1"}, {"name": "v2"}]"#, "");
         fake.set(&format!("{API}/releases?per_page=30"), 200, r#"[{"tag_name": "v2", "name": "Spring set"}]"#, "");

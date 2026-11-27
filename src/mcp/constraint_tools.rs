@@ -178,7 +178,7 @@ impl Server {
 
     #[tool(description = "List every constraint: type, references, the parameter name/expression/value of dimensional ones, and whether it is satisfied.")]
     fn list_constraints(&self) -> ToolResult {
-        let d = self.doc.lock().unwrap();
+        let d = self.doc.lock();
         ok(json!({"constraints": d.list_constraints()}))
     }
 

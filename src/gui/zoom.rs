@@ -49,7 +49,7 @@ impl App {
     /// ZOOM Selection (or ZOOM Object): the selected items fill the view.
     pub(super) fn zoom_selection(&mut self) -> bool {
         let b = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             d.bbox(&d.selection)
         };
         b.map(|b| self.zoom_to(b)).is_some()

@@ -184,7 +184,7 @@ impl App {
 
     fn aim_at_doc(&mut self, raw: Point, from: Option<Point>) -> Point {
         let doc = self.doc.clone();
-        let d = doc.lock().unwrap();
+        let d = doc.lock();
         self.aim(&snap_items(&d.s), raw, from)
     }
 
@@ -195,7 +195,7 @@ impl App {
             return;
         }
         let (w, h) = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             (d.s.width as f32, d.s.height as f32)
         };
         let z = ((rect.width() - 60.0) / w).min((rect.height() - 60.0) / h).max(0.05);
@@ -329,7 +329,7 @@ impl App {
         painter.rect_filled(rect, 0.0, crate::gui::theme::get().canvas);
 
         let (state, selection) = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             (d.s.clone(), d.selection.clone())
         };
         self.paint_material(&painter, state.width, state.height);
@@ -497,7 +497,7 @@ impl App {
         let color = match self.tool {
             Tool::Dimension => op_color(Op::NoOutput),
             _ => {
-                let d = self.doc.lock().unwrap();
+                let d = self.doc.lock();
                 d.s.layer(d.current_layer()).map_or(op_color(Op::Cut), |l| rgb(l.rgb()))
             }
         };

@@ -73,7 +73,7 @@ impl App {
     /// The layer rows: short in the panel, everything in the dialog.
     fn layers_ui(&mut self, ui: &mut egui::Ui, full: bool) {
         let doc = self.doc.clone();
-        let mut d = doc.lock().unwrap();
+        let mut d = doc.lock();
         let before = d.s.clone();
         let current = d.current_layer();
         let used: Vec<u64> = d.s.items.iter().map(|i| i.layer).collect();
@@ -124,7 +124,7 @@ impl App {
 
     fn apply_layer_action(&mut self) {
         let doc = self.doc.clone();
-        let mut d = doc.lock().unwrap();
+        let mut d = doc.lock();
         let current = d.current_layer();
         match self.layer_action.take() {
             Some(Action::Current(id)) => d.set_current_layer(id),

@@ -26,7 +26,7 @@ fn is_svg(text: &str) -> bool {
 
 impl App {
     pub(super) fn copy_selection(&mut self, ctx: &egui::Context) -> bool {
-        let d = self.doc.lock().unwrap();
+        let d = self.doc.lock();
         let Some(clip) = d.copy(&d.selection) else { return false };
         drop(d);
         let json = clip.to_json();
@@ -101,7 +101,7 @@ impl App {
     fn paste_text(&mut self, text: &str, at: Option<Point>, in_place: bool) {
         let at = at.filter(|_| !in_place);
         self.set_tool(Tool::Select);
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let before = d.s.clone();
         let result = if is_svg(text) {
             d.import_svg(text.as_bytes(), &ImportOptions::default()).map(|ids| {

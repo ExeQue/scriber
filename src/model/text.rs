@@ -4,7 +4,8 @@
 use super::geom::{BBox, Contour, Point, rotate_point, union};
 use resvg::usvg::{self, Node, tiny_skia_path::PathSegment};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use parking_lot::Mutex;
+use std::sync::{Arc, OnceLock};
 
 /// The font family new text gets; resolved to the system's sans-serif font.
 pub const DEFAULT_FONT: &str = "sans-serif";
@@ -181,7 +182,7 @@ pub fn glyphs(style: &Style) -> Arc<Glyphs> {
     type Key = (String, String, u64, bool, bool);
     static CACHE: OnceLock<Mutex<HashMap<Key, Arc<Glyphs>>>> = OnceLock::new();
     let key = (style.text.to_owned(), style.font.to_owned(), style.size, style.bold, style.italic);
-    let mut cache = CACHE.get_or_init(Default::default).lock().unwrap();
+    let mut cache = CACHE.get_or_init(Default::default).lock();
     if let Some(g) = cache.get(&key) {
         return g.clone();
     }

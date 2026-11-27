@@ -54,7 +54,7 @@ impl App {
     /// Move dimension `id`'s label to `at`: along its line and away from the geometry, or around
     /// the arc, or along and around the leader.
     pub(super) fn drag_label(&self, id: u64, at: Point) {
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let Some(place) = d.constraint(id).and_then(|c| dim_place(&d.s, c.kind, &c.refs)) else { return };
         let Some(c) = d.s.constraints.iter_mut().find(|c| c.id == id) else { return };
         (c.offset, c.shift) = label_through(place, c.kind, at);

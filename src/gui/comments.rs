@@ -92,7 +92,7 @@ impl App {
             && let Some(at) = raw
         {
             let items = {
-                let d = self.doc.lock().unwrap();
+                let d = self.doc.lock();
                 self.hit(&d, at).map(|id| d.expand_groups(&[id])).unwrap_or_default()
             };
             self.start_draft(at, items);
@@ -109,7 +109,7 @@ impl App {
     /// "Comment on this…" in the right-click menu, for the selection.
     pub(super) fn comment_menu(&mut self, ui: &mut egui::Ui) {
         let (sel, centre) = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             (d.selection.clone(), d.bbox(&d.selection).map(|[x, y, w, h]| [x + w / 2.0, y + h / 2.0]))
         };
         if let Some(at) = centre
@@ -125,7 +125,7 @@ impl App {
         if self.comments.hidden {
             return;
         }
-        let list = self.doc.lock().unwrap().annotations.list.clone();
+        let list = self.doc.lock().annotations.list.clone();
         let font = FontId::proportional(11.0);
         let draft = self.comments.draft.as_ref().map(|d| (0, d.at, Status::Open));
         for (id, at, status) in list.iter().map(|a| (a.id, a.at, a.status)).chain(draft) {
@@ -180,7 +180,7 @@ impl App {
         });
         if post {
             let d = self.comments.draft.take().unwrap();
-            let r = self.doc.lock().unwrap().annotate(Author::Person, &d.text, Some(d.at), d.items);
+            let r = self.doc.lock().annotate(Author::Person, &d.text, Some(d.at), d.items);
             match r {
                 Ok(id) => self.message = format!("Comment {id} added"),
                 Err(e) => self.message = e,
@@ -193,7 +193,7 @@ impl App {
 
     fn thread_window(&mut self, ctx: &egui::Context) {
         let Some(id) = self.comments.open else { return };
-        let Some(a) = self.doc.lock().unwrap().annotations.get(id).cloned() else {
+        let Some(a) = self.doc.lock().annotations.get(id).cloned() else {
             self.comments.open = None;
             return;
         };
@@ -229,7 +229,7 @@ impl App {
                 }
             });
         });
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let r = match action {
             Some(Act::Reply) => d.reply_annotation(id, Author::Person, &std::mem::take(&mut self.comments.reply), None),
             Some(Act::Status(s)) => d.set_annotation_status(id, Author::Person, s),
@@ -250,7 +250,7 @@ impl App {
     /// The Comments list in the right panel (only when there are any): click one to zoom to it.
     pub(super) fn comments_panel(&mut self, ui: &mut egui::Ui) {
         let (list, open_count) = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             (d.annotations.list.clone(), d.annotations.open_count())
         };
         if list.is_empty() {
@@ -277,7 +277,7 @@ impl App {
 
     fn zoom_to_comment(&mut self, a: &Annotation) {
         let around = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             d.bbox(&a.items)
         };
         let [x, y] = a.at;

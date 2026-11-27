@@ -95,7 +95,7 @@ impl App {
             Cmd::Parameters => self.show_parameters = true,
             Cmd::Dim => self.start_dim(),
             Cmd::ConstraintBar => {
-                let sel = self.doc.lock().unwrap().selection.clone();
+                let sel = self.doc.lock().selection.clone();
                 if sel.is_empty() {
                     self.bars = !self.bars;
                     self.hidden_bars.clear();
@@ -108,7 +108,7 @@ impl App {
             Cmd::AutoConstrain | Cmd::DelConstraint => {
                 self.begin(cmd, Step::Constrain);
                 self.tool = Tool::Select;
-                if !self.doc.lock().unwrap().selection.is_empty() {
+                if !self.doc.lock().selection.is_empty() {
                     self.answer(Entry::Empty, None);
                 }
             }
@@ -148,7 +148,7 @@ impl App {
 
     /// `d1=40` for the dimension being edited.
     fn editing_label(&self) -> String {
-        let d = self.doc.lock().unwrap();
+        let d = self.doc.lock();
         self.cmdline.constrain.editing.and_then(|id| d.constraint(id)).map_or(String::new(), |c| format!("{}={}", c.name, c.expr))
     }
 
@@ -234,7 +234,7 @@ impl App {
 
     /// Ask for a dimension's value (also used when its label is double-clicked).
     pub(in crate::gui) fn edit_dimension(&mut self, id: u64) {
-        let (kind, name, expr) = match self.doc.lock().unwrap().constraint(id) {
+        let (kind, name, expr) = match self.doc.lock().constraint(id) {
             Some(c) => (c.kind, c.name.clone(), c.expr.clone()),
             None => return,
         };
@@ -280,7 +280,7 @@ impl App {
     /// bound to those points. False when the ends are not both on points (then it is a plain note).
     pub(super) fn associative_dimension(&mut self, a: Point, b: Point) -> bool {
         let at = |p: Point| {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             d.s.items.iter().filter_map(|i| nearest_point(&d.s, i.id, p)).find(|(_, dist)| *dist < 1e-6).map(|r| r.0)
         };
         let (Some(ra), Some(rb)) = (at(a), at(b)) else { return false };
@@ -296,7 +296,7 @@ impl App {
 
     /// The point (when allowed and near) or the line/arc/circle under `p`.
     pub(super) fn pick_ref(&self, p: Point, points: bool) -> Result<Ref, String> {
-        let d = self.doc.lock().unwrap();
+        let d = self.doc.lock();
         let tol = (APERTURE / self.view.zoom) as f64;
         if points {
             let near = d.s.items.iter().filter_map(|i| nearest_point(&d.s, i.id, p)).filter(|(_, dist)| *dist <= tol).min_by(|a, b| a.1.total_cmp(&b.1));
@@ -311,7 +311,7 @@ impl App {
     /// Change the document as part of the command's undo step, and solve at once so a conflict is
     /// reported here (and the change undone).
     pub(super) fn change(&mut self, f: impl FnOnce(&mut Document) -> Result<String, String>) -> Result<String, String> {
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let before = d.s.clone();
         let out = match f(&mut d) {
             Ok(out) => out,

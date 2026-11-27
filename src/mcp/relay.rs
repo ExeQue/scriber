@@ -16,7 +16,8 @@ use hyper_util::rt::TokioIo;
 use serde_json::{Value, json};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -144,7 +145,7 @@ impl Bridge {
             .header("host", format!("127.0.0.1:{}", self.port))
             .header("content-type", "application/json")
             .header("accept", "application/json, text/event-stream");
-        if let Some(v) = self.version.lock().unwrap().as_deref() {
+        if let Some(v) = self.version.lock().as_deref() {
             req = req.header("mcp-protocol-version", v);
         }
         let req = req.body(Full::new(Bytes::from(line.to_owned()))).map_err(|e| Err(e.into()))?;
@@ -197,18 +198,18 @@ impl Bridge {
         if v["id"].as_str().is_some_and(|id| id.starts_with(POLL_ID)) {
             if let Some(tools) = v["result"].get("tools") {
                 let fp = fingerprint(tools);
-                if self.listed.lock().unwrap().replace(fp).is_some_and(|old| old != fp) {
+                if self.listed.lock().replace(fp).is_some_and(|old| old != fp) {
                     let _ = out.send(r#"{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}"#.to_owned());
                 }
             }
             return;
         }
         if let Some(tools) = v["result"].get("tools") {
-            *self.listed.lock().unwrap() = Some(fingerprint(tools));
+            *self.listed.lock() = Some(fingerprint(tools));
         }
         if let Some(version) = v["result"]["protocolVersion"].as_str() {
             // The initialize reply: the stateless editor cannot announce tool changes, the bridge can.
-            *self.version.lock().unwrap() = Some(version.to_owned());
+            *self.version.lock() = Some(version.to_owned());
             v["result"]["capabilities"]["tools"]["listChanged"] = json!(true);
             let _ = out.send(v.to_string());
             return;
@@ -237,7 +238,7 @@ mod tests {
         let (mut stdin, input) = tokio::io::duplex(1 << 16);
         let (output, stdout) = tokio::io::duplex(1 << 20);
         tokio::spawn(bridge(port, BufReader::new(input), output, move || {
-            *count.lock().unwrap() += 1;
+            *count.lock() += 1;
             spawn(port);
             Ok(())
         }));
@@ -257,14 +258,14 @@ mod tests {
         let get = |id: u32| json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":"get_document","arguments":{}}});
         let r = call!(get(3));
         assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("\"width\":300"), "{r}");
-        assert_eq!(*launched.lock().unwrap(), 0);
+        assert_eq!(*launched.lock(), 0);
 
         server.abort();
         let _ = server.await;
         let r = call!(get(4));
         assert_eq!(r["id"], 4);
         assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("\"width\":300"), "{r}");
-        assert_eq!(*launched.lock().unwrap(), 1);
+        assert_eq!(*launched.lock(), 1);
     }
 
     /// A fake editor whose tool list is `tools`; counts the bridge's own `tools/list` polls.
@@ -287,7 +288,7 @@ mod tests {
                                 if v["id"].is_string() {
                                     polls.fetch_add(1, Ordering::Relaxed);
                                 }
-                                let list: Vec<Value> = tools.lock().unwrap().iter().map(|n| json!({"name": n, "inputSchema": {"type": "object"}})).collect();
+                                let list: Vec<Value> = tools.lock().iter().map(|n| json!({"name": n, "inputSchema": {"type": "object"}})).collect();
                                 json!({"tools": list})
                             }
                             _ => return Ok::<_, hyper::Error>(hyper::Response::builder().status(202).body(Full::new(Bytes::new())).unwrap()),
@@ -330,7 +331,7 @@ mod tests {
         assert_eq!(next!()["result"]["tools"][0]["name"], "a");
 
         // Not initialized yet: no polls, so no notification.
-        tools.lock().unwrap().push("b");
+        tools.lock().push("b");
         pause().await;
         assert_eq!(polls.load(Ordering::Relaxed), 0);
 
@@ -344,7 +345,7 @@ mod tests {
         assert_eq!(r["id"], 3, "{r}");
         assert_eq!(r["result"]["tools"][1]["name"], "b");
 
-        tools.lock().unwrap().push("c");
+        tools.lock().push("c");
         assert_eq!(next!(), json!({"jsonrpc":"2.0","method":"notifications/tools/list_changed"}));
     }
 }

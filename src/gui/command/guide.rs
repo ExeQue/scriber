@@ -58,7 +58,7 @@ impl App {
                     Some((first, _)) if first == id => return Err("Pick a second, different line.".into()),
                     Some((first, _)) => {
                         let ok = {
-                            let d = self.doc.lock().unwrap();
+                            let d = self.doc.lock();
                             let contour = |id: u64| d.item(id).and_then(|i| i.shape.contours().first().cloned());
                             matches!((contour(first), contour(id)), (Some(a), Some(b)) if Guide::centerline(&a, &b).is_some())
                         };
@@ -73,7 +73,7 @@ impl App {
             Cmd::Centermark => {
                 let id = self.item_at(p)?;
                 let found = {
-                    let d = self.doc.lock().unwrap();
+                    let d = self.doc.lock();
                     d.item(id).and_then(|i| i.shape.contours().first().and_then(Guide::circle_of))
                 };
                 let ([cx, cy], r) = found.ok_or("Pick a circle or an arc.")?;
@@ -137,7 +137,7 @@ impl App {
             return Ok(());
         };
         let seg = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             let outline = d.item(id).map(|i| i.shape.outline(0.05)).unwrap_or_default();
             outline.iter().flat_map(|l| l.windows(2).map(|s| [s[0], s[1]]).collect::<Vec<_>>()).min_by(|a, b| segment_distance(at, a[0], a[1]).total_cmp(&segment_distance(at, b[0], b[1])))
         };

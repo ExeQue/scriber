@@ -27,7 +27,7 @@ impl App {
             return;
         }
         let doc = self.doc.clone();
-        let d = doc.lock().unwrap();
+        let d = doc.lock();
         let (offset, zoom) = (self.canvas_rect.min + self.view.offset, self.view.zoom);
         let to_screen = |p: &Point| offset + egui::vec2(p[0] as f32, p[1] as f32) * zoom;
         for (n, pick) in self.picked.iter().enumerate() {

@@ -63,7 +63,7 @@ pub fn parameter_rows(ui: &mut egui::Ui, edit: &mut ParamEdit, s: &State) -> Opt
 impl App {
     pub(super) fn parameters_window(&mut self, ctx: &egui::Context) {
         let mut open = true;
-        let s = self.doc.lock().unwrap().s.clone();
+        let s = self.doc.lock().s.clone();
         let mut change = None;
         egui::Window::new("Parameters").id(self.popouts.id("parameters")).pivot(egui::Align2::CENTER_CENTER).default_pos(ctx.content_rect().center()).open(&mut open).resizable(false).show(ctx, |ui| {
             if !s.constraints.iter().any(|c| c.kind.is_dimension()) {
@@ -81,7 +81,7 @@ impl App {
 
     /// One undo step; the geometry follows at once, or the change is refused with the reason.
     pub(super) fn apply_param_change(&mut self, change: ParamChange) {
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let before = d.s.clone();
         let name = |id: u64| before.constraints.iter().find(|c| c.id == id).map(|c| c.name.clone()).unwrap_or_default();
         let result = match change {

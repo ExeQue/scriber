@@ -87,7 +87,7 @@ impl App {
             && let Some(o) = ui.input(|i| i.pointer.press_origin())
         {
             let origin = self.s2w(o);
-            let mut d = doc.lock().unwrap();
+            let mut d = doc.lock();
             let grip = self.grip_at(&self.grips(&d.s.items, &d.selection), o);
             let label = self.dim_labels.iter().find(|(_, r)| r.contains(o)).and_then(|(id, _)| self.grab_label(&d, *id, origin));
             self.drag = Some(match (grip, label, self.hit(&d, origin)) {
@@ -139,7 +139,7 @@ impl App {
             let (dx, dy) = (want[0] - applied[0], want[1] - applied[1]);
             if dx != 0.0 || dy != 0.0 {
                 *applied = want;
-                let mut d = doc.lock().unwrap();
+                let mut d = doc.lock();
                 let ids = d.selection.clone();
                 d.transform(&ids, &Transform::translate(dx, dy));
             }
@@ -159,7 +159,7 @@ impl App {
             && let Some(p) = raw
         {
             let grip = response.interact_pointer_pos().and_then(|at| {
-                let d = doc.lock().unwrap();
+                let d = doc.lock();
                 self.grip_at(&self.grips(&d.s.items, &d.selection), at)
             });
             match grip {
@@ -177,7 +177,7 @@ impl App {
         if self.drag.is_none() {
             let (under, grip) = match raw {
                 Some(p) => {
-                    let d = doc.lock().unwrap();
+                    let d = doc.lock();
                     // Hit-tests the outlines of every visible item each frame, uncached.
                     (self.hits(&d, p), response.hover_pos().and_then(|h| self.grip_at(&self.grips(&d.s.items, &d.selection), h)))
                 }
@@ -194,7 +194,7 @@ impl App {
 
     /// A click on a shape selects it with its group: Shift adds them, or takes them out when selected.
     fn click_select(&mut self, p: Point, shift: bool) {
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         match self.hit(&d, p) {
             Some(id) => {
                 let group = d.expand_groups(&[id]);
@@ -238,7 +238,7 @@ impl App {
 
     /// Redo the grip edit from the state at drag start, so every frame applies one clean change.
     fn apply_grip(&mut self, grip: Grip, at: Point, base: &[Item], frame: (BBox, f64), p: Point, shift: bool, alt: bool) {
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let ids = d.selection.clone();
         if let Some(id) = grip.id() {
             // Path grips set a point, so they apply to the shape as the solver left it last frame:
@@ -268,7 +268,7 @@ impl App {
     fn finish_box(&mut self, start: Point, end: Point, add: bool) {
         let area = [start[0].min(end[0]), start[1].min(end[1]), (end[0] - start[0]).abs(), (end[1] - start[1]).abs()];
         let crossing = end[0] < start[0];
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         // Hidden and isolated-away items are not picked; a picked item brings its group.
         let picked: Vec<u64> = d
             .s
@@ -295,7 +295,7 @@ impl App {
     /// Esc: drop a pending window, or put back what a grip or move drag changed.
     pub(super) fn cancel_drag(&mut self) {
         if let Some(Drag::Grip { .. } | Drag::Move { .. }) = self.drag.take() {
-            self.doc.lock().unwrap().undo();
+            self.doc.lock().undo();
             self.tracker.clear();
             self.message.clear();
         }
@@ -352,10 +352,10 @@ mod tests {
     #[test]
     fn grip_drags_keep_constraints() {
         use crate::model::{Contour, Document, Kind, Op, Ref, Shape};
-        let doc = std::sync::Arc::new(std::sync::Mutex::new(Document::new(200.0, 200.0)));
+        let doc = std::sync::Arc::new(parking_lot::Mutex::new(Document::new(200.0, 200.0)));
         let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
         let id = {
-            let mut d = doc.lock().unwrap();
+            let mut d = doc.lock();
             let id = d.add("", Op::Cut, Shape::path(Contour::rect(10.0, 10.0, 40.0, 20.0, 0.0)));
             for (k, kind) in [(0, Kind::Horizontal), (1, Kind::Vertical), (2, Kind::Horizontal), (3, Kind::Vertical)] {
                 d.add_constraint(kind, vec![Ref::Segment { item: id, contour: 0, segment: k }]).unwrap();
@@ -364,7 +364,7 @@ mod tests {
             d.selection = vec![id];
             id
         };
-        let base = doc.lock().unwrap().s.items.clone();
+        let base = doc.lock().s.items.clone();
         let grip = Grip::Vertex { id, contour: 0, vertex: 2 };
         app.drag = Some(Drag::Box { start: [0.0, 0.0] });
         // Two frames of the drag, each settled as the canvas does.
@@ -372,20 +372,20 @@ mod tests {
             app.apply_grip(grip, [50.0, 30.0], &base, ([10.0, 10.0, 40.0, 20.0], 0.0), p, false, false);
             app.settle();
         }
-        let pts: Vec<Point> = doc.lock().unwrap().item(id).unwrap().shape.contours()[0].vertices.iter().map(|v| [v.x, v.y]).collect();
+        let pts: Vec<Point> = doc.lock().item(id).unwrap().shape.contours()[0].vertices.iter().map(|v| [v.x, v.y]).collect();
         assert_eq!(pts, vec![[10.0, 10.0], [70.0, 10.0], [70.0, 50.0], [10.0, 50.0]]);
     }
 
     #[test]
     fn box_turns_with_the_items_and_resizes_along_their_axes() {
         use crate::model::{Contour, Document, Op, Shape};
-        let doc = std::sync::Arc::new(std::sync::Mutex::new(Document::new(200.0, 200.0)));
+        let doc = std::sync::Arc::new(parking_lot::Mutex::new(Document::new(200.0, 200.0)));
         let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
         app.aids.polar = false;
-        let id = doc.lock().unwrap().add("", Op::Cut, Shape::path(Contour::rect(10.0, 10.0, 40.0, 20.0, 0.0)));
-        doc.lock().unwrap().selection = vec![id];
+        let id = doc.lock().add("", Op::Cut, Shape::path(Contour::rect(10.0, 10.0, 40.0, 20.0, 0.0)));
+        doc.lock().selection = vec![id];
         let frame = |doc: &crate::model::Shared| {
-            let d = doc.lock().unwrap();
+            let d = doc.lock();
             selection_box(&d.s.items, &d.selection).unwrap()
         };
         let grip_at = |f: (BBox, f64), g: Grip| grips::box_grips(f.0, f.1, 0.0, 10.0).into_iter().find(|(x, _)| *x == g).unwrap().1;
@@ -393,22 +393,22 @@ mod tests {
 
         // Rotate grip dragged a quarter turn about the centre (30, 20): the angle is stored, the box keeps its size.
         let f = frame(&doc);
-        let base = doc.lock().unwrap().s.items.clone();
+        let base = doc.lock().s.items.clone();
         app.apply_grip(Grip::Rotate, grip_at(f, Grip::Rotate), &base, f, [60.0, 20.0], false, false);
         let f = frame(&doc);
         assert!(close(f.1, 90.0) && close(f.0[2], 40.0) && close(f.0[3], 20.0), "{f:?}");
-        assert_eq!(doc.lock().unwrap().item(id).unwrap().rotation, 90.0);
+        assert_eq!(doc.lock().item(id).unwrap().rotation, 90.0);
 
         // The right edge of the turned box now points down: dragging it 10 mm down makes it 50 wide.
-        let base = doc.lock().unwrap().s.items.clone();
+        let base = doc.lock().s.items.clone();
         let at = grip_at(f, Grip::Scale { fx: 1.0, fy: 0.5 });
         app.apply_grip(Grip::Scale { fx: 1.0, fy: 0.5 }, at, &base, f, [at[0], at[1] + 10.0], false, false);
         let f2 = frame(&doc);
         assert!(close(f2.1, 90.0) && close(f2.0[2], 50.0) && close(f2.0[3], 20.0), "{f2:?}");
 
         // At 30° a stretch along the turned axes keeps the angle too.
-        doc.lock().unwrap().set_rotation(&[id], 30.0).unwrap();
-        let (f, base) = (frame(&doc), doc.lock().unwrap().s.items.clone());
+        doc.lock().set_rotation(&[id], 30.0).unwrap();
+        let (f, base) = (frame(&doc), doc.lock().s.items.clone());
         let at = grip_at(f, Grip::Scale { fx: 1.0, fy: 0.5 });
         let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
         app.apply_grip(Grip::Scale { fx: 1.0, fy: 0.5 }, at, &base, f, [at[0] + 10.0 * c, at[1] + 10.0 * s], false, false);
@@ -416,33 +416,33 @@ mod tests {
         assert!(close(f2.1, 30.0) && close(f2.0[2], 60.0) && close(f2.0[3], 20.0), "{f2:?}");
 
         // Shift snaps the resulting angle (not the turn) to 15°: from 30° a small turn ends at 45°.
-        let (f, base) = (frame(&doc), doc.lock().unwrap().s.items.clone());
+        let (f, base) = (frame(&doc), doc.lock().s.items.clone());
         let centre = crate::model::turn::to_world([f.0[0] + f.0[2] / 2.0, f.0[1] + f.0[3] / 2.0], f.1);
         let from = grip_at(f, Grip::Rotate);
         let to = crate::model::geom::rotate_point(from, centre, 12.0);
         app.apply_grip(Grip::Rotate, from, &base, f, to, true, false);
-        assert!(close(doc.lock().unwrap().item(id).unwrap().rotation, 45.0));
+        assert!(close(doc.lock().item(id).unwrap().rotation, 45.0));
     }
 
     #[test]
     fn window_takes_whole_groups_and_skips_hidden_items() {
         use crate::model::{Contour, Document, Op, Shape};
-        let doc = std::sync::Arc::new(std::sync::Mutex::new(Document::new(200.0, 200.0)));
+        let doc = std::sync::Arc::new(parking_lot::Mutex::new(Document::new(200.0, 200.0)));
         let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
         let [a, b, c] = {
-            let mut d = doc.lock().unwrap();
+            let mut d = doc.lock();
             let ids = [0.0, 50.0, 100.0].map(|x| d.add("", Op::Cut, Shape::path(Contour::rect(x, 0.0, 10.0, 10.0, 0.0))));
             d.s.groups.push(vec![ids[0], ids[1]]);
             ids
         };
         app.finish_box([-1.0, -1.0], [20.0, 20.0], false);
-        assert_eq!(doc.lock().unwrap().selection, vec![a, b], "the window caught a; b is in its group");
+        assert_eq!(doc.lock().selection, vec![a, b], "the window caught a; b is in its group");
         app.isolated = Some(vec![a, b]);
         app.finish_box([-1.0, -1.0], [199.0, 20.0], false);
-        assert!(!doc.lock().unwrap().selection.contains(&c), "isolated away");
+        assert!(!doc.lock().selection.contains(&c), "isolated away");
         // A click on b selects its group too.
         app.click_select([50.0, 5.0], false);
-        assert_eq!(doc.lock().unwrap().selection, vec![b, a]);
+        assert_eq!(doc.lock().selection, vec![b, a]);
     }
 
     #[test]

@@ -83,7 +83,7 @@ pub(super) fn layers(d: &Document) -> Value {
 impl Server {
     #[tool(description = "List the layers in order: id, name, op, colour, own settings (power/speed/passes that override the material library), lines_per_cm (the layer's own engrave line spacing; line_interval is the same in mm), visible, locked, number of items, whether it is current, and laser_setting: the power/speed/passes the laser uses (library preset for the op with the layer's own numbers on top; null when neither gives them).")]
     fn list_layers(&self) -> ToolResult {
-        ok(layers(&self.doc.lock().unwrap()))
+        ok(layers(&self.doc.lock()))
     }
 
     #[tool(description = "Add a layer at the end with a name and op (cut, score, engrave, no_output). A taken name gets a number. Returns the layers.")]
@@ -188,7 +188,7 @@ mod tests {
         let ids = text(server.add_items(added))["ids"].clone();
         let (a, b) = (ids[0].as_u64().unwrap(), ids[1].as_u64().unwrap());
         {
-            let d = doc.lock().unwrap();
+            let d = doc.lock();
             assert_eq!(d.s.op(d.item(a).unwrap()), Op::Score);
             assert_eq!(d.item(b).unwrap().layer, deep);
         }
@@ -196,7 +196,7 @@ mod tests {
         let list = text(server.update_layer(args(set)));
         assert_eq!((list[0]["id"].as_u64(), list[0]["op"].as_str(), list[0]["settings"]["passes"].as_u64()), (Some(deep), Some("engrave"), Some(3)));
         {
-            let d = doc.lock().unwrap();
+            let d = doc.lock();
             assert!(d.s.engraves_area(d.item(b).unwrap()), "the layer's op change reaches its items");
         }
         // Lines per cm in, mm stored, lines per cm out; null clears it.
@@ -204,20 +204,20 @@ mod tests {
         assert_eq!((list[0]["line_interval"].as_f64(), list[0]["lines_per_cm"].as_f64()), (Some(0.05), Some(200.0)));
         assert_eq!(server.update_layer(args(json!({"id": deep, "lines_per_cm": 0}))).unwrap().is_error, Some(true));
         text(server.update_layer(args(json!({"id": deep, "name": "Deep"}))));
-        assert_eq!(doc.lock().unwrap().s.layer(deep).unwrap().line_interval, Some(0.05), "missing leaves it");
+        assert_eq!(doc.lock().s.layer(deep).unwrap().line_interval, Some(0.05), "missing leaves it");
         let list = text(server.update_layer(args(json!({"id": deep, "lines_per_cm": null}))));
         assert!(list[0].get("line_interval").is_none() && list[0].get("lines_per_cm").is_none(), "{list}");
         // update_item moves an item by layer or by op.
         let moved: Parameters<UpdateItem> = args(json!({"id": a, "op": "cut"}));
         text(server.update_item(moved));
-        let cut = doc.lock().unwrap().layer_for(Op::Cut);
-        assert_eq!(doc.lock().unwrap().item(a).unwrap().layer, cut);
+        let cut = doc.lock().layer_for(Op::Cut);
+        assert_eq!(doc.lock().item(a).unwrap().layer, cut);
         // A layer with items is only deleted with somewhere to move them; undo brings it back.
         assert_eq!(server.delete_layer(args(json!({"id": deep}))).unwrap().is_error, Some(true));
         text(server.delete_layer(args(json!({"id": deep, "move_to": cut}))));
-        assert_eq!(doc.lock().unwrap().item(b).unwrap().layer, cut);
-        assert!(doc.lock().unwrap().undo());
-        assert_eq!(doc.lock().unwrap().item(b).unwrap().layer, deep);
+        assert_eq!(doc.lock().item(b).unwrap().layer, cut);
+        assert!(doc.lock().undo());
+        assert_eq!(doc.lock().item(b).unwrap().layer, deep);
         // Items on a locked layer cannot be edited.
         text(server.update_layer(args(json!({"id": deep, "locked": true}))));
         let edit: Parameters<UpdateItem> = args(json!({"id": b, "name": "x"}));

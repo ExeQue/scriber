@@ -13,7 +13,8 @@ pub mod xtool;
 pub use machines::{Laser, LaserKind, Machine};
 pub use materials::{Category, Material, Operation, Setting};
 
-use std::sync::{LazyLock, Mutex, MutexGuard};
+use parking_lot::{Mutex, MutexGuard};
+use std::sync::LazyLock;
 
 #[allow(dead_code)]
 mod builtin {
@@ -237,7 +238,7 @@ static LIBRARY: LazyLock<Mutex<Library>> = LazyLock::new(|| Mutex::new(store::lo
 
 /// The current library. Do not hold the lock across a call to `update`.
 pub fn get() -> MutexGuard<'static, Library> {
-    LIBRARY.lock().unwrap()
+    LIBRARY.lock()
 }
 
 /// Change the library and save it; nothing changes when the result is invalid or cannot be saved.

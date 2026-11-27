@@ -9,7 +9,8 @@ mod visuals;
 
 use eframe::egui::{self, Color32};
 use serde::{Deserialize, Serialize};
-use std::sync::{LazyLock, RwLock};
+use parking_lot::RwLock;
+use std::sync::LazyLock;
 
 pub use sources::watch;
 
@@ -76,7 +77,7 @@ static CURRENT: LazyLock<RwLock<Theme>> = LazyLock::new(|| RwLock::new(sources::
 
 /// The active theme.
 pub fn get() -> Theme {
-    *CURRENT.read().unwrap()
+    *CURRENT.read()
 }
 
 /// The theme setting.
@@ -118,7 +119,7 @@ impl State {
         self.entries = sources::user_themes();
         self.omarchy = sources::omarchy();
         let (name, theme, error) = self.resolve(sys_dark);
-        *CURRENT.write().unwrap() = theme;
+        *CURRENT.write() = theme;
         visuals::apply(ctx, &theme);
         (self.name, self.error, self.applied) = (name, error, Some(key));
     }

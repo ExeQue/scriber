@@ -159,7 +159,7 @@ impl App {
         if step != Step::Pick {
             return;
         }
-        let has_selection = !self.doc.lock().unwrap().selection.is_empty();
+        let has_selection = !self.doc.lock().selection.is_empty();
         if has_selection && ui.button("Round every corner of the selection").clicked() {
             self.answer(Entry::Word("ALL".into()), None);
         }

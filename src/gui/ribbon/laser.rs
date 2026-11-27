@@ -10,8 +10,8 @@ use eframe::egui::Ui;
 impl App {
     pub(super) fn laser(&mut self, ui: &mut Ui) {
         let doc = self.doc.clone();
-        if panel(ui, "Machine & material", |ui| pickers(ui, &mut doc.lock().unwrap())) {
-            self.library = Some(Editor::new(&doc.lock().unwrap().s).on_materials());
+        if panel(ui, "Machine & material", |ui| pickers(ui, &mut doc.lock())) {
+            self.library = Some(Editor::new(&doc.lock().s).on_materials());
         }
         panel(ui, "Export", |ui| {
             ui.vertical(|ui| {
@@ -32,7 +32,7 @@ impl App {
         });
         panel(ui, "Library", |ui| {
             if self.small(ui, false, Icon::Glyph("⚙"), "Machines & materials…", "Your laser cutters and the power and speed to use for each material") {
-                self.library = Some(Editor::new(&doc.lock().unwrap().s));
+                self.library = Some(Editor::new(&doc.lock().s));
             }
         });
     }
@@ -40,7 +40,7 @@ impl App {
     /// Preview and the pre-flight check (Home tab).
     pub(super) fn check_panel(&mut self, ui: &mut Ui) {
         let doc = self.doc.clone();
-        let d = doc.lock().unwrap();
+        let d = doc.lock();
         panel(ui, "Laser", |ui| {
             ui.vertical(|ui| self.preview_and_check_buttons(ui, &d));
         });
@@ -50,7 +50,7 @@ impl App {
     /// current layer, or moves the selection to a layer.
     pub(super) fn operation_panel(&mut self, ui: &mut Ui) {
         let doc = self.doc.clone();
-        let d = doc.lock().unwrap();
+        let d = doc.lock();
         let sel = d.selection.clone();
         let items: Vec<(u64, bool)> = d.s.items.iter().filter(|i| sel.contains(&i.id)).map(|i| (i.layer, i.shape.has_area())).collect();
         // Show the selection's layer when they agree; otherwise the current layer for new shapes.
@@ -74,7 +74,7 @@ impl App {
         });
         drop(d);
         let Some(set_layer) = set_layer else { return };
-        let mut d = doc.lock().unwrap();
+        let mut d = doc.lock();
         if items.is_empty() {
             d.set_current_layer(set_layer);
             return;

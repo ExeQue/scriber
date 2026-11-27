@@ -152,7 +152,7 @@ impl App {
     /// The grip menu, while the pointer stays on the grip or the menu.
     pub(super) fn grip_menu_window(&mut self, ctx: &egui::Context) {
         let Some((grip, at)) = self.grip_menu else { return };
-        let shape = grip.id().and_then(|id| self.doc.lock().unwrap().item(id).map(|i| i.shape.clone()));
+        let shape = grip.id().and_then(|id| self.doc.lock().item(id).map(|i| i.shape.clone()));
         let list = shape.as_ref().map(|s| actions(s, grip)).unwrap_or_default();
         if list.is_empty() || self.drag.is_some() {
             self.grip_menu = None;
@@ -182,7 +182,7 @@ impl App {
 
     fn grip_action(&mut self, grip: Grip, at: Point, action: Action) {
         let Some(id) = grip.id() else { return };
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let Some((shape, hot)) = d.item(id).and_then(|i| apply(&i.shape, grip, action)) else { return };
         let changed = d.item(id).is_some_and(|i| i.shape != shape);
         if changed {
@@ -201,7 +201,7 @@ impl App {
     /// Make `grip` hot: it follows the cursor until a click (Esc undoes). `near` picks among a
     /// circle's four radius grips. Without `checkpoint` the undo step taken before is reused.
     pub(super) fn start_hot_grip(&mut self, grip: Grip, near: Point, checkpoint: bool) {
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let Some(item) = grip.id().and_then(|id| d.item(id)) else { return };
         let Some(at) = grips::item_grips(item)
             .into_iter()

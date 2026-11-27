@@ -2,7 +2,8 @@
 
 use super::*;
 use crate::model::{Contour, Op, Shape};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 fn app() -> (App, Arc<Mutex<Document>>) {
     let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
@@ -12,11 +13,11 @@ fn app() -> (App, Arc<Mutex<Document>>) {
 }
 
 fn add(doc: &Arc<Mutex<Document>>, c: Contour) -> u64 {
-    doc.lock().unwrap().add("", Op::Cut, Shape::path(c))
+    doc.lock().add("", Op::Cut, Shape::path(c))
 }
 
 fn dims(doc: &Arc<Mutex<Document>>) -> Vec<(Kind, String)> {
-    doc.lock().unwrap().s.constraints.iter().map(|c| (c.kind, c.expr.clone())).collect()
+    doc.lock().s.constraints.iter().map(|c| (c.kind, c.expr.clone())).collect()
 }
 
 #[test]
@@ -30,7 +31,7 @@ fn a_line_then_a_typed_value_drives_its_length_and_repeats() {
     app.cmdline.smart_dim.value = "60".into();
     app.place_point([30.0, 2.0]);
     assert_eq!(dims(&doc), vec![(Kind::DimHorizontal, "60".into())]);
-    let v = doc.lock().unwrap().item(r).unwrap().shape.contours()[0].vertices.clone();
+    let v = doc.lock().item(r).unwrap().shape.contours()[0].vertices.clone();
     assert!(((v[1].x - v[0].x) - 60.0).abs() < 1e-6, "{v:?}");
     // Back to picking, for the next one.
     assert_eq!(app.prompt(), "Select a line, circle or arc, or specify first point:");
@@ -39,7 +40,7 @@ fn a_line_then_a_typed_value_drives_its_length_and_repeats() {
     app.place_point([0.0, 20.0]);
     assert_eq!(dims(&doc)[1], (Kind::DimVertical, "20".into()), "{} {v:?}", app.message);
     // Each dimension is its own undo step.
-    doc.lock().unwrap().undo();
+    doc.lock().undo();
     assert_eq!(dims(&doc).len(), 1);
 }
 
@@ -95,13 +96,13 @@ fn a_name_typed_on_the_card_names_the_dimension_and_its_label_drags() {
     app.place_point([30.0, 10.0]);
     app.cmdline.smart_dim.name = "width".into();
     app.place_point([30.0, 2.0]);
-    let id = doc.lock().unwrap().parameter("width").expect("named width").id;
+    let id = doc.lock().parameter("width").expect("named width").id;
     assert!(app.cmdline.smart_dim.name.is_empty(), "the next one gets the next free name");
     // Dragging the label: grabbed 1 mm right of its anchor, let go at (60, -4).
-    let drag = app.grab_label(&doc.lock().unwrap(), id, [31.0, 2.0]);
+    let drag = app.grab_label(&doc.lock(), id, [31.0, 2.0]);
     let Some(crate::gui::select::Drag::Label { grab, .. }) = drag else { panic!("no label drag") };
     app.drag_label(id, [60.0 - grab[0], -4.0 - grab[1]]);
-    let c = doc.lock().unwrap().constraint(id).unwrap().clone();
+    let c = doc.lock().constraint(id).unwrap().clone();
     assert_eq!((c.offset, c.shift), (-14.0, 29.0));
     // Its edit card (double-click on the label) renames it too.
     app.edit_dimension(id);
@@ -109,5 +110,5 @@ fn a_name_typed_on_the_card_names_the_dimension_and_its_label_drags() {
     app.cmdline.constrain.name = "w2".into();
     app.cmdline.input = "45".into();
     app.submit(None);
-    assert_eq!(doc.lock().unwrap().constraint(id).map(|c| (c.name.clone(), c.expr.clone())), Some(("w2".into(), "45".into())));
+    assert_eq!(doc.lock().constraint(id).map(|c| (c.name.clone(), c.expr.clone())), Some(("w2".into(), "45".into())));
 }

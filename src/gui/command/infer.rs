@@ -56,7 +56,7 @@ impl App {
         let links: Vec<Link> = std::mem::take(&mut self.draft_links).into_iter().filter(|l| pts.contains(&l.p)).collect();
         let along: Vec<Along> = std::mem::take(&mut self.draft_along).into_iter().filter(|l| pts.contains(&l.p)).collect();
         let typed = std::mem::take(&mut self.draft_typed);
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let own = self.own_constraints(&d.s, id, &typed);
         if !self.aids.infer {
             d.constrain_new(own, Vec::new());
@@ -93,7 +93,7 @@ impl App {
         let Some(Snap { kind: snap::Kind::Endpoint | snap::Kind::Center, target: Some(target), .. }) = hit else { return };
         if self.aids.infer && target.item() != new.item() {
             let (kind, refs) = bind(new, target);
-            self.doc.lock().unwrap().infer_new(vec![(kind, refs)]);
+            self.doc.lock().infer_new(vec![(kind, refs)]);
         }
     }
 }
@@ -104,7 +104,8 @@ mod tests {
     use crate::gui::command::Cmd;
     use crate::model::geom::distance;
     use crate::model::{Contour, Document, Kind, Op, Point, Ref, Shape, Transform};
-    use std::sync::{Arc, Mutex};
+    use parking_lot::Mutex;
+    use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     /// Draws a LINE with the pointer: rests on `acquire` (OTRACK, Extension, Parallel), clicks
@@ -112,10 +113,10 @@ mod tests {
     /// the source line (0,0)-(40,30), the new line and where the end landed.
     fn draw_along(acquire: Point, start: Point, end: Point) -> (Arc<Mutex<Document>>, u64, u64, Point) {
         let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
-        let a = doc.lock().unwrap().add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 30.0])));
+        let a = doc.lock().add("", Op::Cut, Shape::path(Contour::line([0.0, 0.0], [40.0, 30.0])));
         let mut app = App::new(crate::model::Workspace::from_shared(doc.clone()), Err(String::new()));
         (app.aids.osnap, app.aids.otrack, app.aids.infer, app.aids.polar, app.aids.ortho) = (true, true, true, false, false);
-        let items = doc.lock().unwrap().s.items.clone();
+        let items = doc.lock().s.items.clone();
         app.start(Cmd::Line);
         let t0 = Instant::now();
         let aim = |app: &mut App, p: Point, from: Option<Point>, ms: u64| {
@@ -129,7 +130,7 @@ mod tests {
         app.place_point(p);
         let q = aim(&mut app, end, Some(p), 800);
         app.place_point(q);
-        let b = doc.lock().unwrap().s.items.last().unwrap().id;
+        let b = doc.lock().s.items.last().unwrap().id;
         (doc, a, b, q)
     }
 
@@ -152,7 +153,7 @@ mod tests {
         // Square to (0,0)-(40,30) at its end runs along (-0.6, 0.8).
         let (doc, a, b, q) = draw_along([40.2, 30.1], [40.1, 30.1], [25.24, 50.18]);
         assert!(distance(q, [25.0, 50.0]) < 1e-6, "{q:?}");
-        let mut d = doc.lock().unwrap();
+        let mut d = doc.lock();
         assert!(has(&d, Kind::Perpendicular, vec![seg(a), seg(b)]), "{:?}", d.s.constraints);
         d.transform(&[a], &Transform { rotate: 25.0, pivot: Some([0.0, 0.0]), ..Transform::default() });
         d.settle(true).unwrap();
@@ -164,7 +165,7 @@ mod tests {
     fn a_line_along_a_parallel_track_stays_parallel() {
         let (doc, a, b, q) = draw_along([10.1, 7.6], [60.0, 0.0], [79.82, 15.24]);
         assert!(distance(q, [80.0, 15.0]) < 1e-6, "{q:?}");
-        let d = doc.lock().unwrap();
+        let d = doc.lock();
         assert!(has(&d, Kind::Parallel, vec![seg(a), seg(b)]), "{:?}", d.s.constraints);
     }
 
@@ -172,7 +173,7 @@ mod tests {
     fn a_line_along_an_extension_is_collinear() {
         let (doc, a, b, q) = draw_along([40.2, 30.1], [40.1, 30.1], [79.82, 60.24]);
         assert!(distance(q, [80.0, 60.0]) < 1e-6, "{q:?}");
-        let d = doc.lock().unwrap();
+        let d = doc.lock();
         assert!(has(&d, Kind::Collinear, vec![seg(a), seg(b)]), "{:?}", d.s.constraints);
         assert!(!has(&d, Kind::Perpendicular, vec![seg(a), seg(b)]));
     }

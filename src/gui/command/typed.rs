@@ -98,7 +98,8 @@ mod tests {
     use crate::gui::command::Cmd;
     use crate::model::geom::distance;
     use crate::model::{Document, Kind, Point};
-    use std::sync::{Arc, Mutex};
+    use parking_lot::Mutex;
+    use std::sync::Arc;
 
     fn app() -> (Arc<Mutex<Document>>, App) {
         let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
@@ -120,7 +121,7 @@ mod tests {
 
     /// The new item's constraints as (kind, value), after checking that settling moves nothing.
     fn constraints(doc: &Arc<Mutex<Document>>) -> Vec<(Kind, String)> {
-        let mut d = doc.lock().unwrap();
+        let mut d = doc.lock();
         let before = vertices(&d);
         d.settle(true).unwrap();
         assert_eq!(vertices(&d), before);
@@ -134,7 +135,7 @@ mod tests {
         app.place_point([10.0, 10.0]);
         typed(&mut app, [40.0, 0.0], [true, true], [50.0, 30.0]);
         assert_eq!(constraints(&doc), vec![(Kind::DimAligned, "40".into()), (Kind::Horizontal, String::new())]);
-        let mut d = doc.lock().unwrap();
+        let mut d = doc.lock();
         d.set_parameter("d1", "55").unwrap();
         d.settle(true).unwrap();
         let v = vertices(&d);
@@ -159,7 +160,7 @@ mod tests {
         let kinds: Vec<Kind> = constraints(&doc).into_iter().map(|c| c.0).collect();
         assert_eq!(kinds.iter().filter(|k| **k == Kind::DimHorizontal).count(), 1, "{kinds:?}");
         assert!(!kinds.contains(&Kind::DimVertical));
-        let mut d = doc.lock().unwrap();
+        let mut d = doc.lock();
         let id = d.s.items.last().unwrap().id;
         let crate::model::Shape::Path { contours } = &mut d.item_mut(id).unwrap().shape else { panic!() };
         (contours[0].vertices[2].x, contours[0].vertices[2].y) = (45.0, 25.0);
@@ -190,7 +191,7 @@ mod tests {
         app.place_point([50.0, 50.0]);
         typed(&mut app, [40.0, 0.0], [true, false], [90.0, 50.0]);
         assert_eq!(constraints(&doc), vec![(Kind::Regular, String::new()), (Kind::DimAligned, "40".into())]);
-        let mut d = doc.lock().unwrap();
+        let mut d = doc.lock();
         let id = d.s.items.last().unwrap().id;
         let crate::model::Shape::Path { contours } = &mut d.item_mut(id).unwrap().shape else { panic!() };
         contours[0].vertices[1].x += 5.0;

@@ -17,7 +17,7 @@ impl App {
     /// failed solve silently keeps the last good state; otherwise the refusal is reported.
     pub(super) fn settle(&mut self) {
         let explain = self.drag.is_none();
-        let result = self.doc.lock().unwrap().settle(explain);
+        let result = self.doc.lock().settle(explain);
         if let Err(e) = result
             && explain
         {

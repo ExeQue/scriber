@@ -2,7 +2,8 @@
 
 use super::*;
 use crate::model::{Contour, Op, Shape};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 fn app() -> (App, Arc<Mutex<Document>>) {
     let doc = Arc::new(Mutex::new(Document::new(200.0, 200.0)));
@@ -12,7 +13,7 @@ fn app() -> (App, Arc<Mutex<Document>>) {
 }
 
 fn add(doc: &Arc<Mutex<Document>>, c: Contour) -> u64 {
-    doc.lock().unwrap().add("", Op::Cut, Shape::path(c))
+    doc.lock().add("", Op::Cut, Shape::path(c))
 }
 
 #[test]
@@ -26,7 +27,7 @@ fn picking_two_lines_makes_them_parallel() {
     assert_eq!(app.prompt(), "Select second object:");
     app.place_point([50.0, 30.0]);
     assert!(app.cmdline.active.is_none());
-    let d = doc.lock().unwrap();
+    let d = doc.lock();
     assert_eq!(d.s.constraints.len(), 1);
     let v = &d.item(b).unwrap().shape.contours()[0].vertices;
     assert!((v[1].y - v[0].y).abs() < 1e-6, "the second line turned level: {v:?}");
@@ -47,24 +48,24 @@ fn dclinear_places_a_driving_dimension_and_takes_a_value() {
     app.submit(None);
     assert!(app.cmdline.active.is_none());
     {
-        let d = doc.lock().unwrap();
+        let d = doc.lock();
         let c = d.parameter("width").unwrap();
         assert_eq!((c.kind, c.offset), (Kind::DimHorizontal, -8.0));
         let v = &d.item(r).unwrap().shape.contours()[0].vertices;
         assert!(((v[1].x - v[0].x) - 60.0).abs() < 1e-6, "{v:?}");
     }
     // Double-clicking its label asks again; each edit is one undo step.
-    let id = doc.lock().unwrap().parameter("width").unwrap().id;
+    let id = doc.lock().parameter("width").unwrap().id;
     app.edit_dimension(id);
     app.cmdline.input = "45".into();
     app.submit(None);
     let width = |doc: &Arc<Mutex<Document>>| {
-        let d = doc.lock().unwrap();
+        let d = doc.lock();
         let v = &d.item(r).unwrap().shape.contours()[0].vertices;
         (v[1].x - v[0].x).round()
     };
     assert_eq!(width(&doc), 45.0);
-    doc.lock().unwrap().undo();
+    doc.lock().undo();
     assert_eq!(width(&doc), 60.0);
 }
 
@@ -74,12 +75,12 @@ fn a_dimension_snapped_to_two_points_drives_them() {
     let l = add(&doc, Contour::line([0.0, 0.0], [30.0, 40.0]));
     assert!(app.associative_dimension([0.0, 0.0], [30.0, 40.0]));
     assert!(!app.associative_dimension([0.0, 0.0], [31.0, 40.0]), "a free end makes a plain note");
-    let id = doc.lock().unwrap().parameter("d1").unwrap().id;
-    assert_eq!(doc.lock().unwrap().constraint(id).unwrap().expr, "50");
+    let id = doc.lock().parameter("d1").unwrap().id;
+    assert_eq!(doc.lock().constraint(id).unwrap().expr, "50");
     app.edit_dimension(id);
     app.cmdline.input = "100".into();
     app.submit(None);
-    assert!((doc.lock().unwrap().item(l).unwrap().shape.metrics().length - 100.0).abs() < 1e-6);
+    assert!((doc.lock().item(l).unwrap().shape.metrics().length - 100.0).abs() < 1e-6);
 }
 
 #[test]
@@ -93,7 +94,7 @@ fn a_line_chain_stays_connected_and_snaps_join() {
     app.place_point([50.0, 100.0]);
     app.place_point([50.0, 140.0]);
     app.cancel();
-    let mut d = doc.lock().unwrap();
+    let mut d = doc.lock();
     assert_eq!(d.s.constraints.len(), 2, "{:?}", d.s.constraints);
     // Dragging the first line's start drags the chain along.
     let first = d.s.items[1].id;
@@ -113,10 +114,10 @@ fn selected_lines_are_made_parallel_in_one_step() {
     let (mut app, doc) = app();
     let a = add(&doc, Contour::line([0.0, 0.0], [100.0, 0.0]));
     let b = add(&doc, Contour::line([0.0, 20.0], [100.0, 40.0]));
-    doc.lock().unwrap().selection = vec![a, b];
+    doc.lock().selection = vec![a, b];
     app.start(Cmd::find("GCPARALLEL").unwrap());
     assert!(app.cmdline.active.is_none(), "no picks asked");
-    let mut d = doc.lock().unwrap();
+    let mut d = doc.lock();
     assert_eq!(d.s.constraints.len(), 1);
     let v = &d.item(b).unwrap().shape.contours()[0].vertices;
     assert!((v[1].y - v[0].y).abs() < 1e-6);
@@ -130,10 +131,10 @@ fn right_click_add_constraint_uses_that_shape() {
     let (mut app, doc) = app();
     let a = add(&doc, Contour::line([0.0, 0.0], [100.0, 0.0]));
     let b = add(&doc, Contour::line([0.0, 20.0], [100.0, 40.0]));
-    doc.lock().unwrap().selection = vec![a];
+    doc.lock().selection = vec![a];
     app.canvas_rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
     app.right_click(app.w2s([50.0, 30.0]));
-    assert_eq!(doc.lock().unwrap().selection, vec![a, b]);
+    assert_eq!(doc.lock().selection, vec![a, b]);
     app.start(Cmd::Constrain(Kind::Parallel));
-    assert_eq!(doc.lock().unwrap().s.constraints.len(), 1);
+    assert_eq!(doc.lock().s.constraints.len(), 1);
 }

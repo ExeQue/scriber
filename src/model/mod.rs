@@ -28,7 +28,8 @@ pub use workspace::Workspace;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 const UNDO_LIMIT: usize = 200;
 

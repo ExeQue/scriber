@@ -68,7 +68,7 @@ impl App {
             open = ui.button("Open Machines & materials…").clicked();
         });
         if open {
-            self.library = Some(Editor::new(&self.doc.lock().unwrap().s));
+            self.library = Some(Editor::new(&self.doc.lock().s));
             self.settings = None;
         }
         open

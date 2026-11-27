@@ -10,7 +10,7 @@ use crate::model::{Document, Point, Transform};
 impl App {
     pub(super) fn start_edit(&mut self, cmd: Cmd) {
         self.begin(cmd, Step::Select);
-        if !self.doc.lock().unwrap().selection.is_empty() {
+        if !self.doc.lock().selection.is_empty() {
             self.selected(cmd);
         }
     }
@@ -31,7 +31,7 @@ impl App {
             if entry != Entry::Empty {
                 return Err("Click the objects (or drag a box around them), then press Enter.".into());
             }
-            if self.doc.lock().unwrap().selection.is_empty() {
+            if self.doc.lock().selection.is_empty() {
                 self.end();
                 return Err("Nothing selected.".into());
             }
@@ -118,7 +118,7 @@ impl App {
 
     /// Apply an edit to the selection. The first edit of a command makes its undo step.
     fn edit(&mut self, f: impl FnOnce(&mut Document, &[u64])) {
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let ids = d.selection.clone();
         if !self.cmdline.checkpointed {
             d.checkpoint();

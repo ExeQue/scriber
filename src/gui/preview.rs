@@ -58,7 +58,7 @@ impl App {
             return;
         }
         let (state, rev) = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             (d.s.clone(), d.rev)
         };
         let painter = ui.painter_at(rect);

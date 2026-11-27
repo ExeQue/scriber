@@ -7,7 +7,7 @@ use crate::model::constraints::selection::selection_refs;
 impl App {
     pub(super) fn constrain_selection(&mut self, cmd: Cmd) {
         let found = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             if d.selection.is_empty() {
                 return;
             }

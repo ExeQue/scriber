@@ -10,7 +10,7 @@ use crate::library::xtool::{self, XtoolGroup, XtoolMaterial};
 use crate::library::{LaserKind, Library, Operation};
 use crate::gui::file_dialog::Pending;
 use eframe::egui::{self, RichText};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 const XTOOL_HELP: &str = "Scriber reads the materials xTool Studio keeps on this computer (a read-only copy; nothing is downloaded). \
 Only materials you have opened in xTool Studio's material library for your machine are there, or ones you saved to it from atomm.com's Materials Lab with \"Save to Studio\". \
@@ -137,7 +137,7 @@ fn new_repo_question(ctx: &egui::Context, st: &mut State, ed: &mut Editor) {
 
 /// The menus and their dialogs; call once per frame while the window is open.
 pub(super) fn menus(ui: &mut egui::Ui, ed: &mut Editor) {
-    let mut guard = STATE.lock().unwrap();
+    let mut guard = STATE.lock();
     let st = guard.get_or_insert_with(State::default);
     let before = ed.lib.materials.len();
     answer(st, ed);

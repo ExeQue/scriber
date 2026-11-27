@@ -91,7 +91,7 @@ fn from_person(d: &Document, since: u64) -> Vec<Value> {
 impl Server {
     #[tool(description = "List the review comments pinned on the canvas (id = the number on its pin, text, author, status open/resolved, at, items it points at, reply count, last_reply, revision). Filter by status and/or since_revision. Returns them and the current revision.")]
     fn list_annotations(&self, Parameters(p): Parameters<ListAnnotations>) -> ToolResult {
-        let d = self.doc.lock().unwrap();
+        let d = self.doc.lock();
         let since = p.since_revision.unwrap_or(0);
         let found = list(&d, |a| a.revision > since && p.status.is_none_or(|s| a.status == s));
         ok(json!({"revision": annotations::revision(), "document": self.id, "annotations": found}))
@@ -136,7 +136,7 @@ impl Server {
             let found: Vec<Value> = docs
                 .iter()
                 .flat_map(|(id, d)| {
-                    from_person(&d.lock().unwrap(), since).into_iter().map(move |mut a| {
+                    from_person(&d.lock(), since).into_iter().map(move |mut a| {
                         a["document"] = json!(id);
                         a
                     })
@@ -179,7 +179,7 @@ mod tests {
     async fn wait_returns_at_once_when_something_is_newer() {
         let (s, doc) = server();
         let since = annotations::revision();
-        doc.lock().unwrap().annotate(Author::Person, "bigger", Some([1.0, 2.0]), vec![]).unwrap();
+        doc.lock().annotate(Author::Person, "bigger", Some([1.0, 2.0]), vec![]).unwrap();
         let t = std::time::Instant::now();
         let r = reply(s.wait_for_annotations(args(json!({"since_revision": since, "timeout_s": 5}))).await);
         assert!(t.elapsed() < Duration::from_secs(1));
@@ -201,7 +201,7 @@ mod tests {
         let since = annotations::revision();
         let person = std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(200));
-            doc.lock().unwrap().annotate(Author::Person, "move it left", Some([3.0, 4.0]), vec![]).unwrap();
+            doc.lock().annotate(Author::Person, "move it left", Some([3.0, 4.0]), vec![]).unwrap();
         });
         let t = std::time::Instant::now();
         let r = reply(s.wait_for_annotations(args(json!({"since_revision": since, "timeout_s": 10}))).await);

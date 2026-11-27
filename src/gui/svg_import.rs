@@ -88,7 +88,7 @@ impl App {
     fn import_svg(&mut self, path: &Path, mut opts: ImportOptions) {
         opts.dir = path.parent().map(Path::to_path_buf);
         let result = std::fs::read(path).map_err(|e| e.to_string()).and_then(|bytes| {
-            let mut d = self.doc.lock().unwrap();
+            let mut d = self.doc.lock();
             let before = d.s.clone();
             let ids = d.import_svg(&bytes, &opts)?;
             d.push_undo(before);

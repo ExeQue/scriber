@@ -55,7 +55,7 @@ impl App {
         if self.menu_constraint.is_some() || self.active_cmd().is_some() {
             return;
         }
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         let Some(id) = self.hit(&d, self.s2w(at)) else { return };
         if !d.selection.contains(&id) {
             if d.selection.len() == 1 {
@@ -105,7 +105,7 @@ impl App {
             self.start(last);
         }
         let (selected, grouped) = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             (d.selection.len(), d.selection.iter().any(|id| d.s.groups.iter().any(|g| g.contains(id))))
         };
         if selected > 0 {
@@ -146,10 +146,10 @@ impl App {
             }
         }
         if ui.add(egui::Button::new("Undo").shortcut_text("Ctrl+Z")).clicked() {
-            self.doc.lock().unwrap().undo();
+            self.doc.lock().undo();
         }
         if ui.add(egui::Button::new("Redo").shortcut_text("Ctrl+Y")).clicked() {
-            self.doc.lock().unwrap().redo();
+            self.doc.lock().redo();
         }
         ui.separator();
         ui.menu_button("Select", |ui| {
@@ -162,7 +162,7 @@ impl App {
                 self.select_all();
             }
             if selected > 0 && ui.button("Deselect all").clicked() {
-                self.doc.lock().unwrap().selection.clear();
+                self.doc.lock().selection.clear();
             }
         });
         ui.menu_button("Constraints", |ui| self.constraint_menu(ui));

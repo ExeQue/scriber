@@ -8,7 +8,8 @@
 
 use super::{Document, Shared};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 /// How many recently used files File → Open recent keeps.
 pub const RECENT_MAX: usize = 10;
@@ -43,8 +44,8 @@ impl Workspace {
         Self(Arc::new(Mutex::new(Inner { docs: vec![(1, doc)], active: 1, next: 2, recent: Vec::new() })))
     }
 
-    fn inner(&self) -> std::sync::MutexGuard<'_, Inner> {
-        self.0.lock().unwrap()
+    fn inner(&self) -> parking_lot::MutexGuard<'_, Inner> {
+        self.0.lock()
     }
 
     /// The open documents in tab order.
@@ -80,7 +81,7 @@ impl Workspace {
 
     /// The open document with this file, if any.
     pub fn find(&self, path: &Path) -> Option<u64> {
-        self.docs().into_iter().find(|(_, d)| d.lock().unwrap().path.as_deref().is_some_and(|p| same_file(p, path))).map(|(id, _)| id)
+        self.docs().into_iter().find(|(_, d)| d.lock().path.as_deref().is_some_and(|p| same_file(p, path))).map(|(id, _)| id)
     }
 
     /// Open a .scrbr file in a new tab, or return the tab that already has it (`true` = it was
@@ -96,7 +97,7 @@ impl Workspace {
         }
         let doc = Document::open(path)?;
         let (blank, shared) = self.active();
-        let replace = activate && pristine(&shared.lock().unwrap());
+        let replace = activate && pristine(&shared.lock());
         let id = self.add(doc, activate);
         if replace && self.docs().len() > 1 {
             self.close(blank);
@@ -129,7 +130,7 @@ impl Workspace {
     pub fn close(&self, id: u64) -> bool {
         let Some(shared) = self.get(id) else { return false };
         let (w, h) = {
-            let d = shared.lock().unwrap();
+            let d = shared.lock();
             (d.s.width, d.s.height)
         };
         let mut i = self.inner();
@@ -210,7 +211,7 @@ mod tests {
         let one = ws.active_id();
         let two = ws.add(Document::new(30.0, 20.0), true);
         let three = ws.add(Document::new(30.0, 20.0), false);
-        ws.get(two).unwrap().lock().unwrap().dirty = true;
+        ws.get(two).unwrap().lock().dirty = true;
         assert_eq!(ws.neighbour(1), three);
         assert_eq!(ws.neighbour(-2), three, "wraps around");
         assert!(ws.close(two), "closing does not ask; callers do");
@@ -221,7 +222,7 @@ mod tests {
         assert!(!ws.close(one));
         let (id, d) = ws.active();
         assert!(id > three && ws.docs().len() == 1);
-        let d = d.lock().unwrap();
+        let d = d.lock();
         assert_eq!((d.s.width, d.path.clone()), (30.0, None), "a new empty document of the same size");
     }
 
@@ -235,5 +236,23 @@ mod tests {
         let r = ws.recent();
         assert_eq!((r.len(), r[0].clone(), r[1].clone()), (RECENT_MAX, PathBuf::from("/nowhere/5.scrbr"), PathBuf::from("/nowhere/11.scrbr")));
         assert_eq!(r.iter().filter(|p| p.ends_with("5.scrbr")).count(), 1);
+    }
+
+    #[test]
+    fn a_panic_while_a_lock_is_held_leaves_the_locks_usable() {
+        let ws = Workspace::new(Document::new(50.0, 40.0));
+        let (w, doc) = (ws.clone(), ws.active().1);
+        // The panic message below is expected in the test output.
+        let r = std::thread::spawn(move || {
+            let _ws = w.inner();
+            let _d = doc.lock();
+            panic!("boom");
+        })
+        .join();
+        assert!(r.is_err());
+        // The GUI's path to the document: workspace, then the active document's lock.
+        let (_, doc) = ws.active();
+        doc.lock().add("box", crate::model::Op::Cut, crate::model::Shape::Path { contours: vec![crate::model::Contour::rect(0.0, 0.0, 10.0, 10.0, 0.0)] });
+        assert_eq!(doc.lock().s.items.len(), 1);
     }
 }

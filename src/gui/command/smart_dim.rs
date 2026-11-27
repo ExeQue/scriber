@@ -68,7 +68,7 @@ impl App {
                 let r = self.pick_ref(p, true).map_err(|_| "Nothing there: click a line, circle or arc, or near a corner or centre.")?;
                 let sd = &mut self.cmdline.smart_dim;
                 sd.picks.push(r);
-                let ready = plan(&self.doc.lock().unwrap().s, &sd.picks, false).is_some();
+                let ready = plan(&self.doc.lock().s, &sd.picks, false).is_some();
                 if ready {
                     self.set_step(Step::Location);
                 } else if sd.picks.len() > 1 {
@@ -98,7 +98,7 @@ impl App {
     fn second_line(&self, p: Point) -> Option<Ref> {
         let [first @ Ref::Segment { .. }] = self.cmdline.smart_dim.picks.as_slice() else { return None };
         // Only right on a line: placing inside a shape must not pick its sides.
-        let d = self.doc.lock().unwrap();
+        let d = self.doc.lock();
         let (r, dist) = d.s.items.iter().filter_map(|i| nearest_segment(&d.s, i.id, p)).min_by(|a, b| a.1.total_cmp(&b.1))?;
         (dist <= (APERTURE / self.view.zoom) as f64 && r != *first && classify(&d.s, &r) == Some(Pick::Line)).then_some(r)
     }
@@ -117,7 +117,7 @@ impl App {
 
     /// The value dynamic input shows: the size as it is with the pointer at `p`.
     pub(super) fn dim_live(&self, p: Point) -> f64 {
-        let s = self.doc.lock().unwrap().s.clone();
+        let s = self.doc.lock().s.clone();
         self.dim_layout(&s, p).map_or(0.0, |l| l.value)
     }
 
@@ -135,7 +135,7 @@ impl App {
     /// Add the dimension through `at`, with the typed value or the size as it is, as its own undo
     /// step; then pick the next one. A refused value keeps the picks, so another can be typed.
     fn dim_place(&mut self, at: Point) -> Result<(), String> {
-        let s = self.doc.lock().unwrap().s.clone();
+        let s = self.doc.lock().s.clone();
         let lay = self.dim_layout(&s, at).ok_or("That cannot be measured.")?;
         let value = std::mem::take(&mut self.cmdline.smart_dim.value).trim().to_string();
         let name = self.cmdline.smart_dim.name.trim().to_string();
@@ -207,7 +207,7 @@ impl App {
             return;
         }
         let round = self.cmdline.smart_dim.picks.len() == 1 && {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock();
             matches!(classify(&d.s, &self.cmdline.smart_dim.picks[0]), Some(Pick::Circle | Pick::Arc))
         };
         if round {

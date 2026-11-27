@@ -180,7 +180,7 @@ impl App {
             c if c.on_selection() => {
                 self.begin(cmd, Step::UxSelect);
                 self.tool = Tool::Select;
-                if !self.doc.lock().unwrap().selection.is_empty() {
+                if !self.doc.lock().selection.is_empty() {
                     self.ux_chosen(cmd);
                 }
             }
@@ -196,7 +196,7 @@ impl App {
             if entry != Entry::Empty {
                 return Err("Click the objects (or drag a box around them), then press Enter.".into());
             }
-            if self.doc.lock().unwrap().selection.is_empty() {
+            if self.doc.lock().selection.is_empty() {
                 self.end();
                 return Err("Nothing selected.".into());
             }
@@ -218,14 +218,14 @@ impl App {
 
     /// The selection is made: run the command on it.
     fn ux_chosen(&mut self, cmd: Cmd) {
-        let ids = self.doc.lock().unwrap().selection.clone();
+        let ids = self.doc.lock().selection.clone();
         let result = match cmd {
             Cmd::Isolate => {
                 self.isolated = Some(ids);
                 Ok(())
             }
             Cmd::SelectSimilar => {
-                let mut d = self.doc.lock().unwrap();
+                let mut d = self.doc.lock();
                 d.selection = d.similar(&ids);
                 d.rev += 1;
                 Ok(())
@@ -282,7 +282,7 @@ impl App {
     fn quick_select_now(&mut self) {
         let u = &self.cmdline.ux;
         let limit = |v: f64| (v > 0.0).then_some(v);
-        let mut d = self.doc.lock().unwrap();
+        let mut d = self.doc.lock();
         d.selection = d.quick_select(u.q_op, u.q_kind, limit(u.q_min), limit(u.q_max));
         d.rev += 1;
         let n = d.selection.len();

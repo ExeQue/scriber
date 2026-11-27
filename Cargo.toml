@@ -8,6 +8,7 @@ repository = "https://github.com/ExeQue/scriber"
 
 [dependencies]
 anyhow = "1.0.105"
+parking_lot = "0.12.5"
 base64 = "0.23.1"
 cavalier_contours = "0.9.0"
 dirs = "7.0.0"

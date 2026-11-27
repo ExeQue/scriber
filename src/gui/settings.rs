@@ -106,7 +106,7 @@ impl App {
             ribbon_collapsed: self.ribbon.collapsed,
             theme: self.theme.choice.clone(),
             recent: self.ws.recent(),
-            open_files: self.ws.docs().iter().filter_map(|(_, d)| d.lock().unwrap().path.clone()).collect(),
+            open_files: self.ws.docs().iter().filter_map(|(_, d)| d.lock().path.clone()).collect(),
             reopen_files: self.reopen_files,
             auto_sync: self.auto_sync,
             dxf_ops: self.dxf_ops.clone(),

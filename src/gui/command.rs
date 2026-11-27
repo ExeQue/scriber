@@ -314,7 +314,7 @@ impl App {
         self.cmdline.log(format!("Command: {}", cmd.name()));
         match cmd {
             Cmd::Undo | Cmd::Redo => {
-                let mut d = self.doc.lock().unwrap();
+                let mut d = self.doc.lock();
                 let done = if cmd == Cmd::Undo { d.undo() } else { d.redo() };
                 drop(d);
                 if !done {
@@ -370,7 +370,7 @@ impl App {
         if self.cmdline.active.is_some() {
             self.cancel();
         } else {
-            self.doc.lock().unwrap().selection.clear();
+            self.doc.lock().selection.clear();
             self.measured = None;
         }
     }

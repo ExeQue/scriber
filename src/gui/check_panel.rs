@@ -83,7 +83,7 @@ impl App {
         self.check.open = open;
         let Some(ids) = pick.map(|k| self.check.warnings[k].items.clone()) else { return };
         let b = {
-            let mut d = self.doc.lock().unwrap();
+            let mut d = self.doc.lock();
             d.selection = ids.into_iter().filter(|id| d.item(*id).is_some()).collect();
             d.bbox(&d.selection)
         };

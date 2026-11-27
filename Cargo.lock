@@ -3802,6 +3802,7 @@ dependencies = [
  "hyper-util",
  "image",
  "lyon_tessellation",
+ "parking_lot",
  "resvg",
  "rfd",
  "rmcp",

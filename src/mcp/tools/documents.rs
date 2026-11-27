@@ -107,7 +107,7 @@ pub(super) fn name(d: &Document) -> String {
 }
 
 fn entry(id: u64, doc: &Shared, active: u64) -> Value {
-    let d = doc.lock().unwrap();
+    let d = doc.lock();
     json!({"document": id, "name": name(&d), "path": d.path, "unsaved": d.dirty, "active": id == active, "items": d.s.items.len()})
 }
 
@@ -138,14 +138,12 @@ impl Server {
             Ok(s) => s,
             Err(e) => return Ok(CallToolResult::error(vec![ContentBlock::text(e)]).into()),
         };
-        // A tool that panics fails alone instead of closing the connection (or, through a poisoned
-        // lock, the editor). Document changes catch their panics in `with`, restoring the document.
-        let doc = s.doc.clone();
+        // A tool that panics fails alone instead of closing the connection. Document changes catch
+        // their panics in `with`, restoring the document.
         let run = tokio::spawn(async move { s.tool_router.call(ToolCallContext::new(&s, request, context)).await });
         match run.await {
             Ok(r) => r,
             Err(e) => {
-                doc.clear_poison();
                 let msg = if e.is_panic() { crate::model::panic_message(e.into_panic().as_ref()) } else { e.to_string() };
                 Ok(CallToolResult::error(vec![ContentBlock::text(msg)]).into())
             }
@@ -253,7 +251,7 @@ impl Server {
     #[tool(description = "Close a document's tab. Refuses when it has unsaved changes unless discard_changes is true (ask the person first). Closing the last tab leaves a new empty document.")]
     fn close_document(&self, Parameters(p): Parameters<CloseDocument>) -> ToolResult {
         let Some(doc) = self.ws.get(p.document) else { return fail(format!("no open document {}; see list_documents", p.document)) };
-        if doc.lock().unwrap().dirty && !p.discard_changes {
+        if doc.lock().dirty && !p.discard_changes {
             return fail("the document has unsaved changes; save it first, or pass discard_changes: true to lose them");
         }
         self.ws.close(p.document);
@@ -329,7 +327,7 @@ mod tests {
     }
 
     fn count(s: &Server, id: u64) -> usize {
-        s.ws.get(id).unwrap().lock().unwrap().s.items.len()
+        s.ws.get(id).unwrap().lock().s.items.len()
     }
 
     #[test]
@@ -355,11 +353,11 @@ mod tests {
     fn the_selection_is_kept_per_document() {
         let (s, a, b) = two();
         let first = reply(on(&s, json!({"document": a})).add_items(args(rect())))["ids"][0].as_u64().unwrap();
-        s.ws.get(a).unwrap().lock().unwrap().selection = vec![first];
+        s.ws.get(a).unwrap().lock().selection = vec![first];
         reply(on(&s, json!({"document": a})).add_items(args(rect())));
         reply(on(&s, json!({"document": b})).add_items(args(json!({"items": [{"shape": {"kind": "circle", "cx": 5, "cy": 5, "r": 2}}], "select": true}))));
-        assert_eq!(s.ws.get(a).unwrap().lock().unwrap().selection, vec![first], "A's selection stays");
-        assert_eq!(s.ws.get(b).unwrap().lock().unwrap().selection.len(), 1, "B selected on purpose");
+        assert_eq!(s.ws.get(a).unwrap().lock().selection, vec![first], "A's selection stays");
+        assert_eq!(s.ws.get(b).unwrap().lock().selection.len(), 1, "B selected on purpose");
     }
 
     #[test]
@@ -405,7 +403,7 @@ mod tests {
     async fn wait_for_annotations_watches_every_document() {
         let (s, a, b) = two();
         let since = crate::model::annotations::revision();
-        s.ws.get(b).unwrap().lock().unwrap().annotate(Author::Person, "in the other tab", Some([1.0, 1.0]), vec![]).unwrap();
+        s.ws.get(b).unwrap().lock().annotate(Author::Person, "in the other tab", Some([1.0, 1.0]), vec![]).unwrap();
         let r = reply(s.wait_for_annotations(args(json!({"since_revision": since, "timeout_s": 2}))).await);
         assert_eq!((r["annotations"][0]["document"].as_u64(), r["annotations"][0]["text"].as_str()), (Some(b), Some("in the other tab")));
         let only_a = reply(s.wait_for_annotations(args(json!({"since_revision": since, "timeout_s": 0.1, "document": a}))).await);

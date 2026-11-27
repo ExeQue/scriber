@@ -76,7 +76,7 @@ fn add_items_from_a_file() {
     let out = reply(s.add_items(args(json!({"path": file}))));
     assert_eq!(out["items"][0]["bbox"], json!([0.0, 0.0, 10.0, 5.0]));
     assert_eq!(out["items"][1]["op"], "score");
-    assert_eq!(doc.lock().unwrap().s.items.len(), 2);
+    assert_eq!(doc.lock().s.items.len(), 2);
 
     std::fs::write(&file, json!({"items": [{"shape": {"kind": "line", "x1": 0, "y1": 0, "x2": 1, "y2": 0}}]}).to_string()).unwrap();
     reply(s.add_items(args(json!({"path": file}))));
@@ -86,7 +86,7 @@ fn add_items_from_a_file() {
     assert!(error(s.add_items(args(json!({"path": dir.join("missing.json")})))).contains("cannot read"));
     let both = json!({"path": file, "items": [{"shape": {"kind": "circle", "cx": 5, "cy": 5, "r": 2}}]});
     assert!(error(s.add_items(args(both))).contains("not both"));
-    assert_eq!(doc.lock().unwrap().s.items.len(), 3, "failed calls add nothing");
+    assert_eq!(doc.lock().s.items.len(), 3, "failed calls add nothing");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -105,7 +105,7 @@ fn curves_become_arcs() {
     assert_eq!(item["kind"], "path");
     let bbox: Vec<f64> = serde_json::from_value(item["bbox"].clone()).unwrap();
     assert!(bbox.iter().zip([0.0, 0.0, 20.0, 10.0]).all(|(a, b)| (a - b).abs() < 0.05), "{bbox:?}");
-    let d = doc.lock().unwrap();
+    let d = doc.lock();
     let c = &d.s.items[0].shape.contours()[0];
     assert!(c.closed && c.vertices.iter().any(|v| v.bulge != 0.0) && c.vertices.len() < 20, "{c:?}");
     drop(d);
@@ -124,7 +124,7 @@ fn mirrored_copy_keeps_the_original() {
     let copy = out["ids"][0].as_u64().unwrap();
     assert_ne!(copy, id);
     assert_eq!(out["items"][0]["bbox"], json!([10.0, 0.0, 10.0, 5.0]));
-    let d = doc.lock().unwrap();
+    let d = doc.lock();
     assert_eq!((d.s.items.len(), d.bbox(&[id])), (2, Some([0.0, 0.0, 10.0, 5.0])));
 }
 
@@ -149,7 +149,7 @@ fn import_svg_maps_elements_and_keeps_cutters() {
 
     // The no-output cutter subtracted from the cut plate leaves a cut plate on its layer.
     let ids: Vec<u64> = out["ids"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap()).collect();
-    let layer = doc.lock().unwrap().item(ids[0]).unwrap().layer;
+    let layer = doc.lock().item(ids[0]).unwrap().layer;
     let diff = reply(s.boolean(args(json!({"ids": [ids[0], ids[1]], "operation": "difference"}))));
     assert_eq!((diff["items"][0]["op"].as_str(), diff["items"][0]["layer"].as_u64(), diff["items"][0]["contours"].as_u64()), (Some("cut"), Some(layer), Some(2)));
 }
@@ -158,21 +158,21 @@ fn import_svg_maps_elements_and_keeps_cutters() {
 fn agent_changes_leave_the_selection_alone() {
     let (s, doc) = server();
     let ids = squares(&s, 3);
-    assert!(doc.lock().unwrap().selection.is_empty(), "add_items selects nothing by default");
+    assert!(doc.lock().selection.is_empty(), "add_items selects nothing by default");
     reply(s.select(args(json!({"ids": [ids[0], ids[1]]}))));
 
     squares(&s, 2);
     reply(s.duplicate_items(args(json!({"ids": [ids[2]], "dx": 5, "dy": 0}))));
     reply(s.duplicate_items(args(json!({"dx": 5, "dy": 0}))));
-    assert_eq!(doc.lock().unwrap().selection, [ids[0], ids[1]]);
+    assert_eq!(doc.lock().selection, [ids[0], ids[1]]);
 
     // Deleted items drop out of the selection.
     reply(s.delete_items(args(json!({"ids": [ids[1]]}))));
-    assert_eq!(doc.lock().unwrap().selection, [ids[0]]);
+    assert_eq!(doc.lock().selection, [ids[0]]);
 
     // Asking for it still selects.
     let new = reply(s.add_items(args(json!({"items": [{"shape": {"kind": "circle", "cx": 50, "cy": 50, "r": 5}}], "select": true}))));
-    assert_eq!(json!(doc.lock().unwrap().selection), new["ids"]);
+    assert_eq!(json!(doc.lock().selection), new["ids"]);
 }
 
 #[test]
@@ -184,7 +184,7 @@ fn dxf_round_trip_with_chosen_layer_ops() {
     let path = path.to_string_lossy().into_owned();
     let out = reply(s.export_dxf(args(json!({"path": path}))));
     assert_eq!((out["layers"].as_u64(), out["entities"].as_u64()), (Some(2), Some(3)));
-    let before = doc.lock().unwrap().s.items.len();
+    let before = doc.lock().s.items.len();
     let out = reply(s.import_dxf(args(json!({"path": path, "layers": {"Score": "skip", "Cut": "engrave"}}))));
     std::fs::remove_file(&path).unwrap();
     assert_eq!(out["units"], "mm");
@@ -193,7 +193,7 @@ fn dxf_round_trip_with_chosen_layer_ops() {
     // The two overlapping squares are not nested: two items on a new engrave layer called Cut.
     assert_eq!(out["ids"].as_array().unwrap().len(), 2);
     assert!(out["items"].as_array().unwrap().iter().all(|i| i["op"] == "engrave"));
-    assert_eq!(doc.lock().unwrap().s.items.len(), before + 2);
+    assert_eq!(doc.lock().s.items.len(), before + 2);
     assert!(error(s.import_dxf(args(json!({"path": "/nonexistent.dxf"})))).contains("cannot read"));
 }
 
@@ -207,6 +207,6 @@ fn a_panicking_tool_fails_alone_and_leaves_the_document_as_it_was() {
         panic!("boom")
     });
     assert!(error(r).contains("boom"));
-    assert_eq!(doc.lock().expect("the lock is not poisoned").s.items.len(), 1, "the half-done delete is rolled back");
+    assert_eq!(doc.lock().s.items.len(), 1, "the half-done delete is rolled back");
     assert_eq!(squares(&s, 1).len(), 1, "the next call works");
 }

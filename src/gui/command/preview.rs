@@ -8,7 +8,7 @@ impl App {
     /// The shapes the running command would produce if the user clicked at `p` now.
     pub(in crate::gui) fn op_preview(&self, p: Point) -> Vec<Shape> {
         let Some((cmd @ (Cmd::Fillet | Cmd::Chamfer), Step::Pick)) = self.cmdline.active else { return Vec::new() };
-        let d = self.doc.lock().unwrap();
+        let d = self.doc.lock();
         let Some(id) = self.hit(&d, p) else { return Vec::new() };
         let m = &self.cmdline.modify;
         let run = |t: &mut Document, ids: &[u64], at: Option<Point>| match cmd {
