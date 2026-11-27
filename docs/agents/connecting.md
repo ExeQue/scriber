@@ -50,6 +50,11 @@ changes the port). Only your own computer can reach it.
 
 Agents keep working when you restart the editor.
 
+When a new version of Scriber brings new or changed tools, `scriber mcp` tells the agents connected
+through it within a few seconds, and they pick up the new tool list without reconnecting. Agents
+whose `scriber mcp` was started by an older version need one reconnect (or a restart of the agent)
+first. Agents connected by URL see the new tools the next time they list them.
+
 ## Windows and WSL
 
 On Windows, Scriber also finds agents inside WSL distributions (for example Claude Code or Codex
