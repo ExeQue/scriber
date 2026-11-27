@@ -94,8 +94,8 @@ impl App {
                 let tex = self.texture(ctx, *image, img);
                 let r = Rect::from_min_max(self.w2s([*x, *y]), self.w2s([x + w, y + h]));
                 let mut mesh = egui::Mesh::with_texture(tex);
-                // The tint multiplies: white pixels take the material's colour, black ones stay black.
-                mesh.add_rect_with_uv(r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), rgb(p.sheet));
+                // Burned like an engraved area of the same layer: its burn colour, as opaque as the pixel is dark.
+                mesh.add_rect_with_uv(r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), rgb(mark(s, lib, p, item, p.burn)));
                 mesh.rotate(egui::emath::Rot2::from_angle(rotation.to_radians() as f32), r.center());
                 painter.add(mesh);
             } else {

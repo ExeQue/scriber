@@ -312,11 +312,13 @@ impl App {
         self.textures
             .entry(id)
             .or_insert_with(|| {
-                let grey = image::load_from_memory(&img.png).map(|i| i.to_luma8()).unwrap_or_default();
-                let size = [grey.width() as usize, grey.height() as usize];
+                // White with alpha = darkness: the mesh's tint gives the colour, and unburned (white)
+                // pixels let the material show through instead of a white box.
+                let mask = crate::export::image::burn_mask(&img.png, [255, 255, 255]).unwrap_or_default();
+                let size = [mask.width() as usize, mask.height() as usize];
                 // Mipmaps keep a big photo crisp instead of shimmering when zoomed out.
                 let options = egui::TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear));
-                ctx.load_texture(format!("img{id}"), egui::ColorImage::from_gray(size, grey.as_raw()), options)
+                ctx.load_texture(format!("img{id}"), egui::ColorImage::from_rgba_unmultiplied(size, mask.as_raw()), options)
             })
             .id()
     }
@@ -438,7 +440,8 @@ impl App {
                 let tex = self.texture(ctx, *image, img);
                 let r = Rect::from_min_max(self.w2s([*x, *y]), self.w2s([x + w, y + h]));
                 let mut mesh = egui::Mesh::with_texture(tex);
-                mesh.add_rect_with_uv(r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+                // In the colour of engraved areas, as the laser engraves it.
+                mesh.add_rect_with_uv(r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), crate::gui::theme::get().engrave_fill());
                 mesh.rotate(egui::emath::Rot2::from_angle(rotation.to_radians() as f32), r.center());
                 painter.add(mesh);
             }

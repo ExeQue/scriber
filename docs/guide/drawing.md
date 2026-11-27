@@ -63,7 +63,10 @@ last point) or `@40<30` (40 mm at 30°). A plain number uses the pointer's direc
 ## Images, SVG, DXF and xTool files
 
 - File → **Import ▸ Image…** places a PNG, JPEG or other picture. It is turned to greyscale and is
-  engraved.
+  engraved: the darker a pixel, the more it burns; white and transparent pixels are not burned. On
+  the canvas and in the laser preview the picture shows only what gets burned (in the engrave
+  colour, and in the preview with the same burn as an engraved area on its layer), so there is no
+  white box around it.
 - File → **Import ▸ SVG…** reads vector drawings. The stroke colour picks the layer: red = cut,
   blue = score, black = engrave, grey or green = no output, any other colour = cut. A filled closed
   shape is engraved. You can also paste SVG text straight onto the canvas.
