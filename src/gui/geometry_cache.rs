@@ -96,4 +96,23 @@ mod tests {
         let first = cache.get(&item, true, 0.1).outline.as_ptr();
         assert_eq!(cache.get(&item, true, 0.11).outline.as_ptr(), first, "same bucket reuses the cache");
     }
+
+    #[test]
+    fn circles_stay_round_at_every_zoom() {
+        let (c, r) = ([100.0, 100.0], 45.0);
+        let item = Item { id: 1, name: String::new(), layer: 1, shape: Shape::path(Contour::circle(c[0], c[1], r)), note: String::new(), rotation: 0.0 };
+        let mut cache = GeometryCache::default();
+        for ppp in [1.0f32, 1.25, 1.5, 2.0] {
+            // 0.5 % to 400 % (100 % = 3.78 points per mm) in 0.25 % steps.
+            for step in 2..=1600 {
+                let zoom = step as f32 * 0.25 / 100.0 * 3.78;
+                let tol = crate::gui::canvas::curve_tol(zoom, ppp);
+                let line = &cache.get(&item, false, tol).outline[0];
+                // Vertices sit on the circle; the chords sag inside it the most at their middles.
+                let dev = line.windows(2).map(|s| r - ((s[0][0] + s[1][0]) / 2.0 - c[0]).hypot((s[0][1] + s[1][1]) / 2.0 - c[1])).fold(0.0, f64::max);
+                let px = dev * (zoom * ppp) as f64;
+                assert!(px <= 0.25 + 1e-9, "{px:.3} physical px at {:.2} % zoom, ppp {ppp}", step as f32 * 0.25);
+            }
+        }
+    }
 }

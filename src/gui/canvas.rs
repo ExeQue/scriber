@@ -552,10 +552,12 @@ fn picks_inside(s: &State, item: &Item) -> bool {
     matches!(item.shape, Shape::Text { .. } | Shape::Image { .. }) || s.engraves_area(item)
 }
 
-/// How far a flattened curve may stray from the true one, in mm: half a physical pixel at `zoom`
-/// (points per mm), so curves stay smooth on HiDPI screens too.
+/// How far a flattened curve may stray from the true one, in mm: a quarter of a physical pixel at
+/// `zoom` (points per mm), so curves stay smooth on HiDPI screens too. The geometry caches round it
+/// down to a power of two, so the drawn error is 1/8 to 1/4 px; half a pixel (the old target, hit
+/// at the top of a bucket) already showed a 45 mm circle as a polygon.
 pub(super) fn curve_tol(zoom: f32, pixels_per_point: f32) -> f64 {
-    (0.5 / (zoom * pixels_per_point) as f64).clamp(0.0005, 1.0)
+    (0.25 / (zoom * pixels_per_point) as f64).clamp(0.0005, 1.0)
 }
 
 /// The items object snaps and tracking can use: those on shown layers.
