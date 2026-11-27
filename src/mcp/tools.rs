@@ -610,9 +610,10 @@ impl Server {
         ok(reply::document(&self.doc.lock().unwrap(), &p.ids, p.geometry))
     }
 
-    #[tool(description = "List the font families installed on this computer, for a text's font. sans-serif, serif and monospace also work and pick the system's default of that kind.")]
+    #[tool(description = "List the font families installed on this computer, for a text's font. sans-serif, serif and monospace also work and pick the system's default of that kind; generic says which installed family each one draws with.")]
     fn list_fonts(&self) -> ToolResult {
-        ok(json!({"fonts": text::families()}))
+        let generic: serde_json::Map<String, serde_json::Value> = text::generic_families().into_iter().map(|(g, f)| (g.to_owned(), json!(f))).collect();
+        ok(json!({"fonts": text::families(), "generic": generic}))
     }
 
     #[tool(description = "Select items in the GUI (empty list clears the selection).")]

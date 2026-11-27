@@ -264,7 +264,8 @@ mod tests {
         assert!(found.contains(&(Kind::OpenCut, vec![open])), "{found:?}");
         assert!(found.contains(&(Kind::DoubleLine, vec![a, b])), "{found:?}");
         assert!(found.contains(&(Kind::OutsideMaterial, vec![out])), "{found:?}");
-        assert!(found.contains(&(Kind::TooSmall, vec![dot])), "{found:?}");
+        // The 1 mm text may be too small as well (its i-dots, in some fonts).
+        assert!(found.iter().any(|(k, ids)| *k == Kind::TooSmall && ids.contains(&dot)), "{found:?}");
         assert!(found.contains(&(Kind::SmallText, vec![small])), "{found:?}");
         assert!(!found.iter().any(|w| matches!(w.0, Kind::OutsideWorkArea | Kind::NoSetting)), "no machine chosen: {found:?}");
 

@@ -39,8 +39,96 @@ pub fn usvg_options() -> &'static usvg::Options<'static> {
         let db = opt.fontdb_mut();
         db.load_system_fonts();
         add_legacy_families(db);
+        set_generic_families(db);
         opt
     })
+}
+
+/// The CSS generic family names a text's font may be.
+pub const GENERIC: [&str; 5] = ["serif", "sans-serif", "monospace", "cursive", "fantasy"];
+
+/// The installed family each generic name draws with, e.g. ("serif", "Liberation Serif").
+pub fn generic_families() -> Vec<(&'static str, String)> {
+    let db = &usvg_options().fontdb;
+    GENERIC.into_iter().map(|g| (g, db.family_name(&generic_family(g)).to_owned())).collect()
+}
+
+/// Point each generic family at a real Latin text font. fontdb reads fontconfig's aliases naively
+/// (the last `<prefer>` wins), so on Linux "serif" ended up as Standard Symbols PS, a symbol font
+/// whose cmap draws "God Jul" as Greek. Ask fontconfig what it really picks, else a known list.
+fn set_generic_families(db: &mut usvg::fontdb::Database) {
+    let known: [&[&str]; 5] = [
+        &["Times New Roman", "Times", "DejaVu Serif", "Noto Serif", "Liberation Serif", "Nimbus Roman", "Georgia"],
+        &["Arial", "Helvetica", "DejaVu Sans", "Noto Sans", "Liberation Sans", "Nimbus Sans", "Verdana"],
+        &[
+            if cfg!(target_os = "macos") { "Menlo" } else { "Consolas" },
+            "DejaVu Sans Mono",
+            "Noto Sans Mono",
+            "Liberation Mono",
+            "Nimbus Mono PS",
+            "Courier New",
+        ],
+        &["Comic Sans MS", "Apple Chancery", "URW Chancery L", "Z003"],
+        &["Impact", "Papyrus"],
+    ];
+    let mut chosen: Vec<String> = Vec::new();
+    for (generic, known) in GENERIC.into_iter().zip(known) {
+        let system = fc_match(generic);
+        let current = db.family_name(&generic_family(generic)).to_owned();
+        let candidates = system.as_deref().into_iter().chain(known.iter().copied()).chain([current.as_str()]);
+        let pick = { candidates }.find(|f| latin_family(db, f)).map(str::to_owned);
+        // Nothing known: sans-serif's pick (for cursive/fantasy), else any Latin family at all.
+        let pick = pick.or_else(|| chosen.get(1).cloned()).or_else(|| {
+            db.faces().filter_map(|f| f.families.first()).map(|(n, _)| n.clone()).find(|n| latin_family(db, n))
+        });
+        chosen.push(pick.unwrap_or(current));
+    }
+    let [serif, sans, mono, cursive, fantasy]: [String; 5] = chosen.try_into().unwrap();
+    db.set_serif_family(serif);
+    db.set_sans_serif_family(sans);
+    db.set_monospace_family(mono);
+    db.set_cursive_family(cursive);
+    db.set_fantasy_family(fantasy);
+}
+
+fn generic_family(generic: &str) -> usvg::fontdb::Family<'static> {
+    use usvg::fontdb::Family;
+    match generic {
+        "serif" => Family::Serif,
+        "sans-serif" => Family::SansSerif,
+        "monospace" => Family::Monospace,
+        "cursive" => Family::Cursive,
+        _ => Family::Fantasy,
+    }
+}
+
+/// Whether `family` is installed as a text font with Latin letters (not a symbol or dingbat font).
+fn latin_family(db: &usvg::fontdb::Database, family: &str) -> bool {
+    use skrifa::{FontRef, MetadataProvider};
+    let lower = family.to_lowercase();
+    if ["symbol", "dingbat", "wingdings", "webdings"].iter().any(|s| lower.contains(s)) {
+        return false;
+    }
+    let has_a = |data: &[u8], index: u32| FontRef::from_index(data, index).is_ok_and(|f| f.charmap().map('A').is_some());
+    db.faces()
+        .filter(|f| f.families.iter().any(|(n, _)| n == family))
+        .any(|f| db.with_face_data(f.id, has_a) == Some(true))
+}
+
+/// The family fontconfig picks for `generic` on Linux; None elsewhere, or when fc-match fails or hangs.
+fn fc_match(generic: &str) -> Option<String> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let arg = generic.to_owned();
+    std::thread::spawn(move || {
+        let _ = tx.send(std::process::Command::new("fc-match").args(["-f", "%{family}", &arg]).output());
+    });
+    let out = rx.recv_timeout(std::time::Duration::from_secs(2)).ok()?.ok()?;
+    // "JetBrainsMono Nerd Font,JetBrainsMono NF": the first name is the family.
+    let name = String::from_utf8(out.stdout).ok()?.split(',').next()?.trim().to_owned();
+    (out.status.success() && !name.is_empty()).then_some(name)
 }
 
 /// fontdb files every face under its typographic family ("Noto Sans"), so weights such as
@@ -57,7 +145,8 @@ fn add_legacy_families(db: &mut usvg::fontdb::Database) {
         .faces()
         .filter_map(|face| {
             let name = db.with_face_data(face.id, legacy)??;
-            let new = !face.families.iter().any(|(n, _)| *n == name);
+            // Never file a font under a generic name ("serif"): it would hijack that generic.
+            let new = !face.families.iter().any(|(n, _)| *n == name) && !GENERIC.contains(&name.to_lowercase().as_str());
             new.then(|| usvg::fontdb::FaceInfo { families: vec![(name, Language::English_UnitedStates)], ..face.clone() })
         })
         .collect();
@@ -79,7 +168,7 @@ pub fn families() -> &'static [String] {
 
 /// Why `font` cannot be used (unknown family), with a suggestion when only the case differs.
 pub fn font_error(font: &str) -> Option<String> {
-    let known = |f: &str| ["serif", "sans-serif", "monospace", "cursive", "fantasy"].contains(&f) || families().iter().any(|n| n == f);
+    let known = |f: &str| GENERIC.contains(&f) || families().iter().any(|n| n == f);
     if known(font) {
         return None;
     }
@@ -136,7 +225,7 @@ fn layout(style: &Style) -> Glyphs {
 /// A family name for the CSS font-family list: generic names bare, others quoted.
 fn family_list(font: &str) -> String {
     match font {
-        "serif" | "sans-serif" | "monospace" | "cursive" | "fantasy" => font.to_owned(),
+        f if GENERIC.contains(&f) => font.to_owned(),
         _ => format!("'{}'", font.replace('\'', "")),
     }
 }
@@ -248,6 +337,24 @@ mod tests {
         let w = |f: &str| glyphs(&style("Hello", f, 10.0)).bbox.map(|b| b[2]);
         let widths: Vec<_> = fams.iter().take(20).filter_map(|f| w(f)).collect();
         assert!(widths.windows(2).any(|p| (p[0] - p[1]).abs() > 0.01), "every font gave the same width");
+    }
+
+    #[test]
+    fn generic_families_are_installed_latin_fonts() {
+        let db = &usvg_options().fontdb;
+        if !db.faces().any(|f| latin_family(db, &f.families[0].0)) {
+            return eprintln!("no Latin fonts installed; skipped");
+        }
+        for (generic, family) in generic_families() {
+            eprintln!("{generic} -> {family}");
+            assert!(latin_family(db, &family), "{generic} resolves to {family}, not an installed Latin font");
+        }
+        // "serif" draws exactly what its resolved family draws, so no symbol font's Greek.
+        let serif = generic_families()[0].1.clone();
+        let outline = |font: &str| glyphs(&style("God Jul", font, 10.0)).contours.clone();
+        assert!(!outline("serif").is_empty());
+        assert_eq!(outline("serif"), outline(&serif));
+        assert!(!latin_family(db, "Standard Symbols PS"));
     }
 
     #[test]
