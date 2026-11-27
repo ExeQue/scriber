@@ -45,7 +45,7 @@ Both scripts read these environment variables:
 
 | Variable | Meaning |
 | --- | --- |
-| `SCRIBER_VERSION` | Install this release, e.g. `v0.1.0`, instead of the latest. |
+| `SCRIBER_VERSION` | Install this release, e.g. `v0.1.0`, instead of the latest; `dev` installs the [development build](#development-builds). |
 | `SCRIBER_INSTALL_DIR` | Install here instead of the default folder. |
 | `SCRIBER_UNINSTALL` | `1` removes Scriber, see [Uninstall](#uninstall). |
 | `SCRIBER_DOWNLOAD_BASE` | Download from `<url>/<tag>/<file>` instead of GitHub Releases, for mirrors and for testing the scripts. |
@@ -59,6 +59,25 @@ curl -fsSL https://raw.githubusercontent.com/ExeQue/scriber/main/install/install
 ```powershell
 $env:SCRIBER_VERSION = 'v0.1.0'; irm https://raw.githubusercontent.com/ExeQue/scriber/main/install/install.ps1 | iex
 ```
+
+### Development builds
+
+Every change on `main` is built for all platforms and published as the
+[`dev` prerelease](https://github.com/ExeQue/scriber/releases/tag/dev). It has the newest features
+and fixes, but it is **unstable**: it is not tested beyond the automatic tests, it can break your
+projects or library, and, like the releases, it is not signed. Save copies of projects you care
+about first.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ExeQue/scriber/main/install/install.sh | SCRIBER_VERSION=dev sh
+```
+
+```powershell
+$env:SCRIBER_VERSION = 'dev'; irm https://raw.githubusercontent.com/ExeQue/scriber/main/install/install.ps1 | iex
+```
+
+Run the same line again to update to the newest development build. To go back to the latest
+stable release, run the normal install command from the top of this page.
 
 ## Download by hand
 

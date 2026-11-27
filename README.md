@@ -47,7 +47,8 @@ irm https://raw.githubusercontent.com/ExeQue/scriber/main/install/install.ps1 | 
 
 Pinning a version, downloading by hand from the
 [Releases page](https://github.com/ExeQue/scriber/releases), building from source and uninstalling
-are in the [installation guide](https://exeque.github.io/scriber/guide/installation).
+are in the [installation guide](https://exeque.github.io/scriber/guide/installation). Unstable builds of the newest
+commit on `main`: [development builds](https://exeque.github.io/scriber/guide/installation#development-builds).
 
 ```sh
 scriber                  # the editor

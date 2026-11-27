@@ -5,6 +5,7 @@
 #
 # Environment:
 #   SCRIBER_VERSION=v0.1.0      install this release instead of the latest
+#                               (dev: the unstable build of the newest commit on main)
 #   SCRIBER_INSTALL_DIR=<dir>   where the binary goes (default: ~/.local/bin)
 #   SCRIBER_UNINSTALL=1         remove the binary and desktop entry (same as --uninstall)
 #   SCRIBER_DOWNLOAD_BASE=<url> download releases from <url>/<tag>/<asset> (mirrors and testing)

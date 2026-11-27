@@ -4,6 +4,7 @@
 #
 # Environment:
 #   $env:SCRIBER_VERSION = 'v0.1.0'     install this release instead of the latest
+#                                       ('dev': the unstable build of the newest commit on main)
 #   $env:SCRIBER_INSTALL_DIR = '<dir>'  where Scriber goes (default: %LOCALAPPDATA%\Programs\Scriber)
 #   $env:SCRIBER_UNINSTALL = '1'        remove Scriber, its Start Menu shortcut and its PATH entry
 #   $env:SCRIBER_DOWNLOAD_BASE = '<url>' download releases from <url>/<tag>/<asset> (mirrors and testing)
