@@ -310,3 +310,24 @@ fn arcs_become_cubics() {
     assert!(d.starts_with('M') && d.ends_with('Z') && d.contains('C') && !d.contains('A'), "{d}");
     assert!(path_bbox(&d).iter().zip([-10.0, -10.0, 20.0, 20.0]).all(|(a, b)| (a - b).abs() < 0.01), "{d}");
 }
+
+#[test]
+fn images_lie_under_cut_and_score_lines() {
+    // Cut comes before Engrave in the layer list, yet the picture must not cover the cut line.
+    let mut d = Document::new(100.0, 100.0);
+    (d.s.machine, d.s.laser) = (Some("xtool-m2".into()), Some("diode-10w".into()));
+    let cut = d.add("outline", Op::Cut, Shape::path(Contour::circle(50.0, 50.0, 40.0)));
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::GrayImage::from_pixel(10, 10, image::Luma([255])).write_to(&mut png, image::ImageFormat::Png).unwrap();
+    d.place_image(crate::model::Img { png: png.into_inner(), w: 10, h: 10 }, [0.0, 0.0], Some(100.0), "fade");
+    let score = d.add("score", Op::Score, Shape::path(Contour::circle(50.0, 50.0, 30.0)));
+    assert!(cut < score);
+    let x = xs(&d.s, &lib(), "Z", true).unwrap();
+    let mut zip = archive(&x.bytes);
+    let canvas = read(&mut zip, "project.json")["activeCanvasId"].as_str().unwrap().to_string();
+    let displays = read(&mut zip, &format!("canvases/{canvas}/displays-0.json"))["displays"].as_array().unwrap().clone();
+    let z = |ty: &str| displays.iter().filter(|d| d["type"] == ty).map(|d| d["zOrder"].as_u64().unwrap()).collect::<Vec<_>>();
+    let (bitmaps, paths) = (z("BITMAP"), z("PATH"));
+    assert_eq!((bitmaps.len(), paths.len()), (1, 2));
+    assert!(paths.iter().all(|p| *p > bitmaps[0]), "image {bitmaps:?} under the lines {paths:?}");
+}
