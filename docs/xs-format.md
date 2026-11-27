@@ -258,7 +258,7 @@ B. Risks that could make xTool Studio reject or "repair" a file
 1. Wrong `type` strings or missing type fields: for native types copy the full field list above; when unsure use `PATH`.
 2. Missing optional-looking fields (the app may crash instead of defaulting): copy the full common field list verbatim.
 3. `minRequiredVersion: "2.6.0"` in `versionInfo`: copy it.
-4. Referential integrity: a display id in `bindings` but absent from displays is tolerated; a display in no binding is **unknown**, so bind every element (and list no-output ones in `ignoredDisplayIds`).
+4. Referential integrity: a display id in `bindings` but absent from displays is tolerated; a display in no binding is **unknown** (xTool binds ignored ones too); Scriber binds every processed element and lists no-output ones only in `ignoredDisplayIds`, in no binding, so they can never be processed. If xTool turns out to need a binding, add them to a base binding as well.
 5. Float formatting: <= 6 decimals for geometry in native fields; path strings carry full doubles; colours ints.
 6. Zip: deflate, directory entries, `.format` last; other layouts untested.
 7. Account data: none in the samples (`ua` string only); never copy `projectId`s or `ua` from user files.
@@ -276,11 +276,12 @@ B. Risks that could make xTool Studio reject or "repair" a file
 | Circle (single full arc contour) | native `CIRCLE` is possible (`width = height = 2r`); because of the scale 0.01 oddity, **prefer `PATH`** with four cubic Béziers until tested |
 | Item contour(s) + bulge arcs | `PATH.dPath`: `M x y`, straight segments `L`/`H`/`V`, bulge arcs as SVG `A rx ry 0 large sweep x y` (r = chord/(2 sin(theta/2)), theta = 4 atan(bulge), sweep from sign) **(arcs not seen in samples; the app writes `C`; to be safe convert arcs to cubic `C` segments)**; closed contour ends `Z`; several contours -> one `dPath` with `isCompoundPath:true`, `fillRule:"evenodd"` |
 | bbox, position | `x,y,width,height` = bbox of the written path; `transform=[1,0,0,1,0,0]`, `scale 1,1`, `angle 0` (bake item rotation into the points; with a native `RECT` the rotated `x,y` is the unrotated top-left, not the bbox) |
-| Layer (colour) | `layerData` entry per layer (`#rrggbb` lowercase) with `order`; element `layerTag/layerColor`; use the layer's canvas colour, else op colour (cut red `#fe0002`, score blue `#00befe`, engrave black `#000000`, no output grey) |
+| Layer (colour) | `layerData` entry per layer (`#rrggbb` lowercase) with `order` and `name` = the Scriber layer name; element `layerTag/layerColor` and `stroke.color`/`originColor`/`fillColor`; use the layer's canvas colour, else op colour (cut red `#fe0002`, score blue `#00befe`, engrave black `#000000`, no output grey). xTool keys layers by colour, so when an earlier exported layer already has the colour, it is nudged to the nearest free one (one channel ±1, then ±2, …): every Scriber layer stays its own xTool layer |
 | Op Cut | binding on VECTOR_CUTTING; element stroke visible, no fill |
 | Op Score | binding on VECTOR_ENGRAVING; stroke visible |
 | Op Engrave (closed paths) | binding on FILL_VECTOR_ENGRAVING; `fill.visible=true`, `stroke.visible=false`, `isFill=true`; open engrave path -> score |
-| Op No output / hidden layer | listed in `ignoredDisplayIds` (and still bound); hidden layer -> `visible:false`, `layerData.visible:false` **(guess)** |
+| Op No output | own colour layer; its elements are displays listed in `devices/device-<code>-1.json` → `processing[<canvasId>].modes.LASER_PLANE.ignoredDisplayIds`, and in **no** binding (xTool's own samples also bound them; unbound ignored displays are untested in the app). Left out with `include_no_output: false` |
+| Hidden layer | not exported |
 | Setting power %, speed mm/s, passes | patch `overrides.power`, `.speed`, `.repeat` (profile values otherwise as in profiles.json) |
 | Engrave line interval mm | `overrides.density = 10 / interval` (lines per cm); `dpiX = dpiY`: samples only show density 100 with dpi 254, so write `round(density * 2.54)` (guess); `lineSpacing` in `data` stays 0.025 |
 | Air assist | `airPump` (0..100; default 100 cut, 15 others) |

@@ -1,7 +1,8 @@
 # Exporting
 
 Everything that is lasered comes out of the export: shapes on shown cut, score and engrave layers.
-Hidden layers, *No output* layers, guide lines and comments are left out.
+Hidden layers, *No output* layers, guide lines and comments are left out (the xTool Studio export
+keeps *No output* layers as reference that is not lasered; see below).
 
 | Export | Where | What you get |
 |---|---|---|
@@ -14,11 +15,15 @@ Text is exported as outlines, so the laser software does not need the font.
 
 ## xTool Studio projects
 
-The `.xs` export writes one xTool colour layer per Scriber layer, with the settings from your
-[material library](./machines-and-materials) (and the layer's own numbers on top):
+The `.xs` export writes one xTool colour layer per shown Scriber layer, named after it, with the
+settings from your [material library](./machines-and-materials) (and the layer's own numbers on top):
 
 - Cut → vector cutting, Score → vector engraving, Engrave → fill engraving (lines per cm become
   xTool's density). Open shapes on an engrave layer are scored.
+- *No output* layers come along as reference: their shapes are on the xTool canvas, marked not to
+  be processed, so they never reach the laser. Over MCP, `include_no_output: false` leaves them out.
+- xTool groups layers by colour. When two Scriber layers have the same colour, the later one gets a
+  colour one step away (e.g. `#fe0003` next to `#fe0002`), so they stay separate layers in xTool.
 - Images are engraved as bitmaps. Rotated images are skipped, and the export says so.
 - The machine must be an xTool machine with a device code (all built-in xTool machines have one).
   With no machine chosen, the project is written for an M2 with the 10 W laser, with a note.

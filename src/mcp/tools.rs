@@ -386,6 +386,8 @@ pub struct ExportDxf {
 pub struct ExportXs {
     /// Where to write the .xs project.
     pub path: String,
+    /// Put no_output layers in as reference: on the canvas, marked not to be processed. Default true; false leaves them out.
+    pub include_no_output: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -874,12 +876,12 @@ impl Server {
         }
     }
 
-    #[tool(description = "Export the document as an xTool Studio project (.xs) for the document's xTool machine and laser module: one colour layer per shown cut/score/engrave layer, each with its processing type (cut, score = vector engraving, engrave = fill) and the layer's power, speed and passes (and lines per cm). Text goes out as outlines; no-output and hidden layers, guides and dimensions are left out; images are skipped (listed in `skipped`).")]
+    #[tool(description = "Export the document as an xTool Studio project (.xs) for the document's xTool machine and laser module: one xTool colour layer per shown layer, named after it (a colour another exported layer already has is nudged by one step per channel so layers never merge), each cut/score/engrave layer with its processing type (cut, score = vector engraving, engrave = fill) and the layer's power, speed and passes (and lines per cm). no_output layers go in as reference: on the canvas but never processed (xTool's ignoredDisplayIds); include_no_output: false leaves them out. Text goes out as outlines; hidden layers, guides and dimensions are left out; rotated or unreadable images are skipped (listed in `skipped`).")]
     fn export_xs(&self, Parameters(p): Parameters<ExportXs>) -> ToolResult {
         let state = self.doc.lock().unwrap().s.clone();
         let name = PathBuf::from(&p.path).file_stem().map_or("Scriber".into(), |s| s.to_string_lossy().into_owned());
         let lib = crate::library::get().clone(); // not locked while xs renders the cover (it locks the library)
-        let x = match export::xs(&state, &lib, &name) {
+        let x = match export::xs(&state, &lib, &name, p.include_no_output.unwrap_or(true)) {
             Ok(x) => x,
             Err(e) => return fail(e.to_string()),
         };

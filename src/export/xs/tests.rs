@@ -77,14 +77,17 @@ fn round_trip() {
     let has_font = !text.laser_contours().is_empty();
     let text_box = text.metrics().bbox;
     d.add("label", Op::Engrave, text);
-    d.add("note", Op::NoOutput, Shape::path(Contour::line([0.0, 0.0], [5.0, 5.0])));
+    let note = d.add("note", Op::NoOutput, Shape::path(Contour::line([0.0, 0.0], [5.0, 5.0])));
+    d.add("dim", Op::NoOutput, Shape::Dimension { x1: 0.0, y1: 90.0, x2: 50.0, y2: 90.0, offset: 5.0 });
+    let note_layer = d.item(note).unwrap().layer;
     let cut_layer = d.item(cut).unwrap().layer;
     d.s.layer_mut(cut_layer).unwrap().settings = Overrides { power: Some(100.0), speed: Some(4.0), passes: Some(2) };
     d.s.layers.iter_mut().find(|l| l.op == Op::Score).unwrap().settings = Overrides { power: Some(75.0), speed: Some(140.0), passes: Some(1) };
     d.s.layers.iter_mut().find(|l| l.op == Op::Engrave).unwrap().settings.power = Some(80.0);
 
-    let x = xs(&d.s, &lib(), "Test").unwrap();
-    assert_eq!(x.elements, 3 + has_font as usize, "the no-output note is left out");
+    let x = xs(&d.s, &lib(), "Test", true).unwrap();
+    assert_eq!(x.elements, 4 + has_font as usize, "the no-output note is in, the dimension is not");
+    assert_eq!(xs(&d.s, &lib(), "Test", false).unwrap().elements, 3 + has_font as usize, "include_no_output: false leaves the note out");
     assert!(x.skipped.is_empty() && x.notes.is_empty(), "{:?} {:?}", x.skipped, x.notes);
 
     // Settings, through the library importer.
@@ -125,7 +128,46 @@ fn round_trip() {
         assert_eq!((kind_of(&t["id"]).as_str(), &t["fillRule"]), ("FILL_VECTOR_ENGRAVING", &json!("evenodd")));
         assert!(close(path_bbox(t["dPath"].as_str().unwrap()), text_box), "{:?} vs {text_box:?}", path_bbox(t["dPath"].as_str().unwrap()));
     }
-    assert_eq!(read(&mut zip, &format!("canvases/{canvas}.json"))["layerData"].as_object().unwrap().len(), x.layers);
+    let layer_data = read(&mut zip, &format!("canvases/{canvas}.json"))["layerData"].clone();
+    assert_eq!(layer_data.as_object().unwrap().len(), x.layers);
+    assert_eq!(x.layers, 4, "cut, score, engrave and the no-output layer");
+
+    // The no-output note: on the canvas, ignored, in no binding, on its own named layer.
+    let ignored = mode["ignoredDisplayIds"].as_array().unwrap();
+    assert_eq!(ignored.len(), 1);
+    let el = displays.iter().find(|el| el["id"] == ignored[0]).unwrap();
+    assert!(close(path_bbox(el["dPath"].as_str().unwrap()), [0.0, 0.0, 5.0, 5.0]));
+    assert!(mode["bindings"].as_array().unwrap().iter().all(|b| !b["displayIds"].as_array().unwrap().contains(&ignored[0])));
+    let name = &d.s.layers.iter().find(|l| l.id == note_layer).unwrap().name;
+    assert_eq!(layer_data[el["layerTag"].as_str().unwrap()]["name"], json!(name));
+}
+
+#[test]
+fn same_colour_layers_stay_apart() {
+    let mut d = Document::new(100.0, 100.0);
+    d.add("a", Op::Cut, Shape::path(Contour::rect(10.0, 10.0, 20.0, 20.0, 0.0)));
+    let second = d.add_layer("Second cut", Op::Cut);
+    d.add_to(second, "b", Shape::path(Contour::rect(50.0, 10.0, 20.0, 20.0, 0.0)));
+    let rgb = d.s.layers.iter().find(|l| l.op == Op::Cut).unwrap().rgb();
+    d.s.layer_mut(second).unwrap().color = Some(rgb);
+    let x = xs(&d.s, &lib(), "Twins", true).unwrap();
+    assert_eq!(x.layers, 2);
+    let mut zip = archive(&x.bytes);
+    let canvas = read(&mut zip, "project.json")["activeCanvasId"].as_str().unwrap().to_string();
+    let layer_data = read(&mut zip, &format!("canvases/{canvas}.json"))["layerData"].clone();
+    let names: Vec<&str> = layer_data.as_object().unwrap().values().map(|l| l["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"Second cut") && names.len() == 2, "{names:?}");
+    let displays = read(&mut zip, &format!("canvases/{canvas}/displays-0.json"))["displays"].as_array().unwrap().clone();
+    let tags: Vec<&str> = displays.iter().map(|el| el["layerTag"].as_str().unwrap()).collect();
+    assert_ne!(tags[0], tags[1]);
+    for el in &displays {
+        let tag = el["layerTag"].as_str().unwrap();
+        assert!(layer_data.get(tag).is_some());
+        assert_eq!(format!("#{:06x}", el["stroke"]["color"].as_u64().unwrap()), tag, "the element's colour is its layer's");
+    }
+    // The nudge is one step on one channel.
+    let ch = |t: &str| (0..3).map(|i| u8::from_str_radix(&t[1 + 2 * i..3 + 2 * i], 16).unwrap() as i32).collect::<Vec<_>>();
+    assert_eq!(ch(tags[0]).iter().zip(ch(tags[1])).map(|(a, b)| (a - b).abs()).sum::<i32>(), 1);
 }
 
 #[test]
@@ -135,7 +177,7 @@ fn ids_hashes_and_layout() {
     let pts: Vec<[f64; 2]> = (0..3000).map(|i| [i as f64 * 0.1, 10.0 + (i % 7) as f64 * 0.123457]).collect();
     d.add("long", Op::Cut, Shape::path(Contour::polyline(&pts, false)));
     d.add("photo", Op::Engrave, Shape::Image { image: 999, x: 0.0, y: 0.0, w: 10.0, h: 10.0, rotation: 0.0 });
-    let x = xs(&d.s, &lib(), "Ids").unwrap();
+    let x = xs(&d.s, &lib(), "Ids", true).unwrap();
     assert_eq!(x.skipped.len(), 1, "the image is skipped");
     assert_eq!(x.notes.len(), 2, "no machine, no setting: {:?}", x.notes);
 
@@ -186,7 +228,7 @@ fn images_become_bitmaps() {
     image::GrayImage::from_fn(40, 20, |x, _| image::Luma([(x * 6) as u8])).write_to(&mut png, image::ImageFormat::Png).unwrap();
     d.place_image(crate::model::Img { png: png.into_inner(), w: 40, h: 20 }, [10.0, 20.0], Some(40.0), "photo");
     d.s.layers.iter_mut().find(|l| l.op == Op::Engrave).unwrap().settings = Overrides { power: Some(30.0), speed: Some(200.0), passes: Some(1) };
-    let x = xs(&d.s, &lib(), "Img").unwrap();
+    let x = xs(&d.s, &lib(), "Img", true).unwrap();
     assert!(x.skipped.is_empty() && x.elements == 1, "{:?}", x.skipped);
     let mut zip = archive(&x.bytes);
     let project = read(&mut zip, "project.json");

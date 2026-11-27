@@ -526,7 +526,7 @@ impl App {
         let path = path.with_extension("xs");
         let name = path.file_stem().map_or("Scriber".into(), |s| s.to_string_lossy().into_owned());
         let lib = crate::library::get().clone(); // not locked while xs renders the cover (it locks the library)
-        self.message = match export::xs(&state, &lib, &name).and_then(|x| Ok((std::fs::write(&path, &x.bytes)?, x))) {
+        self.message = match export::xs(&state, &lib, &name, true).and_then(|x| Ok((std::fs::write(&path, &x.bytes)?, x))) {
             Ok(((), x)) if x.skipped.is_empty() => format!("Exported {} ({} elements)", path.display(), x.elements),
             Ok(((), x)) => format!("Exported {} ({} elements); left out: {}", path.display(), x.elements, x.skipped.join("; ")),
             Err(e) => format!("{}: {e}", "Export failed"),

@@ -23,6 +23,7 @@ const INLINE_MAX: usize = 32 * 1024;
 /// The finished project and what went into it.
 pub struct Xs {
     pub bytes: Vec<u8>,
+    /// Elements written, no-output reference ones included.
     pub elements: usize,
     /// xTool colour layers.
     pub layers: usize,
@@ -100,32 +101,65 @@ fn overrides(kind: Kind, laser: &str, s: Option<&Setting>) -> Map<String, Value>
     v
 }
 
-/// The document as an xTool Studio project. Hidden and no-output layers, guides and dimensions are
-/// left out; text goes out as its glyph outlines; images are engraved in greyscale (rotated ones are
-/// skipped and listed in `skipped`).
-pub fn xs(s: &State, lib: &Library, name: &str) -> anyhow::Result<Xs> {
+/// The nearest colour to `rgb` that `taken` does not hold: one channel moved by ±1, ±2, … (xTool keys
+/// its layers by colour, so two Scriber layers with one colour would merge).
+fn free_colour(rgb: [u8; 3], taken: impl Fn(&str) -> bool) -> [u8; 3] {
+    let tag = |[r, g, b]: [u8; 3]| format!("#{r:02x}{g:02x}{b:02x}");
+    if !taken(&tag(rgb)) {
+        return rgb;
+    }
+    for step in 1..=255i16 {
+        for ch in 0..3 {
+            for v in [rgb[ch] as i16 + step, rgb[ch] as i16 - step] {
+                let mut c = rgb;
+                c[ch] = match u8::try_from(v) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                if !taken(&tag(c)) {
+                    return c;
+                }
+            }
+        }
+    }
+    rgb // ponytail: only reached with 766+ layers of one colour
+}
+
+/// The document as an xTool Studio project. Every shown layer becomes its own xTool colour layer
+/// (a colour another layer already has is nudged to the nearest free one). No-output layers go in
+/// as reference (listed in `ignoredDisplayIds`, in no binding) unless `include_no_output` is false;
+/// hidden layers, guides and dimensions are left out; text goes out as its glyph outlines; images
+/// are engraved in greyscale (rotated ones are skipped and listed in `skipped`).
+pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyhow::Result<Xs> {
     let mut notes = Vec::new();
     let mut skipped = Vec::new();
     let (code, ext_name, laser, watts) = machine(s, lib, &mut notes)?;
     let canvas_id = uuid();
     let mut groups: Vec<Group> = Vec::new();
+    // No-output elements: on the canvas, never processed.
+    let mut reference: Vec<Value> = Vec::new();
     let mut layer_data = Map::new();
     let mut vectors = Map::new();
     let mut resources = std::collections::BTreeMap::new();
     let mut z = 0;
-    for layer in s.layers.iter().filter(|l| l.visible && l.op != Op::NoOutput) {
-        let [r, g, b] = layer.rgb();
+    for layer in s.layers.iter().filter(|l| l.visible && (include_no_output || l.op != Op::NoOutput)) {
+        let [r, g, b] = free_colour(layer.rgb(), |t| layer_data.contains_key(t));
         let tag = format!("#{r:02x}{g:02x}{b:02x}");
+        let lasered = layer.op != Op::NoOutput;
         for item in s.items.iter().filter(|i| i.layer == layer.id) {
             let name = if item.name.is_empty() { item.id.to_string() } else { format!("{} ({})", item.name, item.id) };
             let (kind, display) = if let Shape::Image { image, x, y, w, h, rotation } = item.shape {
                 // ponytail: rotated images are skipped; bake the rotation into the raster when needed.
                 if rotation.abs() > 1e-9 {
-                    skipped.push(format!("image {name} on layer {}: rotated images are not exported yet", layer.name));
+                    if lasered {
+                        skipped.push(format!("image {name} on layer {}: rotated images are not exported yet", layer.name));
+                    }
                     continue;
                 }
                 let Some(png) = s.images.get(&image).and_then(|img| rgba_png(&img.png)) else {
-                    skipped.push(format!("image {name} on layer {}: its picture is missing or unreadable", layer.name));
+                    if lasered {
+                        skipped.push(format!("image {name} on layer {}: its picture is missing or unreadable", layer.name));
+                    }
                     continue;
                 };
                 let file = format!("{}.png", hash_bytes(&png.0));
@@ -158,7 +192,11 @@ pub fn xs(s: &State, lib: &Library, name: &str) -> anyhow::Result<Xs> {
                 (kind, files::display(&uuid(), &tag, [r, g, b], z, area, outline))
             };
             let n = layer_data.len() + 1;
-            layer_data.entry(tag.clone()).or_insert_with(|| json!({"name": tag.to_uppercase(), "order": n, "visible": true}));
+            layer_data.entry(tag.clone()).or_insert_with(|| json!({"name": layer.name, "order": n, "visible": true}));
+            if !lasered {
+                reference.push(display);
+                continue;
+            }
             match groups.iter_mut().find(|g| g.layer == layer.id && g.kind == kind) {
                 Some(g) => g.displays.push(display),
                 None => {
@@ -195,7 +233,9 @@ pub fn xs(s: &State, lib: &Library, name: &str) -> anyhow::Result<Xs> {
             bindings.push(json!({"bindingId": short_id("binding"), "canvasId": canvas_id, "mode": "LASER_PLANE", "baseProfileId": profile_of(k), "displayIds": [], "shadowOf": binding}));
         }
     }
-    let displays: Vec<Value> = groups.into_iter().flat_map(|g| g.displays).collect();
+    let processed = groups.len();
+    let ignored: Vec<Value> = reference.iter().map(|d| d["id"].clone()).collect();
+    let displays: Vec<Value> = groups.into_iter().flat_map(|g| g.displays).chain(reference).collect();
     let elements = displays.len();
     let layers = layer_data.len();
     let profiles: Map<String, Value> = kinds
@@ -227,7 +267,7 @@ pub fn xs(s: &State, lib: &Library, name: &str) -> anyhow::Result<Xs> {
     zip.add_directory(format!("{canvas_dir}/"), opts)?;
     file(&mut zip, &format!("{canvas_dir}/displays-0.json"), json!({"canvasId": canvas_id, "chunkIndex": 0, "displays": displays}).to_string().as_bytes())?;
     zip.add_directory("devices/", opts)?;
-    let device = files::device(&code, &ext_name, watts, &canvas_id, &profile_ids, patches, bindings);
+    let device = files::device(&code, &ext_name, watts, &canvas_id, &profile_ids, ignored, patches, bindings);
     file(&mut zip, &format!("devices/device-{device_id}.json"), device.to_string().as_bytes())?;
     if cover.is_some() || !resources.is_empty() {
         zip.add_directory("resources/", opts)?;
@@ -249,7 +289,7 @@ pub fn xs(s: &State, lib: &Library, name: &str) -> anyhow::Result<Xs> {
     }
     file(&mut zip, ".format", b"v2")?;
     let bytes = zip.finish()?.into_inner();
-    if elements == 0 && skipped.is_empty() {
+    if processed == 0 && skipped.is_empty() {
         bail!("nothing to export: no items on shown cut, score or engrave layers");
     }
     Ok(Xs { bytes, elements, layers, skipped, notes })
