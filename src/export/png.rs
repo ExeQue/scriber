@@ -18,11 +18,11 @@ pub fn dpi(s: &State, asked: Option<f64>, inline: bool) -> f64 {
     if inline { dpi.min(MAX_INLINE_PX / inches) } else { dpi }
 }
 
-/// Render the document at `dpi` on a white background.
+/// Render the document at `dpi` on a white background, every item in its layer's colour (as on the canvas).
 pub fn png(s: &State, dpi: f64, annotations: bool) -> anyhow::Result<Vec<u8>> {
     // Laser hairlines would be sub-pixel; draw lines at least 1.5 px wide.
     let stroke = (1.5 * 25.4 / dpi).max(0.1);
-    render(s, dpi, &super::svg::svg_with_stroke(s, annotations, stroke))
+    render(s, dpi, &super::svg::svg_with_stroke(s, annotations, stroke, true))
 }
 
 /// Render what the laser makes of the document (the Preview look) at `dpi`.
@@ -60,6 +60,21 @@ mod tests {
         assert_eq!(img.get_pixel(100, 5).0, [255, 255, 255]);
         let red = img.get_pixel(20, 40).0;
         assert!(red[0] > 150 && red[1] < 120, "{red:?}");
+    }
+
+    #[test]
+    fn every_engrave_layer_in_its_own_colour() {
+        let mut d = Document::new(100.0, 50.0);
+        d.add("medium", Op::Engrave, Shape::path(Contour::rect(10.0, 10.0, 20.0, 20.0, 0.0)));
+        let light = d.add_layer("Engrave light", Op::Engrave);
+        d.s.layer_mut(light).unwrap().color = Some([230, 140, 30]);
+        d.add_to(light, "dot", Shape::path(Contour::circle(60.0, 20.0, 5.0)));
+        d.add_to(light, "line", Shape::path(Contour::line([70.0, 40.0], [90.0, 40.0])));
+        let img = image::load_from_memory(&super::png(&d.s, 50.8, true).unwrap()).unwrap().to_rgb8();
+        assert_eq!(img.get_pixel(40, 40).0, [0, 0, 0], "the first engrave layer, default colour");
+        assert_eq!(img.get_pixel(120, 40).0, [230, 140, 30], "the second engrave layer's area");
+        let line = img.get_pixel(160, 80).0; // anti-aliased edge of a 1.5 px line
+        assert!(line[0] > line[2] + 60 && line[1] > line[2], "its open path, scored: {line:?}");
     }
 
     #[test]

@@ -5,7 +5,7 @@ use crate::model::{Op, Shape, State};
 use base64::Engine;
 use std::fmt::Write;
 
-fn hex([r, g, b]: [u8; 3]) -> String {
+pub(super) fn hex([r, g, b]: [u8; 3]) -> String {
     format!("#{r:02x}{g:02x}{b:02x}")
 }
 

@@ -52,7 +52,7 @@ with them.
    for relations (`d2 = d1 / 2`). Run `auto_constrain` on a shape first when it should keep its form
    (horizontal, vertical, parallel sides) as a size changes. A change that breaks a constraint is
    refused and names the conflict: read it, do not force your way around it.
-5. **Look at the result often.** `export_png` without a path returns an image you can see. Check after
+5. **Look at the result often.** `export_png` without a path returns an image you can see (each layer in its colour, as on the canvas). Check after
    every meaningful step, not only at the end; coordinates in your head and pixels on the screen
    disagree more often than you expect (remember: y grows down).
 6. **Measure, do not guess.** `measure` gives sizes, areas, distances and the laser path length.

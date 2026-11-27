@@ -20,12 +20,14 @@ fn rank(op: Op) -> u8 {
 
 /// The document as SVG. No-output items (notes, dimensions) are only included when asked for.
 pub fn svg(s: &State, annotations: bool) -> String {
-    svg_with_stroke(s, annotations, HAIRLINE)
+    svg_with_stroke(s, annotations, HAIRLINE, false)
 }
 
 /// Same, with lines `stroke` mm wide (PNG rendering needs them at least a pixel wide to be visible).
+/// With `layer_colours` items take their layer's own colour, as on the canvas (the PNG export), so
+/// two layers with the same op stay apart; without, they take the laser colour of their op.
 /// One group per shown layer (an Inkscape layer with its name), in laser order; images first in each.
-pub(super) fn svg_with_stroke(s: &State, annotations: bool, stroke: f64) -> String {
+pub(super) fn svg_with_stroke(s: &State, annotations: bool, stroke: f64, layer_colours: bool) -> String {
     let (w, h) = (s.width, s.height);
     let mut out = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"{w}mm\" height=\"{h}mm\" viewBox=\"0 0 {w} {h}\">\n"
@@ -35,7 +37,7 @@ pub(super) fn svg_with_stroke(s: &State, annotations: bool, stroke: f64) -> Stri
     for layer in layers {
         let on: Vec<&Item> = s.items.iter().filter(|i| i.layer == layer.id).collect();
         let (images, rest): (Vec<&Item>, Vec<&Item>) = on.into_iter().partition(|i| matches!(i.shape, Shape::Image { .. }));
-        let body: String = images.into_iter().chain(rest).filter_map(|i| element(s, i, stroke)).collect();
+        let body: String = images.into_iter().chain(rest).filter_map(|i| element(s, i, stroke, layer_colours)).collect();
         if !body.is_empty() {
             let name = escape(&layer.name);
             writeln!(out, "<g id=\"layer{}\" inkscape:groupmode=\"layer\" inkscape:label=\"{name}\">\n{body}</g>", layer.id).unwrap();
@@ -50,9 +52,11 @@ fn escape(s: &str) -> String {
 }
 
 /// The item as SVG, if it goes out at all.
-fn element(s: &State, item: &Item, stroke: f64) -> Option<String> {
+fn element(s: &State, item: &Item, stroke: f64, layer_colours: bool) -> Option<String> {
     let id = item.id;
     let op = s.effective_op(item);
+    let own = if layer_colours { s.layer(item.layer).and_then(|l| l.color) } else { None };
+    let color = own.map_or(op.hex(), super::preview::hex);
     match &item.shape {
         Shape::Image { image, x, y, w, h, rotation } => {
             if op == Op::NoOutput {
@@ -72,15 +76,15 @@ fn element(s: &State, item: &Item, stroke: f64) -> Option<String> {
                 return None;
             }
             if s.engraves_area(item) {
-                return Some(format!("<path id=\"i{id}\" d=\"{d}\" fill=\"{BLACK}\" fill-rule=\"evenodd\" stroke=\"none\"/>\n"));
+                let fill = own.map_or(BLACK.into(), super::preview::hex);
+                return Some(format!("<path id=\"i{id}\" d=\"{d}\" fill=\"{fill}\" fill-rule=\"evenodd\" stroke=\"none\"/>\n"));
             }
-            Some(format!("<path id=\"i{id}\" d=\"{d}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{stroke}\"/>\n", op.hex()))
+            Some(format!("<path id=\"i{id}\" d=\"{d}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"{stroke}\"/>\n"))
         }
         // Guide lines are construction geometry for people: never in a laser file.
         Shape::Guide(_) => None,
         Shape::Dimension { .. } => {
             let g = item.shape.dimension()?;
-            let color = op.hex();
             let mut angle = g.angle;
             if !(-90.0..=90.0).contains(&angle) {
                 angle += 180.0;
