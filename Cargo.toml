@@ -41,5 +41,11 @@ windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_S
 [profile.dev.package."*"]
 opt-level = 3
 
+# cavalier_contours' debug assertions check its slices with a tolerance tighter than its own maths:
+# an offset that shrinks a stem to exactly nothing (a 0.159 mm stem by -0.08 mm) trips one and
+# panics, where a release build drops the stem. Debug builds behave as release builds do.
+[profile.dev.package.cavalier_contours]
+debug-assertions = false
+
 [profile.dev]
 opt-level = 1
