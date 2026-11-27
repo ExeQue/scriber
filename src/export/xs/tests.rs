@@ -185,11 +185,6 @@ fn same_colour_layers_stay_apart() {
     slots.sort();
     slots.dedup();
     assert_eq!(slots.len(), 3, "{tags:?}");
-    // Each layer is its own processing step, in layer order (xTool's "By layer" path).
-    let orders: Vec<(String, u64)> = tags.iter().map(|t| (layer_data[*t]["name"].as_str().unwrap().into(), layer_data[*t]["order"].as_u64().unwrap())).collect();
-    assert_eq!(orders.iter().map(|(_, o)| *o).collect::<Vec<_>>(), [1, 2, 3], "{orders:?}");
-    let data = read(&mut zip, "devices/device-JS002-1.json")["processing"][&canvas]["modes"]["LASER_PLANE"]["data"].clone();
-    assert_eq!((&data["pathPlanning"], &data["isProcessByLayer"]), (&json!("custom"), &json!(true)));
 }
 
 #[test]

@@ -73,16 +73,14 @@ pub fn canvas(id: &str, layers: Map<String, Value>, displays: usize) -> Value {
 }
 
 /// `devices/device-<code>-1.json`: one canvas on the flat bed, no material (as a new project).
-/// Processing path "User defining" + "By layer" (`pathPlanning: custom`, `isProcessByLayer`), so xTool
-/// processes the layers one by one in `layerData.order`; its auto planning merges same-type layers.
 /// `ignored`: ids of displays xTool shows but does not process (its "no output").
 #[allow(clippy::too_many_arguments)]
 pub fn device(code: &str, ext_name: &str, watts: f64, canvas: &str, profiles: &[String], ignored: Vec<Value>, patches: Map<String, Value>, bindings: Vec<Value>) -> Value {
     json!({"id": format!("{code}-1"), "deviceCode": code, "extId": code, "extName": ext_name, "power": [watts],
         "processing": {canvas: {"id": canvas, "activeMode": "LASER_PLANE", "modes": {"LASER_PLANE": {
             "ignoredDisplayIds": ignored,
-            "data": {"material": 0, "thickness": null, "perimeter": null, "diameter": null, "processPath": "auto", "pathPlanning": "custom",
-                "isProcessByLayer": true, "fillPlanning": "separate", "scanDirection": "topToBottom", "enableRemoveCommonEdge": false, "lineSpacing": 0.025,
+            "data": {"material": 0, "thickness": null, "perimeter": null, "diameter": null, "processPath": "auto", "pathPlanning": "auto",
+                "fillPlanning": "separate", "scanDirection": "topToBottom", "enableRemoveCommonEdge": false, "lineSpacing": 0.025,
                 "focalLen": null, "focalLength": null, "distance": null},
             "profileRefs": profiles, "patches": patches, "bindings": bindings}}}}})
 }
