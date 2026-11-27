@@ -10,6 +10,7 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   srcExclude: ['README.md'],
+  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: `${process.env.DOCS_BASE ?? '/'}logo.svg` }]],
   vite: {
     // Dev server defaults. Vite lets this config win over CLI flags, so a flag given on the command
     // line (`npm run docs:dev -- --host 0.0.0.0 --port 5191`, as lerd does) leaves its default out.
@@ -21,6 +22,7 @@ export default defineConfig({
     },
   },
   themeConfig: {
+    logo: '/logo.svg',
     nav: [
       { text: 'Guide', link: '/guide/ai-first' },
       { text: 'Libraries', link: '/library/make-a-material-library' },
