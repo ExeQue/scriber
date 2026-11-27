@@ -1,19 +1,28 @@
-name: Release
+name: Build and release
 
+# Every push to main builds and tests the same matrix, so the Rust caches it saves are there for the
+# next tag (a tag run can read the default branch's caches, not another tag's). Only a `v*` tag, or a
+# manual run with a tag, publishes a release.
 on:
   push:
+    branches: [main]
     tags: ['v*']
+  pull_request:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to build and release (e.g. v0.1.0)
-        required: true
+        description: Existing tag to build and release (e.g. v0.1.0); empty builds without releasing
+        required: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 permissions:
   contents: write
 
 env:
-  TAG: ${{ inputs.tag || github.ref_name }}
+  TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'dev' }}
   CARGO_TERM_COLOR: always
   # Headers egui/eframe (winit, wgpu, glow, fontconfig) build against on Linux.
   LINUX_DEPS: >-
@@ -26,14 +35,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ inputs.tag || github.sha }}
       - run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test --locked
 
+  # Runs alongside the tests; the release job waits for both.
   build:
-    needs: test
     strategy:
       fail-fast: false
       matrix:
@@ -50,7 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ inputs.tag || github.sha }}
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
       - uses: dtolnay/rust-toolchain@stable
@@ -58,7 +70,8 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          shared-key: ${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Package
         run: |
@@ -88,7 +101,8 @@ jobs:
           path: dist/*
 
   release:
-    needs: build
+    needs: [test, build]
+    if: ${{ (inputs.tag != '' && inputs.tag != null) || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
