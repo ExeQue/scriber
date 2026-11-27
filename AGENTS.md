@@ -61,7 +61,7 @@ cargo test
   `<config>/scriber/`.
 - To drive the MCP tools by hand, use the headless server; it opens no window:
   `target/debug/scriber mcp --headless`. Point it at a throwaway config:
-  `SCRIBER_CONFIG_DIR=$(mktemp -d)` (`library.json` and `sources.json` follow it; `SCRIBER_LIBRARY`
+  `SCRIBER_CONFIG_DIR=$(mktemp -d)` (`settings.json`, `library.json`, `sources.json` and `themes/` follow it; `SCRIBER_LIBRARY`
   moves `library.json` alone, `SCRIBER_XTOOL_DIR` the xTool Studio folder that is read).
 - Library sources are fetched through the `Http` trait; tests use a fake. No network in tests.
 - Docs: `npm run docs:install` once, then `npm --prefix docs run docs:build`, which must end with

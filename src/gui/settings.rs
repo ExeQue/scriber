@@ -65,7 +65,7 @@ impl Default for Settings {
 }
 
 fn file() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("scriber").join("settings.json"))
+    Some(crate::library::sources::config_dir().join("settings.json"))
 }
 
 /// The saved settings; tests always get the defaults so the user's file cannot change them.
