@@ -33,6 +33,7 @@ export default defineConfig({
         items: [
           { text: 'Why AI-first', link: '/guide/ai-first' },
           { text: 'Connecting agents', link: '/agents/connecting' },
+          { text: 'Installation', link: '/guide/installation' },
           { text: 'Getting started', link: '/guide/getting-started' },
           { text: 'The screen', link: '/guide/the-screen' },
           { text: 'Themes', link: '/guide/themes' },

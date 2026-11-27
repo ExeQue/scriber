@@ -11,17 +11,27 @@ when you like. You can also do all of it by hand. See [Why AI-first](./ai-first)
 
 ## Install and run
 
-There are no release downloads yet. Build Scriber from source with [Rust](https://rustup.rs):
+Install Scriber with one command; see [Installation](./installation) for other ways, updating and
+uninstalling.
 
 ```sh
-git clone https://github.com/ExeQue/scriber.git
-cd scriber
-cargo build --release
-./target/release/scriber            # opens the editor
-./target/release/scriber my-box.scrbr   # opens a file
+# Linux and macOS
+curl -fsSL https://raw.githubusercontent.com/ExeQue/scriber/main/install/install.sh | sh
 ```
 
-Scriber runs on Linux and Windows. The same program also works from the command line:
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/ExeQue/scriber/main/install/install.ps1 | iex
+```
+
+Start it from your application launcher or Start Menu, or from a terminal:
+
+```sh
+scriber                    # opens the editor
+scriber my-box.scrbr       # opens a file
+```
+
+Scriber runs on Linux, macOS and Windows. The same program also works from the command line:
 
 ```sh
 scriber --help             # all commands

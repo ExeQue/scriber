@@ -13,6 +13,9 @@ hero:
       text: Why AI-first
       link: /guide/ai-first
     - theme: alt
+      text: Install
+      link: /guide/installation
+    - theme: alt
       text: Connect an AI agent
       link: /agents/connecting
     - theme: alt

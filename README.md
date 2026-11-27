@@ -31,19 +31,42 @@ OSNAP/POLAR), so users of those feel at home quickly.
 - **Several documents** in tabs, and **themes**, including one that follows the
   [Omarchy](https://omarchy.org) desktop theme.
 
-## Build and run
+## Install
 
-There are no release downloads yet. Build from source with [Rust](https://rustup.rs) (edition 2024).
-Scriber runs on Linux and Windows.
+Scriber runs on Linux (x86_64), macOS (Apple Silicon and Intel) and Windows (x64).
+
+```sh
+# Linux and macOS
+curl -fsSL https://raw.githubusercontent.com/ExeQue/scriber/main/install/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/ExeQue/scriber/main/install/install.ps1 | iex
+```
+
+Pinning a version, downloading by hand from the
+[Releases page](https://github.com/ExeQue/scriber/releases), building from source and uninstalling
+are in the [installation guide](https://exeque.github.io/scriber/guide/installation).
+
+```sh
+scriber                  # the editor
+scriber box.scrbr        # open a project
+scriber mcp              # MCP on stdio (starts the editor if it is not running)
+scriber --help           # all commands
+```
+
+### Build from source
+
+With [Rust](https://rustup.rs) (edition 2024); on Linux see the
+[installation guide](https://exeque.github.io/scriber/guide/installation#build-from-source) for the
+system packages it needs.
 
 ```sh
 git clone https://github.com/ExeQue/scriber.git
 cd scriber
 cargo build --release
-./target/release/scriber              # the editor
-./target/release/scriber box.scrbr    # open a project
-./target/release/scriber mcp          # MCP on stdio (starts the editor if it is not running)
-./target/release/scriber --help       # all commands
+./target/release/scriber
 ```
 
 ## Connecting an agent
