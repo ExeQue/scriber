@@ -1,6 +1,6 @@
 //! The laser preview as SVG (rendered to PNG): the material, burned areas, lines and loose pieces.
 
-use crate::model::preview::{palette, scene};
+use crate::model::preview::{mark, palette, scene};
 use crate::model::{Op, Shape, State};
 use base64::Engine;
 use std::fmt::Write;
@@ -12,7 +12,8 @@ pub(super) fn hex([r, g, b]: [u8; 3]) -> String {
 /// `px` is one pixel in mm: lines are a pixel wide and the pieces' shadow two pixels.
 pub(super) fn svg(s: &State, px: f64) -> String {
     let (w, h) = (s.width, s.height);
-    let p = palette(s, &crate::library::get());
+    let lib = crate::library::get();
+    let p = palette(s, &lib);
     let sc = scene(s);
     let mut out = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}mm\" height=\"{h}mm\" viewBox=\"0 0 {w} {h}\">\n");
     writeln!(out, "<rect width=\"{w}\" height=\"{h}\" fill=\"{}\"/>", hex(p.sheet)).unwrap();
@@ -36,10 +37,10 @@ pub(super) fn svg(s: &State, px: f64) -> String {
             continue;
         }
         let d: Vec<String> = item.shape.laser_contours().iter().map(super::svg::path_data).collect();
-        writeln!(out, "<path d=\"{}\" fill=\"{}\" fill-rule=\"evenodd\"/>", d.join(" "), hex(p.burn)).unwrap();
+        writeln!(out, "<path d=\"{}\" fill=\"{}\" fill-rule=\"evenodd\"/>", d.join(" "), hex(mark(s, &lib, &p, item, p.burn))).unwrap();
     }
-    for (c, op) in &sc.lines {
-        let color = if *op == Op::Cut { p.cut } else { p.score };
+    for (c, op, item) in &sc.lines {
+        let color = if *op == Op::Cut { p.cut } else { mark(s, &lib, &p, item, p.score) };
         writeln!(out, "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{px}\"/>", super::svg::path_data(c), hex(color)).unwrap();
     }
     out.push_str("</svg>\n");

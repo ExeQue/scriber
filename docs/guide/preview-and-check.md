@@ -11,6 +11,9 @@ material's colour:
 
 - engraved areas burned in, with holes left open;
 - scored lines as thin marks;
+- how dark an engraved area or scored line looks follows its laser settings (the layer's own, else
+  the material's): more power, more passes, slower speed and more lines per cm burn darker, so two
+  engrave layers at 40 % and 60 % look different. Without settings they use one burn colour;
 - cut parts as separate, shadowed pieces with their holes;
 - no-output shapes and guide lines hidden; open lines on an engrave layer drawn as scores.
 

@@ -103,4 +103,24 @@ mod tests {
         assert_eq!(img.get_pixel(130, 30).0, p.burn, "engraved area");
         assert_eq!(img.get_pixel(170, 30).0, p.sheet, "no-output items are not lasered");
     }
+
+    #[test]
+    fn preview_burn_follows_the_layer_energy() {
+        use crate::model::layer::Overrides;
+        let mut d = Document::new(100.0, 50.0);
+        let engrave = |d: &mut Document, name: &str, power: f64, x: f64| {
+            let l = d.add_layer(name, Op::Engrave);
+            let layer = d.s.layer_mut(l).unwrap();
+            layer.settings = Overrides { power: Some(power), speed: Some(140.0), passes: Some(1) };
+            layer.line_interval = Some(10.0 / 120.0);
+            d.add_to(l, name, Shape::path(Contour::rect(x, 10.0, 10.0, 10.0, 0.0)));
+        };
+        engrave(&mut d, "Lys", 40.0, 10.0);
+        engrave(&mut d, "Medium", 60.0, 30.0);
+        engrave(&mut d, "Dyb", 80.0, 50.0);
+        let img = image::load_from_memory(&super::preview_png(&d.s, 50.8).unwrap()).unwrap().to_rgb8();
+        let lum = |x| img.get_pixel(x, 30).0.iter().map(|v| *v as u32).sum::<u32>();
+        let (light, medium, deep) = (lum(30), lum(70), lum(110));
+        assert!(light > medium + 30 && medium > deep + 30, "{light} > {medium} > {deep}");
+    }
 }

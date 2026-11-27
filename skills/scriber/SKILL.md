@@ -112,7 +112,8 @@ To follow a review:
 4. Run `preflight_check` and fix what it reports (open shapes set to cut, double lines, shapes
    outside the material, details smaller than the beam, ops without settings).
 5. Look at `export_png` with `preview: true`: it shows what the laser makes (burned areas, cut-out
-   pieces with their holes). Show it to the person before they laser.
+   pieces with their holes; engraved areas and scores are darker the more energy their settings
+   give: power × passes / speed, × lines per cm for engrave). Show it to the person before they laser.
 6. `export_svg` (or `export_dxf` for CAD programs) writes a file for other laser software, if they want one. Scriber does not run the
    laser; the person sends the job from their laser software.
 

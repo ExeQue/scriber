@@ -400,6 +400,8 @@ pub struct ExportPng {
     pub include_annotations: Option<bool>,
     /// Render what the laser makes instead of the drawing: material colour, burned areas, thin cut and
     /// score lines, cut-out pieces shadowed with their holes open; no-output items and guides hidden.
+    /// Engraved areas and score lines are darker the more energy their laser settings give
+    /// (power x passes / speed, x lines per cm for engrave).
     #[serde(default)]
     pub preview: bool,
 }

@@ -31,13 +31,29 @@ pub fn palette(s: &State, lib: &Library) -> Palette {
     }
 }
 
+/// Energy that gives the full burn colour: 80 % power at 100 mm/s, one pass, 100 lines/cm.
+const FULL_BURN: f64 = 80.0;
+
+/// The colour an engraved area or scored line leaves: the material blended toward `p.burn` by its
+/// energy, power x passes / speed x lines per cm (a line counts as 100 lines/cm), relative to
+/// FULL_BURN. The settings are the item's layer's, else the material preset (as in the .xs export);
+/// without them, `fallback`.
+pub fn mark(s: &State, lib: &Library, p: &Palette, item: &Item, fallback: [u8; 3]) -> [u8; 3] {
+    let op = s.effective_op(item);
+    let setting = s.layer(item.layer).zip(super::layer::op_operation(op)).and_then(|(l, o)| l.setting(s, lib, o));
+    let Some(set) = setting.filter(|x| x.speed > 0.0) else { return fallback };
+    let lines = if op == Op::Engrave { set.line_interval.filter(|i| *i > 0.0).map_or(100.0, |i| 10.0 / i) } else { 100.0 };
+    let t = (set.power * set.passes as f64 / set.speed * lines / FULL_BURN).clamp(0.15, 1.0);
+    std::array::from_fn(|k| (p.sheet[k] as f64 + (p.burn[k] as f64 - p.sheet[k] as f64) * t).round() as u8)
+}
+
 pub struct Scene<'a> {
     /// Closed cut outlines, biggest first: a piece cut free, or a hole when it lies inside a piece.
     pub pieces: Vec<(Contour, bool)>,
     /// Engraved areas (paths and text) and images, in document order.
     pub engraved: Vec<&'a Item>,
-    /// Laser lines with the op that makes them (cut or score), drawn over everything.
-    pub lines: Vec<(Contour, Op)>,
+    /// Laser lines with the op that makes them (cut or score) and their item, drawn over everything.
+    pub lines: Vec<(Contour, Op, &'a Item)>,
 }
 
 pub fn scene(s: &State) -> Scene<'_> {
@@ -56,7 +72,7 @@ pub fn scene(s: &State) -> Scene<'_> {
                     if op == Op::Cut && c.closed {
                         scene.pieces.push((c.clone(), false));
                     }
-                    scene.lines.push((c.clone(), op));
+                    scene.lines.push((c.clone(), op, item));
                 }
             }
             _ => {}

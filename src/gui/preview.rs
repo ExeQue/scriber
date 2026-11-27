@@ -3,7 +3,7 @@
 
 use super::App;
 use super::geometry_cache::tessellate;
-use crate::model::preview::{Palette, palette, scene};
+use crate::model::preview::{Palette, mark, palette, scene};
 use crate::model::{Op, Point, Shape};
 use eframe::egui::{self, Align2, Color32, FontId, PointerButton, Pos2, Rect, Stroke, vec2};
 
@@ -15,7 +15,8 @@ pub(super) struct Preview {
     key: Option<(u64, i32)>,
     /// Fill of each cut-out outline, and whether it is a hole.
     pieces: Vec<(Option<Mesh>, bool)>,
-    lines: Vec<(Vec<Point>, Op)>,
+    /// Each line with its op and the index of its item.
+    lines: Vec<(Vec<Point>, Op, usize)>,
     /// Indices of the engraved items and images in the document.
     engraved: Vec<usize>,
 }
@@ -35,7 +36,8 @@ impl Preview {
         let tol = 2f64.powi(bucket);
         let sc = scene(state);
         self.pieces = sc.pieces.iter().map(|(c, hole)| (tessellate(&[c.flatten(tol)]), *hole)).collect();
-        self.lines = sc.lines.iter().map(|(c, op)| (c.flatten(tol), *op)).collect();
+        let index = |id| state.items.iter().position(|i| i.id == id).unwrap_or_default();
+        self.lines = sc.lines.iter().map(|(c, op, item)| (c.flatten(tol), *op, index(item.id))).collect();
         self.engraved = state.items.iter().enumerate().filter(|(_, i)| sc.engraved.iter().any(|e| e.id == i.id)).map(|(k, _)| k).collect();
         self.key = Some((rev, bucket));
     }
@@ -61,16 +63,17 @@ impl App {
         };
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, crate::gui::theme::get().canvas);
-        let p = palette(&state, &crate::library::get());
+        let lib = crate::library::get();
+        let p = palette(&state, &lib);
         let tol = super::canvas::curve_tol(self.view.zoom, ui.ctx().pixels_per_point());
         let mut preview = self.preview.take().unwrap_or_default();
         preview.update(&state, rev, tol);
-        self.paint_preview(ui.ctx(), &painter, &state, &preview, &p, tol);
+        self.paint_preview(ui.ctx(), &painter, &state, &preview, &p, &lib, tol);
         self.preview = Some(preview);
         banner(&painter, rect);
     }
 
-    fn paint_preview(&mut self, ctx: &egui::Context, painter: &egui::Painter, s: &crate::model::State, preview: &Preview, p: &Palette, tol: f64) {
+    fn paint_preview(&mut self, ctx: &egui::Context, painter: &egui::Painter, s: &crate::model::State, preview: &Preview, p: &Palette, lib: &crate::library::Library, tol: f64) {
         let sheet = Rect::from_min_max(self.w2s([0.0, 0.0]), self.w2s([s.width, s.height]));
         painter.rect_filled(sheet.translate(vec2(3.0, 3.0)), 2.0, Color32::from_black_alpha(60));
         painter.rect_filled(sheet, 0.0, rgb(p.sheet));
@@ -96,19 +99,24 @@ impl App {
                 mesh.rotate(egui::emath::Rot2::from_angle(rotation.to_radians() as f32), r.center());
                 painter.add(mesh);
             } else {
+                let burn = rgb(mark(s, lib, p, item, p.burn));
                 let g = self.geometry.get(item, true, tol);
                 if let Some(mesh) = &g.fill {
-                    fill(painter, mesh, rgb(p.burn), origin, zoom);
+                    fill(painter, mesh, burn, origin, zoom);
                 }
                 // Meshes have hard, stair-stepped edges; a hairline along the outline antialiases them.
-                let edge = Stroke::new(1.0 / ctx.pixels_per_point(), rgb(p.burn));
+                let edge = Stroke::new(1.0 / ctx.pixels_per_point(), burn);
                 for line in &g.outline {
                     painter.add(egui::Shape::line(line.iter().map(to_screen).collect(), edge));
                 }
             }
         }
-        for (line, op) in &preview.lines {
-            let color = if *op == Op::Cut { p.cut } else { p.score };
+        for (line, op, k) in &preview.lines {
+            let color = match s.items.get(*k) {
+                _ if *op == Op::Cut => p.cut,
+                Some(item) => mark(s, lib, p, item, p.score),
+                None => p.score,
+            };
             painter.add(egui::Shape::line(line.iter().map(to_screen).collect(), Stroke::new(1.0, rgb(color))));
         }
     }
