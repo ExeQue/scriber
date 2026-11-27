@@ -110,7 +110,7 @@ fn double_lines(s: &State, items: &[&Item]) -> Vec<Warning> {
     segs.sort_by(|s, t| s.a[0].min(s.b[0]).total_cmp(&t.a[0].min(t.b[0])));
     // Overlapping length per pair of items (the same item twice when a shape runs over itself).
     let mut pairs: Vec<((u64, u64), f64)> = Vec::new();
-    // ponytail: sweep on x only, O(n²) for many lines in one column; a grid index if that gets slow.
+    // Sweep on x only: O(n²) when many lines share one column.
     for (k, s) in segs.iter().enumerate() {
         let right = s.a[0].max(s.b[0]) + DOUBLE_LINE_TOL;
         for t in segs[k + 1..].iter().take_while(|t| t.a[0].min(t.b[0]) <= right) {

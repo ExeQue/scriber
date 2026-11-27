@@ -107,7 +107,7 @@ pub fn push(v: &mut Vec<Vertex>, to: Point, bulge: f64) {
     v.push(Vertex::new(to[0], to[1], 0.0));
 }
 
-/// Runs of arcs on one circle (within `tol`) become one arc (a full circle or more: halves). ponytail: a run that wraps past the start of a closed contour stays split there.
+/// Runs of arcs on one circle (within `tol`) become one arc (a full circle or more: halves). A run that wraps past the start of a closed contour stays split there.
 pub fn merge_arcs(v: Vec<Vertex>, closed: bool, tol: f64) -> Vec<Vertex> {
     let n = v.len();
     if n < 2 {

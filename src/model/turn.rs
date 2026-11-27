@@ -53,7 +53,7 @@ pub fn turned_box<'a>(items: impl IntoIterator<Item = &'a Item>) -> Option<(BBox
     let items: Vec<&Item> = items.into_iter().collect();
     let angle = shared_rotation(items.iter().copied()).unwrap_or(0.0);
     let back = Transform { rotate: -angle, ..Default::default() };
-    // ponytail: re-measures turned copies every frame; cache per item if big selections get slow.
+    // Re-measures the turned copies on every call, uncached.
     let boxes: Vec<BBox> =
         items.iter().map(|i| if angle == 0.0 { i.shape.metrics().bbox } else { i.shape.transformed(&back, [0.0, 0.0]).metrics().bbox }).collect();
     Some((union(&boxes)?, angle))

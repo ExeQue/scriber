@@ -172,7 +172,6 @@ pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyh
         for item in s.items.iter().filter(|i| i.layer == layer.id) {
             let name = if item.name.is_empty() { item.id.to_string() } else { format!("{} ({})", item.name, item.id) };
             let (kind, display) = if let Shape::Image { image, x, y, w, h, rotation } = item.shape {
-                // ponytail: rotated images are skipped; bake the rotation into the raster when needed.
                 if rotation.abs() > 1e-9 {
                     if lasered {
                         skipped.push(format!("image {name} on layer {}: rotated images are not exported yet", layer.name));

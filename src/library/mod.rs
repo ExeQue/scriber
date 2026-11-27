@@ -1,6 +1,7 @@
 //! Machine profiles and the material library: which laser settings to use for which material on
-//! which machine. Built-in machines and materials ship in `machines/` and `materials/`; the user's own
-//! (and their edits of built-ins) live in one JSON file in the config folder.
+//! which machine. Built-in machines ship in `machines/` (no material presets; the materials in
+//! `test_materials/` are test fixtures); the user's own machines and materials (and their edits of
+//! built-ins) live in one JSON file in the config folder.
 
 mod machines;
 mod materials;

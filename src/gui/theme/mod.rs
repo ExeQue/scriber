@@ -71,7 +71,7 @@ impl Theme {
     }
 }
 
-// ponytail: one global theme for the one window; pass it down if Scriber ever gets two windows.
+// One global theme, as Scriber has one window.
 static CURRENT: LazyLock<RwLock<Theme>> = LazyLock::new(|| RwLock::new(sources::preset("dark").unwrap().theme()));
 
 /// The active theme.

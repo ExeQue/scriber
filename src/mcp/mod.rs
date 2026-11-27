@@ -22,7 +22,7 @@ pub fn port() -> u16 {
 /// Serve MCP over HTTP on 127.0.0.1 for the GUI's documents. Returns the bound port or an error to show in the status bar.
 pub fn listen(ws: Workspace, repaint: Arc<dyn Fn() + Send + Sync>) -> anyhow::Result<u16> {
     let port = port();
-    // ponytail: localhost HTTP, reachable by every local user; switch to a per-user socket/pipe on shared machines.
+    // Plain HTTP on localhost: every user on this machine can reach it.
     let listener = std::net::TcpListener::bind(("127.0.0.1", port))?;
     listener.set_nonblocking(true)?;
     std::thread::Builder::new().name("mcp".into()).spawn(move || {

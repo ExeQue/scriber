@@ -273,7 +273,6 @@ fn xy(v: &Vertex) -> Point {
 fn image(i: &usvg::Image, map: Map) -> Result<Piece, String> {
     let bytes = match i.kind() {
         usvg::ImageKind::PNG(b) | usvg::ImageKind::JPEG(b) | usvg::ImageKind::GIF(b) | usvg::ImageKind::WEBP(b) => b,
-        // ponytail: SVGs embedded as images are skipped with an error; import their paths if people need it.
         usvg::ImageKind::SVG(_) => return Err("SVG files embedded as <image> are not supported".into()),
     };
     let img = super::image::to_grey(bytes).map_err(|e| format!("cannot read an embedded image: {e}"))?;

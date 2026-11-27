@@ -178,8 +178,8 @@ impl Affine {
 }
 
 /// The map from an entity's own coordinate system (OCS) into the drawing: 2D entities drawn
-/// upside down (extrusion along -z) are mirrored left to right. ponytail: tilted (3D) extrusions
-/// are read as if flat.
+/// upside down (extrusion along -z) are mirrored left to right. Tilted (3D) extrusions are
+/// read as if flat.
 fn ocs(m: &Affine, normal: &dxf::Vector) -> Affine {
     if normal.z < 0.0 { Affine([-1.0, 0.0, 0.0, 1.0, 0.0, 0.0]).then(m) } else { *m }
 }
@@ -274,7 +274,7 @@ impl Walker<'_> {
                     AttachmentPoint::MiddleLeft | AttachmentPoint::MiddleCenter | AttachmentPoint::MiddleRight => t.initial_text_height - block / 2.0,
                     _ => t.initial_text_height - block,
                 };
-                // ponytail: centred and right-aligned MTEXT starts at the insertion point too; measure the line widths if it matters.
+                // Centred and right-aligned MTEXT also starts at the insertion point: line widths are not measured.
                 return self.text(layer, rgb, &text, xy(&t.insertion_point), t.initial_text_height, rotation, drop, &m);
             }
             EntityType::Insert(ins) => return self.insert(ins, m, Ctx { layer, rgb }, depth),
@@ -571,7 +571,7 @@ fn shapes(pieces: Vec<Piece>) -> Vec<Shape> {
             Piece::Text(t) => out.push(t),
         }
     }
-    // ponytail: join_chains scans all items per step, O(n²); index the end points if huge files are slow.
+    // join_chains scans all items per step (O(n²)), so very large files import slowly.
     for id in chains.join_chains(&open) {
         let c = chains.item(id).unwrap().shape.contours()[0].clone();
         if c.closed { closed.push(c) } else { out.push(Shape::path(c)) }
@@ -581,7 +581,7 @@ fn shapes(pieces: Vec<Piece>) -> Vec<Shape> {
         let ((pi, bi, ai), (pj, bj, aj)) = (&polys[i], &polys[j]);
         i != j && aj > ai && bi[0] >= bj[0] && bi[1] >= bj[1] && bi[0] + bi[2] <= bj[0] + bj[2] && bi[1] + bi[3] <= bj[1] + bj[3] && point_in_poly(pi[0], pj)
     };
-    // ponytail: O(n²) containment test; a spatial index if files with thousands of closed shapes are slow.
+    // O(n²) containment test: slow for files with thousands of closed shapes.
     let outer: Vec<usize> = (0..closed.len()).map(|i| (0..closed.len()).filter(|&j| inside(i, j)).max_by(|a, b| polys[*a].2.total_cmp(&polys[*b].2)).unwrap_or(i)).collect();
     let mut compounds: BTreeMap<usize, Vec<Contour>> = BTreeMap::new();
     for (i, c) in closed.into_iter().enumerate() {

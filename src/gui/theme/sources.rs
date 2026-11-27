@@ -98,7 +98,7 @@ fn fingerprint() -> u64 {
 /// Look at the theme files every two seconds and repaint when one changed, so switching the
 /// Omarchy theme or saving a theme file shows at once.
 pub fn watch(ctx: egui::Context) {
-    // ponytail: polls mtimes every 2 s; a file-system watcher (notify) if that ever shows in profiles.
+    // Polls the files' mtimes every 2 s instead of using a file-system watcher.
     std::thread::spawn(move || {
         let mut last = fingerprint();
         loop {

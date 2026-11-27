@@ -16,7 +16,6 @@ pub(super) enum Action {
 
 /// The shortcuts. Avoid digits, `.`, `,`, `-`, Tab, Enter, Esc, Backspace (dynamic input), Space
 /// and the F keys of the status bar.
-// ponytail: provisional mapping; the user may still change letters.
 const KEYS: &[(Key, Action)] = &[
     (Key::L, Action::Run(Cmd::Line)),
     (Key::P, Action::Run(Cmd::Pline)),

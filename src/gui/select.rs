@@ -178,7 +178,7 @@ impl App {
             let (under, grip) = match raw {
                 Some(p) => {
                     let d = doc.lock().unwrap();
-                    // ponytail: outlines of every visible item per frame; cache them if big drawings get slow.
+                    // Hit-tests the outlines of every visible item each frame, uncached.
                     (self.hits(&d, p), response.hover_pos().and_then(|h| self.grip_at(&self.grips(&d.s.items, &d.selection), h)))
                 }
                 None => (Vec::new(), None),
@@ -253,7 +253,6 @@ impl App {
             if grip == Grip::Rotate && !shift && self.aids.polar {
                 t.rotate = snap_angle(frame.1 + t.rotate, &self.aids.polar_angles(), 4.0) - frame.1;
             }
-            // ponytail: linear lookup per selected item; index `base` by id if huge selections get slow.
             for item in d.s.items.iter_mut().filter(|i| ids.contains(&i.id)) {
                 if let Some(b) = base.iter().find(|b| b.id == item.id) {
                     item.shape = b.shape.clone();

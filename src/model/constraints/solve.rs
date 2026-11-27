@@ -275,7 +275,7 @@ fn cholesky_solve(a: &mut [f64], b: &[f64], n: usize) -> Option<Vec<f64>> {
 
 /// The constraints of a failed group whose removal lets the rest be satisfied: the conflict.
 fn conflict_message(s: &State, cons: &[Compiled], x0: &[f64], w: &[f64]) -> String {
-    // ponytail: one solve per constraint of the failed group; fine for the tens of constraints a part has.
+    // One solve per constraint of the failed group; fine for the tens of constraints a part has.
     let culprits: Vec<u64> = (0..cons.len())
         .filter(|k| {
             let rest: Vec<Compiled> = cons.iter().enumerate().filter(|(i, _)| i != k).map(|(_, c)| c.clone()).collect();

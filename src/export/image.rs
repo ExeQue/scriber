@@ -2,7 +2,7 @@
 
 use crate::model::Img;
 
-/// ponytail: imports are capped at 4000 px on the long side; raise it if people engrave posters.
+/// Imports are capped at 4000 px on the long side.
 const MAX_IMAGE_PX: u32 = 4000;
 
 pub fn encode_png(img: &image::GrayImage) -> anyhow::Result<Vec<u8>> {

@@ -185,7 +185,7 @@ pub fn glyphs(style: &Style) -> Arc<Glyphs> {
     if let Some(g) = cache.get(&key) {
         return g.clone();
     }
-    // ponytail: the cache is simply emptied when it grows large; an LRU if text editing ever feels slow.
+    // Not an LRU: the cache is simply emptied when it grows large.
     if cache.len() > 500 {
         cache.clear();
     }
