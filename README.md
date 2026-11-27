@@ -55,12 +55,12 @@ scriber agents add
 ```
 
 Then restart the agent and ask it to draw something. See
-[Connecting agents](docs/agents/connecting.md) and
-[How agents work with Scriber](docs/agents/working-with-agents.md).
+[Connecting agents](https://exeque.github.io/scriber/agents/connecting) and
+[How agents work with Scriber](https://exeque.github.io/scriber/agents/working-with-agents).
 
 ## Documentation
 
-The user guide is a [VitePress](https://vitepress.dev) site in [`docs/`](docs/). To read it locally
+The user guide is online at <https://exeque.github.io/scriber/>. It is a [VitePress](https://vitepress.dev) site in [`docs/`](docs/); to read it locally
 (Node.js 18 or newer):
 
 ```sh
@@ -68,7 +68,7 @@ npm run docs:install                  # once
 npm --prefix docs run docs:dev        # http://127.0.0.1:5191
 ```
 
-Start with [Getting started](docs/guide/getting-started.md).
+Start with [Getting started](https://exeque.github.io/scriber/guide/getting-started).
 
 ## Contributing
 
@@ -79,7 +79,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). AI coding agents: see [AGENTS.md](AGENTS
 Scriber is an independent project. It is not affiliated with, endorsed by or sponsored by xTool.
 xTool and xTool Studio are trademarks of their respective owners. Scriber's `.xs` support is based on
 interoperability analysis of project files that users saved themselves; see the
-[.xs format notes](docs/xs-format.md).
+[.xs format notes](https://exeque.github.io/scriber/xs-format).
 
 ## License
 
