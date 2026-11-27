@@ -53,5 +53,12 @@ When the material has several **profiles** for the layer's operation (for exampl
 *Deep* engraving), the layer has a drop-down to pick one. Your own numbers still win over the
 profile's.
 
+On engrave layers a second drop-down picks the **image mode**: how the layer's images are engraved,
+in greyscale or with a dither. The list comes from the document's machine (for xTool machines:
+Grayscale, Jarvis, Bayer, Floyd, Stucki, Atkinson, Sierra and Passthrough); the first is the
+default. Scriber passes the choice on to the machine's software in the export (the `.xs` project for
+xTool Studio), which does the dithering, so the preview still shows greyscale. A mode the machine
+does not have (after you switch machines) falls back to its default, and the pre-flight check says so.
+
 This is how you get two engraving depths in one job: two engrave layers with different settings or
 profiles.

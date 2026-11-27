@@ -531,7 +531,7 @@ List the font families installed on this computer, for a text's font. sans-serif
 
 ## list_layers
 
-List the layers in order: id, name, op, colour, own settings (power/speed/passes that override the material library), lines_per_cm (the layer's own engrave line spacing; line_interval is the same in mm), visible, locked, number of items, whether it is current, and laser_setting: the power/speed/passes the laser uses (library preset for the op with the layer's own numbers on top; null when neither gives them).
+List the layers in order: id, name, op, colour, own settings (power/speed/passes that override the material library), lines_per_cm (the layer's own engrave line spacing; line_interval is the same in mm), image_mode (the layer's own; image_mode_used on engrave layers: the one its images get, the machine's default when it has none; null when the machine has no modes), visible, locked, number of items, whether it is current, and laser_setting: the power/speed/passes the laser uses (library preset for the op with the layer's own numbers on top; null when neither gives them).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -543,7 +543,7 @@ List the library sources (GitHub repositories the user subscribed to for machine
 
 ## list_machines
 
-List the machines (laser cutters) the user has: work area in mm, laser modules with type, power and what each can do, notes and the source of the numbers.
+List the machines (laser cutters) the user has: work area in mm, laser modules with type, power and what each can do, image_modes (how its software can engrave images: greyscale or a dither; the first is the default, pick one per engrave layer with update_layer image_mode), notes and the source of the numbers.
 
 ## list_materials
 
@@ -910,7 +910,7 @@ Change an item's name, layer (or op: moves it to the first layer with that op), 
 
 ## update_layer
 
-Change a layer: name, op (changes what the laser does with all its items), color, settings (the layer's own power/speed/passes; missing = material library), lines_per_cm (engrave line spacing, lines per cm = 10 / mm; null = material library), visible, locked, order (position) and current. One undo step.
+Change a layer: name, op (changes what the laser does with all its items), color, settings (the layer's own power/speed/passes; missing = material library), lines_per_cm (engrave line spacing, lines per cm = 10 / mm; null = material library), profile, image_mode (how images on an engrave layer are engraved: greyscale or a dither, an id from the machine's image_modes in list_machines; "" = the machine's default), visible, locked, order (position) and current. One undo step.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -921,6 +921,7 @@ Change a layer: name, op (changes what the laser does with all its items), color
 | `settings` | [Overrides](#type-overrides) |  | Replaces the layer's own power (%), speed (mm/s) and passes; a missing one (or {}) uses the material library's preset for the layer's op. |
 | `lines_per_cm` | number |  | Engrave layers: the layer's own line spacing in lines per cm (10 / mm between lines; 100 = 0.1 mm); null = the material library's. |
 | `profile` | string |  | The material's profile for the layer's op (a setting's name, see list_materials); "" = the default one. |
+| `image_mode` | string |  | Engrave layers: how its images are engraved, the id of one of the machine's image modes (list_machines image_modes, e.g. "bayer"); "" = the machine's default. |
 | `visible` | boolean |  | Hidden layers are not drawn, lasered or exported. |
 | `locked` | boolean |  | Items on a locked layer cannot be selected or edited. |
 | `order` | integer |  | New position in the list (0 = first). |
@@ -988,6 +989,24 @@ What to do with a DXF layer on import.
 One of: `cut` \| `score` \| `engrave` \| `no_output` \| `skip`
 - `skip`: Leave the layer out.
 
+### ImageMode {#type-imagemode}
+
+One way the machine's software engraves an image: greyscale or a dither.
+
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | yes | Scriber's id, stored on layers, e.g. "bayer". |
+| `name` | string | yes | What people see, e.g. "Bayer". |
+| `value` | string | yes | What the export writes for the machine's software, e.g. "Bayer" in an xTool `.xs` project. |
+
+### ImageModes {#type-imagemodes}
+
+A machine's image modes: the name of a built-in set (`machines/image-modes/&lt;name>.json`, shared by
+the machines of one vendor's software) or the machine's own list.
+
+One of: string \| [ImageMode](#type-imagemode)[]
+
 ### Kind {#type-kind}
 
 What a constraint keeps true. The geometric kinds are AutoCAD's GEOMCONSTRAINT, the `dim_*`
@@ -1044,6 +1063,7 @@ One of: `diode` \| `co2` \| `fiber` \| `infrared`
 | `notes` | string |  |  |
 | `source` | string |  | Where the numbers come from, and which ones are unverified. |
 | `xtool` | [XtoolIds](#type-xtoolids) |  | xTool Studio's ids for this machine (.xs export, importing xTool materials). |
+| `image_modes` | [ImageModes](#type-imagemodes) |  | How its software can engrave images (greyscale, dithers); the first is the default. Missing = none to choose from. |
 
 ### NewItem {#type-newitem}
 

@@ -283,6 +283,25 @@ fn images_become_bitmaps() {
     assert_eq!(bindings[0]["baseProfileId"], bitmap);
     let patch = &mode["patches"][bindings[0]["patchIds"][0].as_str().unwrap()]["overrides"];
     assert_eq!((patch["power"].as_f64(), patch["speed"].as_f64(), patch["bitmapMode"].as_str(), patch["density"].as_f64()), (Some(30.0), Some(200.0), Some("grayscale"), Some(200.0)));
+
+    // The layer's image mode goes into the patch as xTool writes it; the profile keeps greyscale.
+    let bitmap_mode = |d: &Document| {
+        let bytes = xs(&d.s, &lib(), "Img", true).unwrap().bytes;
+        let mut zip = archive(&bytes);
+        let canvas = read(&mut zip, "project.json")["activeCanvasId"].as_str().unwrap().to_string();
+        let profiles = read(&mut zip, "profiles.json")["profiles"].clone();
+        let profile = profiles.as_object().unwrap().values().find(|p| p["processingType"] == "BITMAP_ENGRAVING").unwrap()["values"]["bitmapMode"].clone();
+        let mode = read(&mut zip, "devices/device-JS002-1.json")["processing"][&canvas]["modes"]["LASER_PLANE"].clone();
+        let patch = mode["bindings"].as_array().unwrap().iter().find(|b| mode["ignoredDisplayIds"].as_array().unwrap().iter().all(|i| !b["displayIds"].as_array().unwrap().contains(i))).unwrap()["patchIds"][0].clone();
+        (profile.as_str().unwrap().to_string(), mode["patches"][patch.as_str().unwrap()]["overrides"]["bitmapMode"].as_str().unwrap().to_string())
+    };
+    let engrave = d.s.layers.iter_mut().find(|l| l.op == Op::Engrave).unwrap();
+    engrave.image_mode = Some("floyd".into());
+    assert_eq!(bitmap_mode(&d), ("grayscale".into(), "Floyd".into()));
+    d.s.layers.iter_mut().find(|l| l.op == Op::Engrave).unwrap().image_mode = Some("passthrough".into());
+    assert_eq!(bitmap_mode(&d).1, "passthrough");
+    d.s.layers.iter_mut().find(|l| l.op == Op::Engrave).unwrap().image_mode = Some("not-on-this-machine".into());
+    assert_eq!(bitmap_mode(&d).1, "grayscale", "a mode the machine lacks: its default");
 }
 
 #[test]

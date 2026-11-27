@@ -5,7 +5,7 @@
 use super::App;
 use super::lucide;
 use super::labels::{op_help, op_label, rgb};
-use crate::library::{self, Setting};
+use crate::library::{self, ImageMode, Setting};
 use crate::model::layer::op_operation;
 use crate::model::{Layer, Op, Overrides, State};
 use eframe::egui::{self, RichText, emath::Numeric};
@@ -79,6 +79,8 @@ impl App {
         let used: Vec<u64> = d.s.items.iter().map(|i| i.layer).collect();
         // The material library's preset per layer, to show and to start an override from.
         // And the material's profiles for the layer's op on the document's machine and laser.
+        // The machine's image modes, for engrave layers (empty: nothing to choose).
+        let modes: Vec<ImageMode> = d.s.machine.as_deref().and_then(|id| library::get().machine(id).map(|m| m.image_modes())).unwrap_or_default();
         let (presets, profiles): (Vec<Option<Setting>>, Vec<Vec<String>>) = {
             let lib = library::get();
             let material = d.s.material.as_deref().and_then(|id| lib.material(id));
@@ -100,7 +102,7 @@ impl App {
         let mut action = None;
         for (k, ((layer, preset), names)) in d.s.layers.iter_mut().zip(presets).zip(profiles).enumerate() {
             ui.push_id(layer.id, |ui| {
-                changed |= if full { layer_row(ui, layer, preset, &names, current, used.contains(&layer.id), k, count, &mut action) } else { short_row(ui, layer, current, &mut action) };
+                changed |= if full { layer_row(ui, layer, preset, &names, &modes, current, used.contains(&layer.id), k, count, &mut action) } else { short_row(ui, layer, current, &mut action) };
             });
         }
 
@@ -155,7 +157,7 @@ impl App {
 
 /// One layer: returns whether it changed; buttons that need the whole document set `action`.
 #[allow(clippy::too_many_arguments)]
-fn layer_row(ui: &mut egui::Ui, layer: &mut Layer, preset: Option<Setting>, profiles: &[String], current: u64, used: bool, k: usize, count: usize, action: &mut Option<Action>) -> bool {
+fn layer_row(ui: &mut egui::Ui, layer: &mut Layer, preset: Option<Setting>, profiles: &[String], modes: &[ImageMode], current: u64, used: bool, k: usize, count: usize, action: &mut Option<Action>) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
         if ui.radio(layer.id == current, "").on_hover_text("Current layer: new shapes go here").clicked() {
@@ -188,6 +190,9 @@ fn layer_row(ui: &mut egui::Ui, layer: &mut Layer, preset: Option<Setting>, prof
         ui.horizontal(|ui| {
             ui.add_space(22.0);
             changed |= profile_combo(ui, layer, profiles);
+            if layer.op == Op::Engrave {
+                changed |= image_mode_combo(ui, layer, modes);
+            }
             egui::CollapsingHeader::new(RichText::new(settings_title(layer, preset.as_ref())).small()).id_salt("settings").show(ui, |ui| {
                 changed |= settings_ui(ui, layer, preset.as_ref());
             });
@@ -290,6 +295,29 @@ fn profile_combo(ui: &mut egui::Ui, layer: &mut Layer, profiles: &[String]) -> b
         return false;
     }
     layer.profile = (pick > 0).then(|| profiles[pick].clone());
+    true
+}
+
+/// How the layer's images are engraved (greyscale or a dither), from the machine's image modes.
+fn image_mode_combo(ui: &mut egui::Ui, layer: &mut Layer, modes: &[ImageMode]) -> bool {
+    if modes.is_empty() {
+        return false;
+    }
+    // Missing, or a mode this machine does not have, means the default: the first.
+    let chosen = layer.image_mode.as_deref().and_then(|id| modes.iter().position(|m| m.id == id)).unwrap_or(0);
+    let label = |k: usize| if k == 0 { format!("{} (default)", modes[k].name) } else { modes[k].name.clone() };
+    let mut pick = chosen;
+    egui::ComboBox::from_id_salt("image-mode").width(120.0).selected_text(label(chosen)).show_ui(ui, |ui| {
+        for k in 0..modes.len() {
+            ui.selectable_value(&mut pick, k, label(k));
+        }
+    })
+    .response
+    .on_hover_text("How images on this layer are engraved: in greyscale or with a dither. The machine's software does it; the preview shows greyscale.");
+    if pick == chosen {
+        return false;
+    }
+    layer.image_mode = (pick > 0).then(|| modes[pick].id.clone());
     true
 }
 

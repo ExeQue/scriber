@@ -4,11 +4,12 @@
   "vendor": "xTool",
   "model": "F2 Ultra (Single)",
   "xtool": {"device": "GS007-CLASS-4", "name": "F2 Ultra (Single)"},
+  "image_modes": "xtool-studio",
   "width": 220,
   "height": 220,
   "lasers": [
     {"id": "fiber-60w", "name": "60 W MOPA fiber laser", "kind": "fiber", "power_w": 60, "ops": ["score", "engrave"]}
   ],
   "notes": "Galvo laser with only the 1064 nm MOPA fiber laser.",
-  "source": "xTool Studio 1.9.11 device extension GS007-CLASS-4 (exts/GS007-CLASS-4), read 2026-11-26. Work area from processingArea (LASER_PLANE 220 x 220); module from defaultPower [60] (redPower), the wavelength map RED 1064 and the MOPA IR label. Which operations each module can do is an assumption."
+  "source": "Image modes: xTool Studio's image mode list, values read from projects saved by xTool Studio for the M2 (2026-11-27); assumed the same for this machine. xTool Studio 1.9.11 device extension GS007-CLASS-4 (exts/GS007-CLASS-4), read 2026-11-26. Work area from processingArea (LASER_PLANE 220 x 220); module from defaultPower [60] (redPower), the wavelength map RED 1064 and the MOPA IR label. Which operations each module can do is an assumption."
 }

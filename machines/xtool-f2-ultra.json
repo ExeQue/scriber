@@ -4,6 +4,7 @@
   "vendor": "xTool",
   "model": "F2 Ultra",
   "xtool": {"device": "GS004-CLASS-4", "name": "F2 Ultra"},
+  "image_modes": "xtool-studio",
   "width": 220,
   "height": 220,
   "lasers": [
@@ -11,5 +12,5 @@
     {"id": "diode-40w", "name": "40 W blue laser", "kind": "diode", "power_w": 40, "ops": ["cut", "score", "engrave"]}
   ],
   "notes": "Galvo laser with a 1064 nm MOPA fiber laser and a 455 nm blue diode.",
-  "source": "xTool Studio 1.9.11 device extension GS004-CLASS-4 (exts/GS004-CLASS-4), read 2026-11-26. Work area from processingArea (LASER_PLANE 220 x 220); modules from defaultPower [60, 40] (redPower, laserPower), the wavelength map BLUE 455 / RED 1064 and the MOPA IR label. Which operations each module can do is an assumption."
+  "source": "Image modes: xTool Studio's image mode list, values read from projects saved by xTool Studio for the M2 (2026-11-27); assumed the same for this machine. xTool Studio 1.9.11 device extension GS004-CLASS-4 (exts/GS004-CLASS-4), read 2026-11-26. Work area from processingArea (LASER_PLANE 220 x 220); modules from defaultPower [60, 40] (redPower, laserPower), the wavelength map BLUE 455 / RED 1064 and the MOPA IR label. Which operations each module can do is an assumption."
 }

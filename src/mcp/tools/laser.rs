@@ -124,9 +124,10 @@ fn setup(s: &State) -> Value {
 
 #[tool_router(router = laser_router, vis = "pub(super)")]
 impl Server {
-    #[tool(description = "List the machines (laser cutters) the user has: work area in mm, laser modules with type, power and what each can do, notes and the source of the numbers.")]
+    #[tool(description = "List the machines (laser cutters) the user has: work area in mm, laser modules with type, power and what each can do, image_modes (how its software can engrave images: greyscale or a dither; the first is the default, pick one per engrave layer with update_layer image_mode), notes and the source of the numbers.")]
     fn list_machines(&self) -> ToolResult {
-        ok(json!(library::get().machines))
+        // Image mode sets as their lists, so the modes can be read here.
+        ok(json!(library::get().machines.iter().map(library::Machine::inlined).collect::<Vec<_>>()))
     }
 
     #[tool(description = "List the material library: each material with its thickness, color (preview sheet colour [r, g, b], missing = wood), burn_colour (the colour a full burn leaves in the preview, missing = a darker shade of the sheet) and laser settings per machine, laser module and operation (cut, score, engrave): power %, speed mm/s, passes, and for engrave line_interval (mm between lines; tell people lines per cm = 10 / line_interval) and bidirectional, and preview_opacity (0-1, how dark the burn looks in the preview; missing = from the energy).")]

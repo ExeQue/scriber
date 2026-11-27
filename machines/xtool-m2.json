@@ -4,6 +4,7 @@
   "vendor": "xTool",
   "model": "M2",
   "xtool": {"device": "JS002", "name": "M2"},
+  "image_modes": "xtool-studio",
   "width": 426,
   "height": 320,
   "lasers": [
@@ -13,5 +14,5 @@
     { "id": "ir-3w", "name": "3 W infrared laser", "kind": "infrared", "power_w": 3, "ops": ["score", "engrave"], "area": [412, 310], "xtool_laser": "laser_red_3W" }
   ],
   "notes": "Blue lasers: 445 nm. Infrared: 1064 nm, for metal and some plastics. Max speed 600 mm/s. Thickest cut at 100 % power: basswood plywood 8 / 10 / 15 mm, black acrylic 3 / 8 / 11 mm (10 / 20 / 40 W). The M2 also takes a CMYK inkjet module (printing, not a laser) and has no blade cutter.",
-  "source": "xTool M2 FAQ, https://support.xtool.com/article/3324 (work area per module, wavelengths, max speed, max cutting thickness), read 2026-11-26. Unverified: which operations each module can do. Cutting with the blue lasers is confirmed by the cutting tables; score/engrave for them, and score/engrave without cut for the infrared laser, are assumptions. xTool Studio 1.9.11 device extension JS002 (exts/JS002), read 2026-11-26: device code and laser strings; its per-module table gives 426 x 320 (10 / 20 W), 426 x 308-312 (40 W) and 426 x 310 for laser_red_3W (the FAQ says 412 x 310, kept here)."
+  "source": "Image modes: values read from projects saved by xTool Studio (2026-11-27). xTool M2 FAQ, https://support.xtool.com/article/3324 (work area per module, wavelengths, max speed, max cutting thickness), read 2026-11-26. Unverified: which operations each module can do. Cutting with the blue lasers is confirmed by the cutting tables; score/engrave for them, and score/engrave without cut for the infrared laser, are assumptions. xTool Studio 1.9.11 device extension JS002 (exts/JS002), read 2026-11-26: device code and laser strings; its per-module table gives 426 x 320 (10 / 20 W), 426 x 308-312 (40 W) and 426 x 310 for laser_red_3W (the FAQ says 412 x 310, kept here)."
 }

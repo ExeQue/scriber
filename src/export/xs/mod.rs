@@ -68,6 +68,9 @@ struct Group {
     kind: Kind,
     displays: Vec<Value>,
     setting: Option<Setting>,
+    /// Images: the layer's image mode as xTool writes it (`bitmapMode`, e.g. "Bayer"); None = xTool's
+    /// default, greyscale.
+    bitmap_mode: Option<String>,
     /// A no-output layer: bound like any layer but listed in `ignoredDisplayIds`.
     ignored: bool,
 }
@@ -93,9 +96,12 @@ fn machine(s: &State, lib: &Library, notes: &mut Vec<String>) -> anyhow::Result<
     Ok((code.to_string(), name.to_string(), laser.xtool_module(), laser.power_w))
 }
 
-/// The patch overrides: xTool's defaults for the type with the layer's numbers on top.
-fn overrides(kind: Kind, laser: &str, s: Option<&Setting>) -> Map<String, Value> {
+/// The patch overrides: xTool's defaults for the type with the layer's numbers (and image mode) on top.
+fn overrides(kind: Kind, laser: &str, s: Option<&Setting>, bitmap_mode: Option<&str>) -> Map<String, Value> {
     let mut v = kind.values(laser);
+    if let (Kind::Bitmap, Some(mode)) = (kind, bitmap_mode) {
+        v.insert("bitmapMode".into(), json!(mode));
+    }
     if let Some(s) = s {
         v.insert("power".into(), json!(s.power));
         v.insert("speed".into(), json!(s.speed));
@@ -150,7 +156,8 @@ fn layer_colour(rgb: [u8; 3], taken: &[usize]) -> Option<[u8; 3]> {
 /// as reference unless `include_no_output` is false: bound as score (images as image engraving) with
 /// a faint patch and listed in `ignoredDisplayIds`, as xTool Studio stores "no output";
 /// hidden layers, guides and dimensions are left out; text goes out as its glyph outlines; images
-/// are engraved in greyscale (rotated ones are skipped and listed in `skipped`).
+/// are engraved with their layer's image mode (the machine's default, greyscale for xTool, when it
+/// has none; rotated ones are skipped and listed in `skipped`).
 pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyhow::Result<Xs> {
     let mut notes = Vec::new();
     let mut skipped = Vec::new();
@@ -218,7 +225,7 @@ pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyh
             layer_data.entry(tag.clone()).or_insert_with(|| json!({"name": layer.name, "order": n, "visible": true}));
             match groups.iter_mut().find(|g| g.layer == layer.id && g.kind == kind) {
                 Some(g) => g.displays.push(display),
-                None if !lasered => groups.push(Group { layer: layer.id, kind, displays: vec![display], setting: Some(no_output_setting(kind)), ignored: true }),
+                None if !lasered => groups.push(Group { layer: layer.id, kind, displays: vec![display], setting: Some(no_output_setting(kind)), bitmap_mode: None, ignored: true }),
                 None => {
                     let operation = match kind {
                         Kind::Line => Operation::Score,
@@ -230,7 +237,8 @@ pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyh
                     if setting.is_none() {
                         notes.push(format!("Layer {}: no power, speed and passes for {} (none on the layer or in the material library); xTool's defaults are used.", layer.name, operation.label().to_lowercase()));
                     }
-                    groups.push(Group { layer: layer.id, kind, displays: vec![display], setting, ignored: false });
+                    let bitmap_mode = (kind == Kind::Bitmap).then(|| layer.image_mode(s, lib)).flatten().map(|m| m.value);
+                    groups.push(Group { layer: layer.id, kind, displays: vec![display], setting, bitmap_mode, ignored: false });
                 }
             }
         }
@@ -245,7 +253,7 @@ pub fn xs(s: &State, lib: &Library, name: &str, include_no_output: bool) -> anyh
     for g in &groups {
         let (binding, patch) = (short_id("binding"), short_id("patch"));
         let profile = profile_of(g.kind);
-        patches.insert(patch.clone(), json!({"id": patch, "profileId": profile, "source": "custom", "overrides": overrides(g.kind, &laser, g.setting.as_ref())}));
+        patches.insert(patch.clone(), json!({"id": patch, "profileId": profile, "source": "custom", "overrides": overrides(g.kind, &laser, g.setting.as_ref(), g.bitmap_mode.as_deref())}));
         let ids: Vec<&Value> = g.displays.iter().map(|d| &d["id"]).collect();
         bindings.push(json!({"bindingId": binding, "canvasId": canvas_id, "mode": "LASER_PLANE", "baseProfileId": profile, "displayIds": ids, "patchIds": [patch]}));
         // Shadow bindings keep the other two types for the same elements, as xTool writes them (not for images).

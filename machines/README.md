@@ -28,6 +28,30 @@ The file name must be the machine's `id` plus `.json`.
 - `source` is required in practice: only put in numbers you can cite, and say which ones are unverified.
 - `xtool` (xTool machines only): `{"device": "<device code>", "name": "<xTool Studio's name>"}`, and per laser
   `xtool_laser`: the module string xTool Studio writes into `.xs` projects (e.g. `laser_blue_10W`), where known.
+- `image_modes`: how the machine's software can engrave images (greyscale, dithers), chosen per engrave
+  layer. Either the name of a set in `image-modes/` (`"xtool-studio"`) or the machine's own list in the
+  same shape. The first mode is the default. Leave it out when the software has no choice.
+
+## Image mode sets (`image-modes/`)
+
+Many machines share their software, and so its list of image modes. Each file in `image-modes/` is
+one such list; its file name without `.json` is what machines refer to:
+
+```json
+[
+  { "id": "grayscale", "name": "Grayscale", "value": "grayscale" },
+  { "id": "bayer", "name": "Bayer", "value": "Bayer" }
+]
+```
+
+`id` is what Scriber stores on a layer, `name` what people see, and `value` exactly what the export
+writes for the software (for xTool: `bitmapMode` in the `.xs` project, case as xTool writes it).
+When a machine is shared (`.scrlib`, library repositories) its set name is replaced by the list, so
+it works in any Scriber.
+
+| File | Software | Modes |
+|------|----------|-------|
+| `xtool-studio` | xTool Studio | Grayscale, Jarvis, Bayer, Floyd, Stucki, Atkinson, Sierra, Passthrough (values read from projects xTool Studio saved, 2026-11-27) |
 
 ## xTool machines
 

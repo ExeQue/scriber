@@ -1,13 +1,14 @@
-//! Embeds the built-in machine files (`machines/*.json`) in the binary, so adding a machine is just
-//! adding a file. Scriber ships no material presets; the material files under
-//! `src/library/test_materials/` are fixtures for the tests only.
+//! Embeds the built-in machine files (`machines/*.json`) and image mode sets
+//! (`machines/image-modes/*.json`) in the binary, so adding a machine is just adding a file.
+//! Scriber ships no material presets; the material files under `src/library/test_materials/` are
+//! fixtures for the tests only.
 
 use std::fmt::Write;
 use std::path::Path;
 
 fn main() {
     let mut out = String::new();
-    for (dir, name) in [("machines", "MACHINES"), ("src/library/test_materials", "MATERIALS")] {
+    for (dir, name) in [("machines", "MACHINES"), ("machines/image-modes", "IMAGE_MODES"), ("src/library/test_materials", "MATERIALS")] {
         println!("cargo:rerun-if-changed={dir}");
         let mut files: Vec<_> = std::fs::read_dir(dir)
             .map(|r| r.filter_map(Result::ok).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).collect())

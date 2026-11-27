@@ -10,7 +10,7 @@ pub mod sources;
 pub mod store;
 pub mod xtool;
 
-pub use machines::{Laser, LaserKind, Machine};
+pub use machines::{ImageMode, Laser, LaserKind, Machine};
 pub use materials::{Category, Material, Operation, Setting};
 
 use parking_lot::{Mutex, MutexGuard};
@@ -83,6 +83,17 @@ fn parse_all<T: serde::de::DeserializeOwned>(files: &[(&str, &str)]) -> Vec<T> {
 
 pub fn builtin_machines() -> Vec<Machine> {
     parse_all(builtin::MACHINES)
+}
+
+/// A built-in set of image modes by name (`machines/image-modes/<name>.json`).
+pub fn image_mode_set(name: &str) -> Option<Vec<ImageMode>> {
+    let (_, json) = builtin::IMAGE_MODES.iter().find(|(file, _)| file.strip_suffix(".json") == Some(name))?;
+    Some(serde_json::from_str(json).unwrap_or_else(|e| panic!("built-in image modes {name}: {e}")))
+}
+
+/// The names of the built-in image mode sets.
+pub fn image_mode_set_names() -> Vec<String> {
+    builtin::IMAGE_MODES.iter().filter_map(|(file, _)| file.strip_suffix(".json")).map(String::from).collect()
 }
 
 /// Scriber ships no material presets: people build their own library. Tests use fixtures.
@@ -276,6 +287,14 @@ mod tests {
             assert_eq!(format!("{}.json", m.id), *file, "the file name must be the machine id");
             assert!(m.width > 0.0 && m.height > 0.0, "{file}: work area");
             m.check().unwrap();
+            if let Some(machines::ImageModes::Set(name)) = &m.image_modes {
+                assert!(image_mode_set(name).is_some(), "{file}: unknown image mode set {name}");
+            }
+        }
+        for (file, _) in builtin::IMAGE_MODES {
+            let list = image_mode_set(file.strip_suffix(".json").unwrap()).unwrap();
+            assert!(!list.is_empty(), "{file}: empty");
+            machines::check_modes(&list).unwrap_or_else(|e| panic!("{file}: {e}"));
         }
         let lib = Library { machines, materials: builtin_materials(), ..Library::default() };
         for (m, (file, _)) in lib.materials.iter().zip(builtin::MATERIALS) {

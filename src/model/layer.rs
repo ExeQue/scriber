@@ -3,7 +3,7 @@
 //! Hidden layers are neither drawn nor lasered or exported; locked ones cannot be picked or edited.
 
 use super::{Document, Item, Op, State};
-use crate::library::{Library, Operation, Setting};
+use crate::library::{ImageMode, Library, Operation, Setting};
 use rmcp::schemars::{self, JsonSchema};
 use serde::{Deserialize, Serialize};
 
@@ -54,6 +54,10 @@ pub struct Layer {
     /// The material's profile to use (e.g. "Photo"); missing or unknown = the default one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
+    /// How images on this layer are engraved: the id of one of the machine's image modes (e.g.
+    /// "bayer"); missing or one the machine does not have = the machine's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_mode: Option<String>,
     /// Hidden layers are not drawn, lasered or exported.
     #[serde(default = "yes")]
     pub visible: bool,
@@ -68,7 +72,7 @@ fn yes() -> bool {
 
 impl Layer {
     pub fn new(id: u64, name: &str, op: Op) -> Self {
-        Self { id, name: name.into(), op, color: None, settings: Overrides::default(), line_interval: None, profile: None, visible: true, locked: false }
+        Self { id, name: name.into(), op, color: None, settings: Overrides::default(), line_interval: None, profile: None, image_mode: None, visible: true, locked: false }
     }
 
     pub fn rgb(&self) -> [u8; 3] {
@@ -101,6 +105,12 @@ impl Layer {
             out.line_interval = self.line_interval.or(out.line_interval);
         }
         (!out.power.is_nan() && !out.speed.is_nan() && out.passes > 0).then_some(out)
+    }
+
+    /// The image mode its images are engraved with: its own, else the machine's default. None when
+    /// no machine is chosen or the machine has no modes.
+    pub fn image_mode(&self, s: &State, lib: &Library) -> Option<ImageMode> {
+        lib.machine(s.machine.as_deref()?)?.image_mode(self.image_mode.as_deref())
     }
 }
 

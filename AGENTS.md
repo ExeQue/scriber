@@ -27,7 +27,7 @@ bridge (`scriber mcp`), a GUI-less MCP server (`scriber mcp --headless`) and age
 | `src/export/` | SVG, PNG, DXF (`dxf/`, import too), xTool `.xs` export (`xs/`) and import (`xs_import/`), SVG import (`svg_import/`), images. |
 | `src/library/` | Machines and materials: built-ins, the user's `library.json` (`store.rs`), GitHub library sources (`sources.rs`), `.scrlib` exchange, xTool Studio cache import (`xtool/`). |
 | `src/agents.rs` | Detects AI agents and adds or removes Scriber's MCP entry and skill. |
-| `machines/` | Built-in machine definitions, embedded by `build.rs`. Scriber ships no material presets. |
+| `machines/` | Built-in machine definitions, embedded by `build.rs`; `machines/image-modes/` holds the image mode sets (greyscale, dithers) machines refer to by name. Scriber ships no material presets. |
 | `src/library/test_materials/` | Material fixtures, used by tests only. |
 | `docs/public/logo.svg`, `assets/scriber.ico` | The logo: the source SVG (docs favicon, window icon, Linux launcher icon) and the Windows program icon made from it (`build.rs` embeds it). |
 | `themes/`, `contrib/omarchy/` | Built-in themes and the Omarchy theme template. |
