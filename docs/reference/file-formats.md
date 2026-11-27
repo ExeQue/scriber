@@ -7,8 +7,8 @@
 | `library.json` | Your own material library | The app, in its config folder |
 | `machines/*.json` | Built-in machines | Shipped with Scriber |
 | `.svg`, `.png` | Exports for laser software | File → Export |
-| `.dxf` | CAD drawing, in and out | File → Import DXF…, File → Export DXF… |
-| `.xs` | xTool Studio project | File → Export xTool Studio (.xs)… |
+| `.dxf` | CAD drawing, in and out | File → Import ▸ DXF…, File → Export ▸ DXF… |
+| `.xs` | xTool Studio project | File → Export ▸ xTool Studio (.xs)… |
 
 ## `.scrbr` projects
 

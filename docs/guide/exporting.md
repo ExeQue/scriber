@@ -5,10 +5,10 @@ Hidden layers, *No output* layers, guide lines and comments are left out.
 
 | Export | Where | What you get |
 |---|---|---|
-| **SVG for the laser** | File → Export SVG for the laser…, Laser → Export | An SVG in millimetres. Colours follow what laser software expects: engrave black fill, score blue, cut red. One SVG layer per Scriber layer, in laser order: engrave, score, cut |
-| **DXF for CAD** | File → Export DXF…, Laser → Export | A DXF in millimetres for CAD programs and other laser software: one DXF layer per Scriber layer with its name and colour |
-| **PNG picture** | File → Export PNG…, Laser → Export | A picture of the drawing at 254 DPI |
-| **xTool Studio (.xs)** | File → Export xTool Studio (.xs)…, Laser → Export | An xTool Studio project with each layer's processing type, power, speed and passes |
+| **SVG for the laser** | File → Export ▸ SVG for the laser…, Laser → Export | An SVG in millimetres. Colours follow what laser software expects: engrave black fill, score blue, cut red. One SVG layer per Scriber layer, in laser order: engrave, score, cut |
+| **DXF for CAD** | File → Export ▸ DXF…, Laser → Export | A DXF in millimetres for CAD programs and other laser software: one DXF layer per Scriber layer with its name and colour |
+| **PNG picture** | File → Export ▸ PNG…, Laser → Export | A picture of the drawing at 254 DPI |
+| **xTool Studio (.xs)** | File → Export ▸ xTool Studio (.xs)…, Laser → Export | An xTool Studio project with each layer's processing type, power, speed and passes |
 
 Text is exported as outlines, so the laser software does not need the font.
 

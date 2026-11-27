@@ -34,6 +34,7 @@ mod preview;
 mod ribbon;
 mod select;
 mod settings;
+mod settings_window;
 mod shortcuts;
 mod snap;
 mod svg_import;
@@ -224,6 +225,11 @@ struct App {
     comments: comments::Comments,
     /// The colour theme and what it follows.
     theme: theme::State,
+    /// Reopen the files open at exit, and sync the library sources, at start (Settings).
+    reopen_files: bool,
+    auto_sync: bool,
+    /// The open Settings dialog and its page.
+    settings: Option<settings_window::Section>,
 }
 
 pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
@@ -252,8 +258,10 @@ pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
             theme::watch(ctx.clone());
             let mcp = mcp::listen(ws.clone(), Arc::new(move || ctx.request_repaint())).map_err(|e| e.to_string());
             let mut app = App::new(ws, mcp);
-            app.library_sync = Some(library_window::auto_sync(&cc.egui_ctx));
-            if file.is_none() {
+            if saved.auto_sync {
+                app.library_sync = Some(library_window::auto_sync(&cc.egui_ctx));
+            }
+            if file.is_none() && saved.reopen_files {
                 app.restore_session(&saved.open_files);
             }
             app.apply_settings(saved);
@@ -358,6 +366,9 @@ impl App {
             polar_extra_text: String::new(),
             comments: comments::Comments::default(),
             theme: theme::State::default(),
+            reopen_files: true,
+            auto_sync: true,
+            settings: None,
         }
     }
 
@@ -587,7 +598,7 @@ impl App {
     fn keys(&mut self, ctx: &egui::Context, pointer: Option<Point>) {
         let input = command::input_id();
         let focused = ctx.memory(|m| m.focused());
-        if self.confirm_close || (focused.is_some_and(|f| f != input) && ctx.text_edit_focused()) {
+        if self.confirm_close || self.settings.is_some() || (focused.is_some_and(|f| f != input) && ctx.text_edit_focused()) {
             return;
         }
         if self.show_cmdline && focused != Some(input) {
@@ -604,6 +615,7 @@ impl App {
             _ if consume(ctrl_shift, Key::S) => self.save(ctx, true),
             _ if consume(ctrl, Key::S) => self.save(ctx, false),
             _ if consume(ctrl, Key::O) => self.open_dialog(ctx),
+            _ if consume(ctrl, Key::Comma) => self.settings = Some(Default::default()),
             _ if consume(ctrl_shift, Key::V) => self.request_paste(ctx, None, true),
             _ if consume(ctrl, Key::D) => self.duplicate_selection(),
             _ if consume(ctrl, Key::A) => self.select_all(),
@@ -742,6 +754,7 @@ impl eframe::App for App {
         self.svg_import_window(&ctx);
         self.dxf_import_window(&ctx);
         self.library_window(&ctx);
+        self.settings_window(&ctx);
         if self.confirm_close {
             self.close_dialog(&ctx);
         }

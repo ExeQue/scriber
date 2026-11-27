@@ -17,6 +17,7 @@ mod sources_tab;
 mod widgets;
 
 pub(super) use sources_tab::auto_sync;
+pub(super) use widgets::{form_column, list_row, section};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {

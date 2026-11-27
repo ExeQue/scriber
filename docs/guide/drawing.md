@@ -62,12 +62,12 @@ last point) or `@40<30` (40 mm at 30°). A plain number uses the pointer's direc
 
 ## Images, SVG and DXF files
 
-- File → **Import image…** places a PNG, JPEG or other picture. It is turned to greyscale and is
+- File → **Import ▸ Image…** places a PNG, JPEG or other picture. It is turned to greyscale and is
   engraved.
-- File → **Import SVG…** reads vector drawings. The stroke colour picks the layer: red = cut,
+- File → **Import ▸ SVG…** reads vector drawings. The stroke colour picks the layer: red = cut,
   blue = score, black = engrave, grey or green = no output, any other colour = cut. A filled closed
   shape is engraved. You can also paste SVG text straight onto the canvas.
-- File → **Import DXF…** reads drawings from CAD programs (or drop a `.dxf` on the canvas). See
+- File → **Import ▸ DXF…** reads drawings from CAD programs (or drop a `.dxf` on the canvas). See
   below.
 
 ### Importing DXF

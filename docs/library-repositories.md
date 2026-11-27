@@ -28,7 +28,7 @@ box to hide its items without unsubscribing; **✕** unsubscribes (after asking)
 ### Syncing
 
 Scriber syncs your sources when it starts, at most once a day per source, in the background (the
-window never waits). **Sync now** and **Sync all** sync right away. A sync first asks GitHub for the
+window never waits); turn that off in Edit → Settings… → Library. **Sync now** and **Sync all** sync right away. A sync first asks GitHub for the
 commit the source follows (one small request; an unchanged answer does not count against GitHub's
 rate limit). Only when that commit differs from the one in use is the repository downloaded. The
 Sources tab and the status bar say what changed, e.g. "+2 materials, 1 changed, 0 removed".

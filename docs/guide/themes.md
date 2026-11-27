@@ -5,8 +5,9 @@ material sheet itself, the grid, and the colours of selection, grips, guide line
 
 ## Choosing a theme
 
-View → **Theme ▾** on the ribbon, or the **View** menu → **Theme**, lists every theme with a small
-swatch (panel, material, accent):
+Edit → **Settings…** (<kbd>Ctrl+,</kbd>) → **Appearance** lists every theme with a small swatch
+(panel, material, accent); click one to use it. Above the list it says which theme is in use and
+whether Omarchy was found:
 
 | Theme | What it is |
 |---|---|
@@ -27,7 +28,7 @@ engraves and **grey** is no output. On a dark material they are drawn lighter (e
 light grey) so they stay readable. A colour you gave a layer yourself is always shown as you chose it.
 
 If a theme cannot be read (a typo in a theme file, a broken Omarchy theme) Scriber says why at the
-bottom of the Theme menu and uses Dark or Light meanwhile.
+bottom of Settings → Appearance and uses Dark or Light meanwhile.
 
 ## Gallery
 
@@ -75,7 +76,7 @@ A theme is a small TOML file in your **themes folder**:
 | macOS | `~/Library/Application Support/scriber/themes/` |
 
 (`SCRIBER_CONFIG_DIR` moves the whole config folder; the themes are then in its `themes` folder.)
-Theme ▾ → **Open themes folder** opens it, and **Save current as theme…** writes the theme you see
+Settings → Appearance → **Open themes folder** opens it, and **Save current as theme…** writes the theme you see
 now as a new file there, with every key filled in, to start from. **Reload** reads the files again
 (Scriber also notices changes by itself).
 
@@ -88,7 +89,7 @@ is, so you can copy one in.
 
 | Key | What it colours | When left out |
 |---|---|---|
-| `name` | The name in the Theme menu | The file name |
+| `name` | The name in Settings → Appearance | The file name |
 | `mode` | `"dark"` or `"light"` | From how dark `background` is |
 | `background` | Panels, menus, windows (**required**) | |
 | `foreground` | Text | Near white or near black |
@@ -148,5 +149,5 @@ guide = "#008a9e"
 dimension = "#1f5fc0"
 ```
 
-When a file has a mistake, the Theme menu shows the file with the reason (for example
+When a file has a mistake, Settings → Appearance shows the file with the reason (for example
 `workshop: background: "#12345" is not a colour like "#1e1e2e"`) and Scriber uses Dark or Light until it is fixed.

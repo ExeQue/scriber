@@ -65,7 +65,7 @@ pub(super) fn sidebar(ui: &mut egui::Ui, noun: &str, has_selection: bool, can_de
 }
 
 /// Right of the sidebar: `form` fills the rest of the page in a vertical scroll area.
-pub(super) fn form_column(ui: &mut egui::Ui, id: &str, form: impl FnOnce(&mut egui::Ui)) {
+pub(in crate::gui) fn form_column(ui: &mut egui::Ui, id: &str, form: impl FnOnce(&mut egui::Ui)) {
     ui.add_space(12.0);
     ui.allocate_ui_with_layout(ui.available_size(), Layout::top_down(Align::Min), |ui| {
         // The column's width is fixed: help text wraps to it and wide tables cannot widen it.
@@ -78,12 +78,12 @@ pub(super) fn form_column(ui: &mut egui::Ui, id: &str, form: impl FnOnce(&mut eg
 }
 
 /// One row of a plain list: as wide as the list, text on the left. Returns whether it was clicked.
-pub(super) fn list_row(ui: &mut egui::Ui, selected: bool, text: &str) -> bool {
+pub(in crate::gui) fn list_row(ui: &mut egui::Ui, selected: bool, text: &str) -> bool {
     ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| ui.add(Button::selectable(selected, text).truncate().min_size(egui::vec2(0.0, 26.0))).on_hover_text(text).clicked()).inner
 }
 
 /// A titled block with a line of plain help under the title.
-pub(super) fn section(ui: &mut egui::Ui, title: &str, help: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
+pub(in crate::gui) fn section(ui: &mut egui::Ui, title: &str, help: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
     ui.label(RichText::new(title).size(16.0).strong());
     ui.label(RichText::new(help).weak());
     ui.add_space(6.0);

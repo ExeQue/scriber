@@ -19,6 +19,15 @@
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
+## Menus
+
+| Menu | What is in it |
+|---|---|
+| **File** | New, Open, Open recent, Close, Save, Save as, **Import ▸** (Image…, SVG…, DXF…), **Export ▸** (SVG for the laser…, PNG…, DXF…, xTool Studio (.xs)…), Quit |
+| **Edit** | Undo, Redo, Cut, Copy, Paste, Duplicate, Combine, Break apart, Delete, Select all, **Settings…** (<kbd>Ctrl+,</kbd>) |
+| **AI agents** | Connect AI agents… |
+| **Help** | Keyboard shortcuts |
+
 ## Ribbon
 
 The ribbon under the menu bar holds every tool, grouped in tabs:
@@ -30,7 +39,7 @@ The ribbon under the menu bar holds every tool, grouped in tabs:
 | **Parametric** | Geometric constraints, locked sizes (Dimension and *More ▾*), Parameters |
 | **Arrange** | Stretch, join, explode, align, break, extend, lengthen, copy laser settings, group, show only selection, select similar, quick select |
 | **Laser** | Machine and material, export, Machines & materials… |
-| **View** | Zoom, Preview, toggles for the grid, guide lines, comments, measure on hover and the command line, and **Theme ▾** |
+| **View** | Zoom, Preview, toggles for the grid, guide lines, comments, measure on hover and the command line |
 
 ![The Laser tab of the ribbon: machine, laser and material pickers, the export buttons and Machines & materials](/screenshots/ribbon-laser.webp)
 
@@ -44,9 +53,22 @@ folds the ribbon to just the tab names.
 
 *Hold the Circle button down to get its ways of drawing.*
 
+## Settings
+
+Edit → **Settings…** (<kbd>Ctrl+,</kbd>) opens the Settings dialog. Pick a section on the left;
+every change applies at once and is kept for next time, and **Close** (or Esc) closes the dialog.
+
+| Section | Settings |
+|---|---|
+| **Appearance** | The theme, with a swatch for each, whether Omarchy was found, **Save current as theme…**, **Open themes folder** and **Reload** |
+| **Drawing aids** | GRID, SNAP, ORTHO, POLAR, OSNAP, OTRACK and INFER as they start (the status bar still turns them on and off), POLAR's angle step and extra angles, guide lines and measure on hover |
+| **Files** | Reopen the files that were open when Scriber closed (on by default); the recent files list, and **Clear the list** |
+| **Library** | Sync the library sources at start (on by default; each source at most once a day), and **Open Machines & materials…** |
+| **AI agents** | Whether the MCP server runs and on which port, **Connect AI agents…**, and Show the command line |
+
 ## Themes
 
-View → **Theme ▾** (or the View menu → Theme) picks the colours: **System** (the default) follows
+Settings → **Appearance** picks the colours: **System** (the default) follows
 Omarchy's theme on Omarchy and your system's light or dark mode elsewhere; there are also Dark,
 Light, Graphite, Paper, Blueprint and High contrast, and theme files of your own. Laser colours stay
 red for cut, blue for score and black for engrave, made lighter where the material is dark. See

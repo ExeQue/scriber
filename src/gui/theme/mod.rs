@@ -2,8 +2,8 @@
 //! current theme, followed live. The active theme is global so painting code anywhere can ask
 //! for its colours with `theme::get()`.
 
-mod menu;
 pub mod palette;
+mod picker;
 mod sources;
 mod visuals;
 
@@ -101,7 +101,7 @@ pub struct State {
     /// The active theme's name, and why the chosen one could not be used.
     name: String,
     error: Option<String>,
-    /// A message from the last menu action (where a theme was saved).
+    /// A message from the picker's last action (where a theme was saved).
     note: Option<String>,
     entries: Vec<sources::Entry>,
     omarchy: Option<Result<(String, Theme), String>>,

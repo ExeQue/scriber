@@ -57,6 +57,7 @@ const OTHER: &[(&str, &str)] = &[
     ("Ctrl+Z / Ctrl+Y", "Undo / Redo"),
     ("Ctrl+S / Ctrl+Shift+S", "Save / Save as"),
     ("Ctrl+O", "Open"),
+    ("Ctrl+,", "Settings"),
     ("Ctrl+C / Ctrl+X / Ctrl+V", "Copy / Cut / Paste at the pointer (also between windows)"),
     ("Ctrl+Shift+V", "Paste in place"),
     ("Ctrl+D", "Duplicate"),
@@ -91,7 +92,7 @@ impl App {
     /// Run the action of a pressed shortcut. In preview mode only Preview and zoom work.
     pub(super) fn shortcut_keys(&mut self, ctx: &egui::Context, editing: bool) {
         let typing = ctx.text_edit_focused() || self.takes_text() || !self.cmdline.input.is_empty();
-        if self.show_cmdline || self.confirm_close || self.library.is_some() || typing || !ctx.input(|i| i.modifiers.is_none()) {
+        if self.show_cmdline || self.confirm_close || self.library.is_some() || self.settings.is_some() || typing || !ctx.input(|i| i.modifiers.is_none()) {
             return;
         }
         let found = KEYS.iter().find(|e| (editing || !matches!(e.1, Action::Run(_))) && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, e.0)));

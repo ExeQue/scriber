@@ -13,7 +13,8 @@ Each tab keeps its own undo, selection, layers, comments, constraints, machine a
 and position. The material library is shared by all tabs.
 
 **File → Open recent** lists the last 10 files. When you quit, Scriber remembers which files were
-open and opens them again next time (unless you start it with a file). Quitting with unsaved tabs
+open and opens them again next time (unless you start it with a file, or turned that off in Edit →
+Settings… → Files, where you can also clear the recent list). Quitting with unsaved tabs
 asks once: Save all, Don't save or Cancel.
 
 AI agents work on the active tab unless they name another document; see

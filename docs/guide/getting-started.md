@@ -71,8 +71,8 @@ A plate of 100 × 60 mm with four 6 mm holes, cut out of 3 mm plywood.
    *Cut*, *Score*, *Engrave* and *No output*, and *Cut* is current, so everything you drew will be cut.
 6. **Look at it.** Press <kbd>V</kbd> for the laser preview: the plate shows as a loose piece with
    four open holes. Press <kbd>V</kbd> again to go back to editing.
-7. **Save and export.** <kbd>Ctrl+S</kbd> saves a `.scrbr` project. File → **Export SVG for the
-   laser…** writes a file your laser software can open; xTool users can also export an xTool Studio
+7. **Save and export.** <kbd>Ctrl+S</kbd> saves a `.scrbr` project. File → **Export ▸ SVG for
+   the laser…** writes a file your laser software can open; xTool users can also export an xTool Studio
    project (see [Exporting](./exporting)).
 
 Esc cancels a running tool and takes you back to selecting. Ctrl+Z undoes.

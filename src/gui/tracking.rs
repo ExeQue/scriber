@@ -362,6 +362,11 @@ impl App {
         }
         ui.separator();
         ui.label("Also track these angles");
+        self.polar_extra_field(ui);
+    }
+
+    /// POLAR's extra angles as a text field ("7.5, 63"); also in Settings → Drawing aids.
+    pub(super) fn polar_extra_field(&mut self, ui: &mut egui::Ui) {
         let r = ui.add(egui::TextEdit::singleline(&mut self.polar_extra_text).hint_text("e.g. 7.5, 63").desired_width(120.0));
         if r.changed() {
             self.aids.polar_extra = self.polar_extra_text.split([',', ' ', ';']).filter_map(|t| t.trim().parse().ok()).collect();

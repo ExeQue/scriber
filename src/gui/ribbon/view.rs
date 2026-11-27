@@ -58,8 +58,5 @@ impl App {
                 }
             });
         });
-        panel(ui, "Theme", |ui| {
-            ui.menu_button("Theme ▾", |ui| self.theme.menu(ui)).response.on_hover_text("Colours: follow Omarchy or the system, light, dark and more");
-        });
     }
 }

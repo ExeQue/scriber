@@ -40,27 +40,31 @@ impl App {
                     self.save(ui.ctx(), true);
                 }
                 ui.separator();
-                if ui.button("Import image…").clicked() {
-                    self.import_image_dialog(ui.ctx());
-                }
-                if ui.button("Import SVG…").clicked() {
-                    self.import_svg_dialog(ui.ctx());
-                }
-                if ui.button("Import DXF…").clicked() {
-                    self.import_dxf_dialog(ui.ctx());
-                }
-                if ui.button("Export SVG for the laser…").clicked() {
-                    self.export_svg(ui.ctx());
-                }
-                if ui.button("Export DXF…").clicked() {
-                    self.export_dxf(ui.ctx());
-                }
-                if ui.button("Export PNG…").clicked() {
-                    self.export_png(ui.ctx());
-                }
-                if ui.button("Export xTool Studio (.xs)…").clicked() {
-                    self.export_xs(ui.ctx());
-                }
+                ui.menu_button("Import", |ui| {
+                    if ui.button("Image…").clicked() {
+                        self.import_image_dialog(ui.ctx());
+                    }
+                    if ui.button("SVG…").clicked() {
+                        self.import_svg_dialog(ui.ctx());
+                    }
+                    if ui.button("DXF…").clicked() {
+                        self.import_dxf_dialog(ui.ctx());
+                    }
+                });
+                ui.menu_button("Export", |ui| {
+                    if ui.button("SVG for the laser…").clicked() {
+                        self.export_svg(ui.ctx());
+                    }
+                    if ui.button("PNG…").clicked() {
+                        self.export_png(ui.ctx());
+                    }
+                    if ui.button("DXF…").clicked() {
+                        self.export_dxf(ui.ctx());
+                    }
+                    if ui.button("xTool Studio (.xs)…").clicked() {
+                        self.export_xs(ui.ctx());
+                    }
+                });
                 ui.separator();
                 if ui.button("Quit").clicked() {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
@@ -102,9 +106,10 @@ impl App {
                 if ui.button("Select all  (Ctrl+A)").clicked() {
                     self.select_all();
                 }
-            });
-            ui.menu_button("View", |ui| {
-                ui.menu_button("Theme", |ui| self.theme.menu(ui));
+                ui.separator();
+                if ui.button("Settings…  (Ctrl+,)").clicked() {
+                    self.settings = Some(Default::default());
+                }
             });
             ui.menu_button("AI agents", |ui| {
                 if ui.button("Connect AI agents…").clicked() {

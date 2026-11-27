@@ -1,6 +1,7 @@
 //! The editor's own settings that survive a restart: the status bar toggles (GRID, SNAP, ORTHO,
-//! POLAR with its angles, OSNAP, OTRACK, INFER), a few View choices, the ribbon's tab and fold and the ops picked for DXF layers. Stored as JSON in the
-//! user's config folder; a missing or broken file just means the defaults.
+//! POLAR with its angles, OSNAP, OTRACK, INFER), a few View choices, the ribbon's tab and fold, the
+//! ops picked for DXF layers and the Settings dialog's choices. Stored as JSON in the user's config
+//! folder; a missing or broken file just means the defaults, and a missing field its default.
 
 use super::App;
 use serde::{Deserialize, Serialize};
@@ -26,8 +27,11 @@ pub struct Settings {
     theme: super::theme::Choice,
     /// File → Open recent, newest first; also what MCP's list_recent_projects shows.
     pub recent: Vec<PathBuf>,
-    /// The files open at exit, reopened on start.
+    /// The files open at exit, reopened on start when `reopen_files` is on.
     pub open_files: Vec<PathBuf>,
+    pub reopen_files: bool,
+    /// Sync the library sources at start (each at most once a day).
+    pub auto_sync: bool,
     /// Import DXF: the op last picked per DXF layer name (null = skipped).
     dxf_ops: std::collections::BTreeMap<String, Option<crate::model::Op>>,
 }
@@ -53,6 +57,8 @@ impl Default for Settings {
             theme: Default::default(),
             recent: Vec::new(),
             open_files: Vec::new(),
+            reopen_files: true,
+            auto_sync: true,
             dxf_ops: Default::default(),
         }
     }
@@ -101,6 +107,8 @@ impl App {
             theme: self.theme.choice.clone(),
             recent: self.ws.recent(),
             open_files: self.ws.docs().iter().filter_map(|(_, d)| d.lock().unwrap().path.clone()).collect(),
+            reopen_files: self.reopen_files,
+            auto_sync: self.auto_sync,
             dxf_ops: self.dxf_ops.clone(),
         }
     }
@@ -115,6 +123,7 @@ impl App {
         self.theme.choice = s.theme.clone();
         self.ws.set_recent(s.recent.clone());
         self.dxf_ops = s.dxf_ops.clone();
+        (self.reopen_files, self.auto_sync) = (s.reopen_files, s.auto_sync);
         self.saved_settings = s;
     }
 
@@ -134,12 +143,21 @@ mod tests {
     use crate::gui::theme::Choice;
 
     #[test]
-    fn the_theme_choice_survives_a_restart() {
-        let s = Settings { theme: Choice::File("mine".into()), ..Default::default() };
+    fn settings_survive_a_restart() {
+        let s = Settings { theme: Choice::File("mine".into()), reopen_files: false, auto_sync: false, polar_step: 7.5, polar_extra: vec![63.0], ..Default::default() };
         let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert!(back == s);
-        // Settings saved before themes existed follow the system.
-        let old: Settings = serde_json::from_str("{\"grid\": true}").unwrap();
-        assert!(old.theme == Choice::System);
+        // Settings saved before themes and the Settings dialog existed: the defaults for what is new.
+        let old: Settings = serde_json::from_str("{\"grid\": false, \"recent\": [\"/a.scrbr\"]}").unwrap();
+        assert!(old.theme == Choice::System && old.reopen_files && old.auto_sync);
+        assert!(!old.grid && old.recent == [PathBuf::from("/a.scrbr")]);
+    }
+
+    #[test]
+    fn the_app_keeps_what_it_is_given() {
+        let mut app = App::new(crate::model::Workspace::new(crate::model::Document::default()), Err(String::new()));
+        let s = Settings { reopen_files: false, auto_sync: false, show_cmdline: true, polar_extra: vec![7.5], ..Default::default() };
+        app.apply_settings(s.clone());
+        assert!(app.current_settings() == s && app.polar_extra_text == "7.5");
     }
 }

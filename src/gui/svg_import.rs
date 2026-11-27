@@ -1,4 +1,4 @@
-//! File > Import SVG…: a small dialog for placement and size, and the import itself (one undo step).
+//! File > Import > SVG…: a small dialog for placement and size, and the import itself (one undo step).
 
 use super::App;
 use super::tools::Tool;

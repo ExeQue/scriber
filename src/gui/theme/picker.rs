@@ -1,4 +1,4 @@
-//! The Theme menu (View tab and the View menu): every theme with a small preview swatch.
+//! The theme picker (Settings → Appearance): every theme with a small preview swatch, applied on click.
 
 use super::{Choice, State, Theme, sources};
 use eframe::egui::{self, RichText, Sense, Ui, vec2};
@@ -22,13 +22,20 @@ impl State {
             if ui.selectable_label(self.choice == choice, label).on_hover_text(tip).clicked() {
                 self.choice = choice;
                 self.note = None;
-                ui.close();
             }
         });
     }
 
-    pub fn menu(&mut self, ui: &mut Ui) {
+    pub fn picker(&mut self, ui: &mut Ui) {
         let omarchy = self.omarchy.clone();
+        ui.label(format!("Now: {}", self.name));
+        let status = match &omarchy {
+            Some(Ok((name, _))) => format!("Omarchy found: its theme is {name}."),
+            Some(Err(e)) => format!("Omarchy found, but its theme cannot be read: {e}"),
+            None => "Omarchy not found: System follows your system's light or dark mode.".into(),
+        };
+        ui.label(RichText::new(status).weak());
+        ui.add_space(6.0);
         let system = match &omarchy {
             Some(Ok((name, _))) => format!("Follows Omarchy ({name})"),
             _ => "Follows your system's light or dark mode".into(),
@@ -61,6 +68,17 @@ impl State {
             }
         }
         ui.separator();
+        ui.horizontal_wrapped(|ui| self.actions(ui));
+        if let Some(e) = &self.error {
+            ui.label(RichText::new(format!("{e}; using {}", self.name)).color(super::get().error));
+        }
+        if let Some(n) = &self.note {
+            ui.label(RichText::new(n).small());
+        }
+    }
+
+    /// Save as a file, open the folder, read the files again.
+    fn actions(&mut self, ui: &mut Ui) {
         if ui.button("Save current as theme…").on_hover_text("Write the theme you see now to a new file in the themes folder, to make your own from").clicked() {
             match sources::save(&self.name, &super::get()) {
                 Ok((stem, path)) => {
@@ -77,12 +95,6 @@ impl State {
         }
         if ui.button("Reload").on_hover_text("Read the theme files again").clicked() {
             self.reload();
-        }
-        if let Some(e) = &self.error {
-            ui.label(RichText::new(format!("{e}; using {}", self.name)).color(super::get().error));
-        }
-        if let Some(n) = &self.note {
-            ui.label(RichText::new(n).small());
         }
     }
 }
