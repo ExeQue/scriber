@@ -30,10 +30,15 @@ pub(super) fn svg(s: &State, px: f64) -> String {
     for item in &sc.engraved {
         if let Shape::Image { image, x, y, w, h, rotation } = &item.shape {
             let Some(img) = s.images.get(image) else { continue };
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&img.png);
+            // Burned like an engraved area of the same layer: its burn colour, as opaque as the pixel is dark.
+            let Some(mask) = crate::export::image::burn_mask(&img.png, mark(s, &lib, &p, item, p.burn)) else { continue };
+            let mut png = std::io::Cursor::new(Vec::new());
+            if mask.write_to(&mut png, image::ImageFormat::Png).is_err() {
+                continue;
+            }
+            let b64 = base64::engine::general_purpose::STANDARD.encode(png.into_inner());
             let (cx, cy) = (x + w / 2.0, y + h / 2.0);
-            // Multiply: white leaves the material as it is, black burns it.
-            writeln!(out, "<image x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\" preserveAspectRatio=\"none\" style=\"mix-blend-mode:multiply\" transform=\"rotate({rotation} {cx} {cy})\" href=\"data:image/png;base64,{b64}\"/>").unwrap();
+            writeln!(out, "<image x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\" preserveAspectRatio=\"none\" transform=\"rotate({rotation} {cx} {cy})\" href=\"data:image/png;base64,{b64}\"/>").unwrap();
             continue;
         }
         let d: Vec<String> = item.shape.laser_contours().iter().map(super::svg::path_data).collect();

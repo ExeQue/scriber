@@ -105,6 +105,23 @@ mod tests {
     }
 
     #[test]
+    fn preview_burns_images_like_engraved_areas() {
+        let mut d = Document::new(100.0, 50.0);
+        d.s.material = Some("basswood-plywood-3mm".into());
+        d.add("plate", Op::Cut, Shape::path(Contour::rect(5.0, 5.0, 60.0, 40.0, 0.0)));
+        d.add("face", Op::Engrave, Shape::path(Contour::rect(70.0, 10.0, 10.0, 10.0, 0.0)));
+        // Left half black, right half white: white must not paint a white box over the piece.
+        let grey = image::GrayImage::from_fn(20, 10, |x, _| image::Luma([if x < 10 { 0 } else { 255 }]));
+        let img = crate::export::image::to_grey(&crate::export::image::encode_png(&grey).unwrap()).unwrap();
+        d.place_image(img, [10.0, 10.0], Some(40.0), "logo");
+        let out = image::load_from_memory(&super::preview_png(&d.s, 50.8).unwrap()).unwrap().to_rgb8();
+        let p = crate::model::preview::palette(&d.s, &crate::library::get());
+        assert_eq!(out.get_pixel(150, 30).0, out.get_pixel(40, 30).0, "black pixels burn like the engraved area");
+        assert_eq!(out.get_pixel(40, 30).0, p.burn);
+        assert_eq!(out.get_pixel(80, 30).0, p.piece, "white pixels leave the cut-out piece as it is");
+    }
+
+    #[test]
     fn preview_burn_follows_the_layer_energy() {
         use crate::model::layer::Overrides;
         let mut d = Document::new(100.0, 50.0);
