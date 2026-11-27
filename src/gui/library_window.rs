@@ -290,10 +290,13 @@ mod tests {
         let empty = Library { machines: library::builtin_machines(), ..Default::default() };
         let ctx = egui::Context::default();
         crate::gui::lucide::install(&ctx);
-        for size in [egui::vec2(1600.0, 900.0), egui::vec2(800.0, 600.0)] {
+        // 1280 × 800: a 1920 × 1200 screen at scale 1.5.
+        for size in [egui::vec2(1600.0, 900.0), egui::vec2(1280.0, 800.0), egui::vec2(800.0, 600.0)] {
             for (lib, tab) in [(&full, Tab::Machines), (&full, Tab::Materials), (&empty, Tab::Materials)] {
                 let mut ed = Editor::new(&State::default());
                 (ed.lib, ed.tab) = (lib.clone(), tab);
+                let m2 = lib.machines.iter().position(|m| m.id == "xtool-m2").unwrap();
+                ed.machine = m2;
                 let t = texts(&ctx, &mut ed, size);
                 let what = format!("{size:?}, {} page, {} materials", if tab == Tab::Machines { "machines" } else { "materials" }, lib.materials.len());
                 let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
@@ -308,6 +311,17 @@ mod tests {
                 assert!(save.1.left() > form.1.left() && save.1.top() > add.1.top(), "{what}: Save must be bottom right: {:?}", save.1);
                 for x in t.iter().filter(|x| x.2) {
                     assert!(x.1.right() <= save.1.right() + 12.0, "{what}: \"{}\" runs past the modal: {:?}", x.0, x.1);
+                }
+                if tab == Tab::Machines {
+                    // Table headers stay on one line; laser names show in full (except on a tiny screen).
+                    for title in ["Name", "Type", "Power", "Cut", "Score", "Engrave"] {
+                        let h = find(&t, title);
+                        assert!(h.2 && h.1.height() < 24.0, "{what}: header \"{title}\" wraps or is hidden: {:?}", h.1);
+                    }
+                    for l in lib.machines[m2].lasers.iter().filter(|_| size.x >= 1280.0) {
+                        let name = t.iter().find(|x| x.0 == l.name).unwrap_or_else(|| panic!("{what}: laser \"{}\" not painted", l.name));
+                        assert!(name.2, "{what}: laser name \"{}\" is cut off: {:?} clipped to the field", l.name, name.1);
+                    }
                 }
                 if tab == Tab::Materials && !lib.materials.is_empty() {
                     let row = t.iter().find(|x| x.0.starts_with("Basswood plywood 10")).expect("the list shows the material");

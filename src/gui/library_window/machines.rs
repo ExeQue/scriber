@@ -108,7 +108,9 @@ fn other_software(ui: &mut egui::Ui, m: &mut Machine) {
 /// One table row per laser module.
 fn lasers(ui: &mut egui::Ui, m: &mut Machine, index: usize, confirm: &mut Option<Confirm>) {
     let mut remove = None;
-    egui::Grid::new("lasers").num_columns(4 + Operation::ALL.len()).striped(true).spacing([14.0, 8.0]).show(ui, |ui| {
+    // The name takes what the other columns leave (about 330 pt with their spacing), up to 240.
+    let name_width = (ui.available_width() - 340.0).clamp(80.0, 240.0);
+    egui::Grid::new("lasers").num_columns(4 + Operation::ALL.len()).min_col_width(0.0).striped(true).spacing([10.0, 8.0]).show(ui, |ui| {
         for title in ["Name", "Type", "Power"] {
             column_title(ui, title);
         }
@@ -118,8 +120,10 @@ fn lasers(ui: &mut egui::Ui, m: &mut Machine, index: usize, confirm: &mut Option
         ui.label(""); // the remove column
         ui.end_row();
         for (i, l) in m.lasers.iter_mut().enumerate() {
-            ui.add(egui::TextEdit::singleline(&mut l.name).id_salt(("laser_name", i)).desired_width(200.0));
-            ComboBox::from_id_salt(("kind", i)).selected_text(l.kind.label()).width(120.0).show_ui(ui, |ui| {
+            // A grid cell only offers last frame's column width, so a plain field would keep its
+            // first, tiny width: claim the size outright.
+            ui.add_sized([name_width, ui.spacing().interact_size.y], egui::TextEdit::singleline(&mut l.name).id_salt(("laser_name", i)));
+            ComboBox::from_id_salt(("kind", i)).selected_text(l.kind.label()).width(100.0).show_ui(ui, |ui| {
                 for k in LaserKind::ALL {
                     ui.selectable_value(&mut l.kind, k, k.label());
                 }

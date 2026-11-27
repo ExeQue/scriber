@@ -100,9 +100,9 @@ pub(super) fn field_label(ui: &mut egui::Ui, text: &str) -> egui::Response {
     .inner
 }
 
-/// A column title in a table.
+/// A column title in a table, on one line: the column grows to fit it.
 pub(super) fn column_title(ui: &mut egui::Ui, text: &str) -> egui::Response {
-    ui.label(RichText::new(text).weak())
+    ui.add(egui::Label::new(RichText::new(text).weak()).extend())
 }
 
 /// The red ✕ that deletes something (after asking).
