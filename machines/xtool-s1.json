@@ -4,6 +4,7 @@
   "vendor": "xTool",
   "model": "S1",
   "xtool": {"device": "MD2", "name": "S1"},
+  "image_modes": "xtool-studio",
   "width": 498,
   "height": 330,
   "lasers": [
@@ -14,5 +15,5 @@
     {"id": "ir-3w", "name": "3 W infrared laser", "kind": "infrared", "power_w": 3, "ops": ["score", "engrave"], "area": [498, 319]}
   ],
   "notes": "Enclosed diode laser with swappable modules (alias D2).",
-  "source": "xTool Studio 1.9.11 device extension MD2 (exts/S1), read 2026-11-26. Work areas from the extension's processingArea table (per module watts). The extension only gives watts (power enum 0/2/3/10/20/40); 2 W and 3 W as infrared (they share positioning offsets, and the extension mentions an infrared laser module) and 10/20/40 W as blue diodes are not stated per module. Which operations each module can do is an assumption."
+  "source": "Image modes: xTool Studio's image mode list, values read from projects saved by xTool Studio for the M2 (2026-11-27); assumed the same for this machine. xTool Studio 1.9.11 device extension MD2 (exts/S1), read 2026-11-26. Work areas from the extension's processingArea table (per module watts). The extension only gives watts (power enum 0/2/3/10/20/40); 2 W and 3 W as infrared (they share positioning offsets, and the extension mentions an infrared laser module) and 10/20/40 W as blue diodes are not stated per module. Which operations each module can do is an assumption."
 }

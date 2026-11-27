@@ -1,0 +1,10 @@
+[
+  { "id": "grayscale", "name": "Grayscale", "value": "grayscale" },
+  { "id": "jarvis", "name": "Jarvis", "value": "Jarvis" },
+  { "id": "bayer", "name": "Bayer", "value": "Bayer" },
+  { "id": "floyd", "name": "Floyd", "value": "Floyd" },
+  { "id": "stucki", "name": "Stucki", "value": "Stucki" },
+  { "id": "atkinson", "name": "Atkinson", "value": "Atkinson" },
+  { "id": "sierra", "name": "Sierra", "value": "Sierra" },
+  { "id": "passthrough", "name": "Passthrough", "value": "passthrough" }
+]

@@ -765,7 +765,7 @@ fn own_files(lib: &Library, machines: Option<&[String]>, materials: Option<&[Str
     }
     let ms: Vec<&Machine> = machine_ids.iter().filter_map(|id| lib.machine(id)).collect();
     let mut files = Vec::new();
-    for (sub, id, json) in ms.iter().map(|m| ("machines", &m.id, serde_json::to_string_pretty(m))).chain(mats.iter().map(|m| ("materials", &m.id, serde_json::to_string_pretty(m)))) {
+    for (sub, id, json) in ms.iter().map(|m| ("machines", &m.id, serde_json::to_string_pretty(&m.inlined()))).chain(mats.iter().map(|m| ("materials", &m.id, serde_json::to_string_pretty(m)))) {
         if !safe_name(&format!("{id}.json")) {
             return Err(format!("the id \"{id}\" cannot be a file name (use letters, digits, - and _)"));
         }

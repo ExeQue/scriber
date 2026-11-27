@@ -36,6 +36,7 @@ and zoom to them. The list is a window, so you can keep editing while it is open
 | Details smaller than the beam | They burn away or blur |
 | Very small text | Hard to read once lasered |
 | No setting for an operation | The material has no power/speed for that layer's operation on this machine and laser |
+| Image mode the machine lacks | A layer's [image mode](./layers#laser-settings-per-layer) is not one of the machine's (after switching machines); its images get the machine's default |
 
 "Nothing found" means the drawing looks ready. Scriber does not plan the job or estimate its time;
 your laser software does that.

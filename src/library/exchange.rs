@@ -62,7 +62,8 @@ pub fn bundle(lib: &Library, machines: Option<&[String]>, materials: Option<&[St
             ids.push(s.machine.clone());
         }
     }
-    let machines = ids.iter().map(|id| lib.machine(id).cloned().ok_or(format!("no machine with id {id}"))).collect::<Result<_, _>>()?;
+    // Image mode set names become their lists: the receiving Scriber may not have the same sets.
+    let machines = ids.iter().map(|id| lib.machine(id).map(Machine::inlined).ok_or(format!("no machine with id {id}"))).collect::<Result<_, _>>()?;
     Ok(Bundle { format: FORMAT.into(), version: VERSION, machines, materials: mats, invalid: Vec::new() })
 }
 
@@ -89,14 +90,15 @@ pub fn read(path: &Path) -> Result<Bundle, String> {
 
 /// How many machines and materials in the bundle have the id of a different one in the library.
 pub fn conflicts(lib: &Library, b: &Bundle) -> usize {
-    b.machines.iter().filter(|m| lib.machine(&m.id).is_some_and(|o| o != *m)).count() + b.materials.iter().filter(|m| lib.material(&m.id).is_some_and(|o| o != *m)).count()
+    b.machines.iter().filter(|m| lib.machine(&m.id).is_some_and(|o| *o != (*m).clone().with_set_names())).count() + b.materials.iter().filter(|m| lib.material(&m.id).is_some_and(|o| o != *m)).count()
 }
 
 /// Merge the bundle into the library. Machines go first, so a renamed machine's materials follow it.
 pub fn import(lib: &mut Library, b: Bundle, on: OnConflict) -> Report {
     let mut r = Report { invalid: b.invalid, ..Report::default() };
     let mut renamed: HashMap<String, String> = HashMap::new();
-    for mut m in b.machines {
+    for m in b.machines {
+        let mut m = m.with_set_names();
         match lib.machine(&m.id) {
             None => {
                 r.added.push(m.id.clone());

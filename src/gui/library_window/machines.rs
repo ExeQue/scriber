@@ -22,7 +22,7 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
         let lib = &mut ed.lib;
         match action {
             Some(ListAction::Add) => {
-                let m = Machine { id: lib.new_id("New machine"), name: "New machine".into(), vendor: String::new(), model: String::new(), width: 400.0, height: 300.0, lasers: vec![new_laser("laser-1".into())], notes: String::new(), source: String::new(), xtool: None };
+                let m = Machine { id: lib.new_id("New machine"), name: "New machine".into(), vendor: String::new(), model: String::new(), width: 400.0, height: 300.0, lasers: vec![new_laser("laser-1".into())], notes: String::new(), source: String::new(), xtool: None, image_modes: None };
                 lib.machines.push(m);
                 ed.machine = lib.machines.len() - 1;
             }

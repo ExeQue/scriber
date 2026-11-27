@@ -36,6 +36,9 @@ pub struct UpdateLayer {
     pub lines_per_cm: Option<Option<f64>>,
     /// The material's profile for the layer's op (a setting's name, see list_materials); "" = the default one.
     pub profile: Option<String>,
+    /// Engrave layers: how its images are engraved, the id of one of the machine's image modes
+    /// (list_machines image_modes, e.g. "bayer"); "" = the machine's default.
+    pub image_mode: Option<String>,
     /// Hidden layers are not drawn, lasered or exported.
     pub visible: Option<bool>,
     /// Items on a locked layer cannot be selected or edited.
@@ -73,15 +76,32 @@ pub(super) fn layers(d: &Document) -> Value {
                 v["lines_per_cm"] = (10.0 / i).into();
             }
             v["laser_setting"] = json!(op_operation(l.op).and_then(|op| l.setting(&d.s, &lib, op)));
+            if l.op == Op::Engrave {
+                v["image_mode_used"] = json!(l.image_mode(&d.s, &lib).map(|m| m.id));
+            }
             v
         })
         .collect();
     json!(list)
 }
 
+/// Why `id` cannot be a layer's image mode: the document's machine does not offer it. A document
+/// without a machine takes any id (the mode is checked when a machine is chosen, by the pre-flight check).
+fn unknown_image_mode(s: &crate::model::State, id: &str) -> Option<String> {
+    let machine = library::get().machine(s.machine.as_deref()?)?.clone();
+    let modes = machine.image_modes();
+    if id.is_empty() || modes.iter().any(|m| m.id == id) {
+        return None;
+    }
+    Some(match modes.len() {
+        0 => format!("{} has no image modes to choose from", machine.name),
+        _ => format!("{} has no image mode \"{id}\"; it has: {}", machine.name, modes.iter().map(|m| m.id.as_str()).collect::<Vec<_>>().join(", ")),
+    })
+}
+
 #[tool_router(router = layers_router, vis = "pub(super)")]
 impl Server {
-    #[tool(description = "List the layers in order: id, name, op, colour, own settings (power/speed/passes that override the material library), lines_per_cm (the layer's own engrave line spacing; line_interval is the same in mm), visible, locked, number of items, whether it is current, and laser_setting: the power/speed/passes the laser uses (library preset for the op with the layer's own numbers on top; null when neither gives them).")]
+    #[tool(description = "List the layers in order: id, name, op, colour, own settings (power/speed/passes that override the material library), lines_per_cm (the layer's own engrave line spacing; line_interval is the same in mm), image_mode (the layer's own; image_mode_used on engrave layers: the one its images get, the machine's default when it has none; null when the machine has no modes), visible, locked, number of items, whether it is current, and laser_setting: the power/speed/passes the laser uses (library preset for the op with the layer's own numbers on top; null when neither gives them).")]
     fn list_layers(&self) -> ToolResult {
         ok(layers(&self.doc.lock()))
     }
@@ -98,7 +118,7 @@ impl Server {
         })
     }
 
-    #[tool(description = "Change a layer: name, op (changes what the laser does with all its items), color, settings (the layer's own power/speed/passes; missing = material library), lines_per_cm (engrave line spacing, lines per cm = 10 / mm; null = material library), visible, locked, order (position) and current. One undo step.")]
+    #[tool(description = "Change a layer: name, op (changes what the laser does with all its items), color, settings (the layer's own power/speed/passes; missing = material library), lines_per_cm (engrave line spacing, lines per cm = 10 / mm; null = material library), profile, image_mode (how images on an engrave layer are engraved: greyscale or a dither, an id from the machine's image_modes in list_machines; \"\" = the machine's default), visible, locked, order (position) and current. One undo step.")]
     fn update_layer(&self, Parameters(p): Parameters<UpdateLayer>) -> ToolResult {
         if let Some(e) = p.settings.as_ref().and_then(|o| o.check().err()) {
             return fail(e);
@@ -116,6 +136,9 @@ impl Server {
             if d.s.layer(p.id).is_none() {
                 return fail(format!("no layer with id {}", p.id));
             }
+            if let Some(e) = p.image_mode.as_deref().and_then(|id| unknown_image_mode(&d.s, id)) {
+                return fail(e);
+            }
             d.checkpoint();
             let l = d.s.layer_mut(p.id).unwrap();
             l.name = p.name.unwrap_or(l.name.clone());
@@ -127,6 +150,9 @@ impl Server {
             }
             if let Some(name) = p.profile {
                 l.profile = (!name.is_empty()).then_some(name);
+            }
+            if let Some(id) = p.image_mode {
+                l.image_mode = (!id.is_empty()).then_some(id);
             }
             l.visible = p.visible.unwrap_or(l.visible);
             l.locked = p.locked.unwrap_or(l.locked);
@@ -218,6 +244,18 @@ mod tests {
         assert_eq!(doc.lock().item(b).unwrap().layer, cut);
         assert!(doc.lock().undo());
         assert_eq!(doc.lock().item(b).unwrap().layer, deep);
+        // Image modes: any id without a machine; with one, only its modes; "" goes back to its default.
+        let engrave = doc.lock().layer_for(Op::Engrave);
+        let mode = |list: &Value| list.as_array().unwrap().iter().find(|l| l["id"].as_u64() == Some(engrave)).unwrap().clone();
+        assert!(mode(&text(server.update_layer(args(json!({"id": engrave, "image_mode": "anything"})))))["image_mode_used"].is_null(), "no machine");
+        doc.lock().s.machine = Some("xtool-m2".into());
+        let refused = server.update_layer(args(json!({"id": engrave, "image_mode": "nope"}))).unwrap();
+        assert_eq!(refused.is_error, Some(true));
+        assert!(refused.content[0].as_text().unwrap().text.contains("bayer"), "the error lists the machine's modes");
+        let l = mode(&text(server.update_layer(args(json!({"id": engrave, "image_mode": "bayer"})))));
+        assert_eq!((l["image_mode"].as_str(), l["image_mode_used"].as_str()), (Some("bayer"), Some("bayer")));
+        let l = mode(&text(server.update_layer(args(json!({"id": engrave, "image_mode": ""})))));
+        assert_eq!((l.get("image_mode"), l["image_mode_used"].as_str()), (None, Some("grayscale")));
         // Items on a locked layer cannot be edited.
         text(server.update_layer(args(json!({"id": deep, "locked": true}))));
         let edit: Parameters<UpdateItem> = args(json!({"id": b, "name": "x"}));

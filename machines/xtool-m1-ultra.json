@@ -4,6 +4,7 @@
   "vendor": "xTool",
   "model": "M1 Ultra",
   "xtool": {"device": "ZH009", "name": "M1 Ultra"},
+  "image_modes": "xtool-studio",
   "width": 300,
   "height": 300,
   "lasers": [
@@ -12,5 +13,5 @@
     {"id": "diode-20w", "name": "20 W blue laser", "kind": "diode", "power_w": 20, "ops": ["cut", "score", "engrave"], "xtool_laser": "laser_20W"}
   ],
   "notes": "Multi-tool machine: blue diode laser heads plus inkjet printer, blade cutter and pen heads.",
-  "source": "xTool Studio 1.9.11 device extension ZH009 (exts/M1Ultra), read 2026-11-26. Work area from processingArea (300 x 300); laser heads from the head table (Active_Laser_Blue_Power_5/10/20) and the laser options laser_10W / laser_20W (the 5 W head has no laser string in the extension). Which operations each module can do is an assumption."
+  "source": "Image modes: xTool Studio's image mode list, values read from projects saved by xTool Studio for the M2 (2026-11-27); assumed the same for this machine. xTool Studio 1.9.11 device extension ZH009 (exts/M1Ultra), read 2026-11-26. Work area from processingArea (300 x 300); laser heads from the head table (Active_Laser_Blue_Power_5/10/20) and the laser options laser_10W / laser_20W (the 5 W head has no laser string in the extension). Which operations each module can do is an assumption."
 }

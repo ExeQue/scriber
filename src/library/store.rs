@@ -80,17 +80,20 @@ pub fn load(path: &Path) -> anyhow::Result<Library> {
     };
     anyhow::ensure!(file.version <= VERSION, "the library was saved by a newer Scriber (version {}); please update", file.version);
     migrate_engrave(&mut file);
-    fill_xtool_ids(&mut file);
+    fill_from_builtins(&mut file);
     Ok(merged_with(file, super::sources::base()))
 }
 
-/// Edited built-in machines saved before the xTool ids existed get them from the built-in.
-fn fill_xtool_ids(file: &mut LibraryFile) {
+/// Edited built-in machines saved before the xTool ids or the image modes existed get them from the built-in.
+fn fill_from_builtins(file: &mut LibraryFile) {
     let builtin = builtin_machines();
     for m in &mut file.machines {
         let Some(b) = builtin.iter().find(|b| b.id == m.id) else { continue };
         if m.xtool.is_none() {
             m.xtool = b.xtool.clone();
+        }
+        if m.image_modes.is_none() {
+            m.image_modes = b.image_modes.clone();
         }
         for l in m.lasers.iter_mut().filter(|l| l.xtool_laser.is_none()) {
             l.xtool_laser = b.laser(&l.id).and_then(|bl| bl.xtool_laser.clone());
@@ -143,7 +146,7 @@ mod tests {
 
     fn k40() -> Machine {
         let laser = Laser { id: "co2".into(), name: "CO2 tube".into(), kind: LaserKind::Co2, power_w: 40.0, ops: Operation::ALL.to_vec(), area: None, xtool_laser: None };
-        Machine { id: "k40".into(), name: "K40".into(), vendor: String::new(), model: String::new(), width: 300.0, height: 200.0, lasers: vec![laser], notes: String::new(), source: String::new(), xtool: None }
+        Machine { id: "k40".into(), name: "K40".into(), vendor: String::new(), model: String::new(), width: 300.0, height: 200.0, lasers: vec![laser], notes: String::new(), source: String::new(), xtool: None, image_modes: None }
     }
 
     #[test]
@@ -185,10 +188,11 @@ mod tests {
     }
 
     #[test]
-    fn edited_m2_from_before_xtool_ids_gets_them() {
+    fn edited_m2_from_before_xtool_ids_and_image_modes_gets_them() {
         let path = temp("xtool-ids");
         let mut m2 = builtin_machines().into_iter().find(|m| m.id == "xtool-m2").unwrap();
         m2.xtool = None;
+        m2.image_modes = None;
         m2.lasers.iter_mut().for_each(|l| l.xtool_laser = None);
         m2.notes = "mine".into();
         let file = serde_json::json!({"version": 1, "machines": [m2]});
@@ -196,6 +200,7 @@ mod tests {
         let back = load(&path).unwrap();
         let m = back.machine("xtool-m2").unwrap();
         assert_eq!((m.notes.as_str(), m.xtool_device(), m.lasers[3].xtool_laser.as_deref()), ("mine", Some("JS002"), Some("laser_red_3W")));
+        assert_eq!(m.image_modes().len(), 8, "the built-in's image modes");
         std::fs::remove_dir_all(path.parent().unwrap()).ok();
     }
 

@@ -4,6 +4,7 @@
   "vendor": "xTool",
   "model": "F1",
   "xtool": {"device": "MF1", "name": "F1"},
+  "image_modes": "xtool-studio",
   "width": 115,
   "height": 115,
   "lasers": [
@@ -11,5 +12,5 @@
     {"id": "ir-2w", "name": "2 W infrared laser", "kind": "infrared", "power_w": 2, "ops": ["score", "engrave"]}
   ],
   "notes": "Galvo laser. Blue 455 nm, infrared 1064 nm.",
-  "source": "xTool Studio 1.9.11 device extension MF1 (exts/F1), read 2026-11-26. Work area from processingArea (LASER_PLANE 115 x 115); modules from defaultPower [10, 2] with powerTypePriority laserPower, redPower and the labels 455-<W>W / 1064-<W>W. Which operations each module can do is an assumption."
+  "source": "Image modes: xTool Studio's image mode list, values read from projects saved by xTool Studio for the M2 (2026-11-27); assumed the same for this machine. xTool Studio 1.9.11 device extension MF1 (exts/F1), read 2026-11-26. Work area from processingArea (LASER_PLANE 115 x 115); modules from defaultPower [10, 2] with powerTypePriority laserPower, redPower and the labels 455-<W>W / 1064-<W>W. Which operations each module can do is an assumption."
 }

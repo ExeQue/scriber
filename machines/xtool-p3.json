@@ -4,6 +4,7 @@
   "vendor": "xTool",
   "model": "P3",
   "xtool": {"device": "ZY015", "name": "P3"},
+  "image_modes": "xtool-studio",
   "width": 915,
   "height": 458,
   "lasers": [
@@ -11,5 +12,5 @@
     {"id": "ir-5w", "name": "5 W infrared laser", "kind": "infrared", "power_w": 5, "ops": ["score", "engrave"], "area": [670, 427]}
   ],
   "notes": "CO2 laser with an optional 5 W infrared laser module (and an inkjet printer head). With the 5 W module fitted, the CO2 area is 670 x 458.",
-  "source": "xTool Studio 1.9.11 device extension ZY015 (exts/P3), read 2026-11-26. Work areas from processingArea (915 x 458; RED_LASER x 245..915, height 458 - 31; co2With5wArea 670 x 458); modules from defaultPower [80, 5, 0], the CO2 head and the Infrared laser module. Which operations each module can do is an assumption."
+  "source": "Image modes: xTool Studio's image mode list, values read from projects saved by xTool Studio for the M2 (2026-11-27); assumed the same for this machine. xTool Studio 1.9.11 device extension ZY015 (exts/P3), read 2026-11-26. Work areas from processingArea (915 x 458; RED_LASER x 245..915, height 458 - 31; co2With5wArea 670 x 458); modules from defaultPower [80, 5, 0], the CO2 head and the Infrared laser module. Which operations each module can do is an assumption."
 }

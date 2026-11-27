@@ -39,6 +39,7 @@ pub enum Kind {
     TooSmall,
     SmallText,
     NoSetting,
+    ImageMode,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
@@ -69,6 +70,7 @@ pub fn check(s: &State, lib: &Library) -> Vec<Warning> {
     out.extend(open_cuts(s, &lasered));
     out.extend(too_small(&lasered));
     out.extend(small_text(&lasered));
+    out.extend(image_modes(s, lib, &lasered));
     out.sort_by_key(|w| w.severity != Severity::Error);
     out
 }
@@ -205,6 +207,25 @@ fn no_settings(s: &State, lib: &Library, items: &[&Item]) -> Vec<Warning> {
         .collect()
 }
 
+/// Layers with images set to an image mode the document's machine does not have: they get its default.
+fn image_modes(s: &State, lib: &Library, items: &[&Item]) -> Vec<Warning> {
+    let Some(machine) = s.machine.as_deref().and_then(|id| lib.machine(id)) else { return Vec::new() };
+    let modes = machine.image_modes();
+    s.layers
+        .iter()
+        .filter_map(|layer| {
+            let id = layer.image_mode.as_deref()?;
+            if modes.iter().any(|m| m.id == id) {
+                return None;
+            }
+            let ids: Vec<u64> = items.iter().filter(|i| i.layer == layer.id && matches!(i.shape, Shape::Image { .. })).map(|i| i.id).collect();
+            let fallback = modes.first().map_or("the software's default".to_string(), |m| m.name.clone());
+            let text = format!("Layer \u{201c}{}\u{201d}: the {} has no image mode \u{201c}{id}\u{201d}; its images are engraved with {fallback}.", layer.name, machine.name);
+            warn(Severity::Warning, Kind::ImageMode, text, ids)
+        })
+        .collect()
+}
+
 /// The library operation an item needs; images are engraved.
 pub fn operation(s: &State, i: &Item) -> Operation {
     match (s.effective_op(i), &i.shape) {
@@ -294,5 +315,22 @@ mod tests {
         let b = d.add("b", Op::Cut, Shape::path(Contour::circle(50.0, 50.0, 10.0)));
         d.add("c", Op::Cut, Shape::path(Contour::circle(50.0, 50.0, 12.0)));
         assert_eq!(kinds(&d, &lib()), vec![(Kind::DoubleLine, vec![a, b])]);
+    }
+
+    #[test]
+    fn an_image_mode_the_machine_lacks_is_found() {
+        let mut d = Document::new(100.0, 100.0);
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::GrayImage::new(4, 4).write_to(&mut png, image::ImageFormat::Png).unwrap();
+        let img = d.place_image(crate::model::Img { png: png.into_inner(), w: 4, h: 4 }, [10.0, 10.0], Some(10.0), "photo");
+        let engrave = d.item(img).unwrap().layer;
+        d.s.layer_mut(engrave).unwrap().image_mode = Some("halftone".into());
+        let modes = |d: &Document| kinds(d, &lib()).into_iter().filter(|k| k.0 == Kind::ImageMode).collect::<Vec<_>>();
+        assert_eq!(modes(&d), vec![], "no machine chosen");
+        d.s.machine = Some("xtool-m2".into());
+        assert_eq!(modes(&d), vec![(Kind::ImageMode, vec![img])]);
+        assert!(check(&d.s, &lib()).iter().any(|w| w.kind == Kind::ImageMode && w.text.contains("Grayscale")), "names the default it falls back to");
+        d.s.layer_mut(engrave).unwrap().image_mode = Some("bayer".into());
+        assert_eq!(modes(&d), vec![]);
     }
 }
