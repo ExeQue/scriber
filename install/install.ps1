@@ -18,6 +18,10 @@
     $repo = 'ExeQue/scriber'
     $dir = if ($env:SCRIBER_INSTALL_DIR) { $env:SCRIBER_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\Scriber' }
     $base = if ($env:SCRIBER_DOWNLOAD_BASE) { $env:SCRIBER_DOWNLOAD_BASE } else { "https://github.com/$repo/releases/download" }
+    $uninstall = $env:SCRIBER_UNINSTALL -eq '1'
+    $version = $env:SCRIBER_VERSION
+    # One-shot options: clear them so the next run in the same window is a plain install of the latest.
+    Remove-Item Env:SCRIBER_UNINSTALL, Env:SCRIBER_VERSION -ErrorAction SilentlyContinue
     $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Scriber.lnk'
     $exe = Join-Path $dir 'scriber.exe'
 
@@ -33,7 +37,7 @@
     $pathParts = @(if ($userPath) { $userPath -split ';' | Where-Object { $_ } })
     $onPath = $pathParts | Where-Object { $_.TrimEnd('\') -ieq $dir.TrimEnd('\') }
 
-    if ($env:SCRIBER_UNINSTALL -eq '1') {
+    if ($uninstall) {
         foreach ($f in 'scriber.exe', 'scriber.exe.old', 'LICENSE', 'README.md') {
             Remove-Item (Join-Path $dir $f) -Force -ErrorAction SilentlyContinue
         }
@@ -54,7 +58,7 @@
     }
     $target = 'x86_64-pc-windows-msvc'
 
-    $tag = $env:SCRIBER_VERSION
+    $tag = $version
     if (-not $tag) {
         $tag = (Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest").tag_name
         if (-not $tag) { throw 'Could not look up the latest release; set $env:SCRIBER_VERSION (e.g. v0.1.0) to pick one.' }
