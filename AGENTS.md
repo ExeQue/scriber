@@ -29,6 +29,7 @@ bridge (`scriber mcp`), a GUI-less MCP server (`scriber mcp --headless`) and age
 | `src/agents.rs` | Detects AI agents and adds or removes Scriber's MCP entry and skill. |
 | `machines/` | Built-in machine definitions, embedded by `build.rs`. Scriber ships no material presets. |
 | `src/library/test_materials/` | Material fixtures, used by tests only. |
+| `docs/public/logo.svg`, `assets/scriber.ico` | The logo: the source SVG (docs favicon, window icon, Linux launcher icon) and the Windows program icon made from it (`build.rs` embeds it). |
 | `themes/`, `contrib/omarchy/` | Built-in themes and the Omarchy theme template. |
 | `skills/scriber/SKILL.md` | The agent skill, embedded in the binary and installed by `scriber agents add`. |
 | `docs/` | VitePress user docs; `docs/agents/mcp-tools.md` is generated. |

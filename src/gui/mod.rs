@@ -248,7 +248,8 @@ pub fn run(file: Option<PathBuf>) -> anyhow::Result<()> {
             .with_app_id("scriber")
             .with_inner_size([1280.0, 820.0])
             .with_min_inner_size([800.0, 500.0])
-            .with_drag_and_drop(true),
+            .with_drag_and_drop(true)
+            .with_icon(app_icon()),
         ..Default::default()
     };
     eframe::run_native(
@@ -784,5 +785,35 @@ impl App {
         }
         let g = if self.view.zoom >= 4.0 { 1.0 } else if self.view.zoom >= 1.0 { 5.0 } else { 10.0 };
         [(p[0] / g).round() * g, (p[1] / g).round() * g]
+    }
+}
+
+/// The window icon: the logo the docs use, rendered at 256 px.
+fn app_icon() -> egui::IconData {
+    use resvg::{tiny_skia, usvg};
+    const SIZE: u32 = 256;
+    let tree = usvg::Tree::from_str(include_str!("../../docs/public/logo.svg"), &usvg::Options::default()).expect("the logo is valid SVG");
+    let mut pixmap = tiny_skia::Pixmap::new(SIZE, SIZE).expect("a 256 px pixmap");
+    let scale = SIZE as f32 / tree.size().width();
+    resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+    // tiny-skia keeps premultiplied alpha; the icon wants it straight.
+    let rgba = pixmap.pixels().iter().flat_map(|p| {
+        let c = p.demultiply();
+        [c.red(), c.green(), c.blue(), c.alpha()]
+    });
+    egui::IconData { rgba: rgba.collect(), width: SIZE, height: SIZE }
+}
+
+#[cfg(test)]
+mod icon_tests {
+    #[test]
+    fn app_icon_renders_the_logo() {
+        let icon = super::app_icon();
+        assert_eq!((icon.width, icon.height, icon.rgba.len()), (256, 256, 256 * 256 * 4));
+        let px = |x: usize, y: usize| &icon.rgba[(y * 256 + x) * 4..][..4];
+        assert_eq!(px(0, 0)[3], 0, "the rounded corner is transparent");
+        assert_eq!(px(230, 128)[3], 255, "the wood is opaque");
+        let burn = px(128, 128); // the middle bar of the S
+        assert!(burn[0] < 90 && burn[3] == 255, "the S is burned dark: {burn:?}");
     }
 }

@@ -20,6 +20,7 @@ endif
 
 BIN := $(DESTDIR)$(PREFIX)/bin/scriber
 DESKTOP := $(DESTDIR)$(DATADIR)/applications/scriber.desktop
+ICON := $(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/scriber.svg
 
 .PHONY: help dev build release run test lint check docs-install docs docs-build mcp-docs headless \
 	install install-dev uninstall
@@ -64,10 +65,11 @@ install: ## Build and install to PREFIX/bin (~/.local/bin), plus a launcher entr
 	mkdir -p "$(DESTDIR)$(PREFIX)/bin"
 	cp target/$(PROFILE_DIR)/scriber "$(BIN).tmp" && chmod 755 "$(BIN).tmp" && mv -f "$(BIN).tmp" "$(BIN)"
 	@if [ "$$(uname -s)" = Linux ]; then \
-		mkdir -p "$(DESTDIR)$(DATADIR)/applications" && \
+		mkdir -p "$(DESTDIR)$(DATADIR)/applications" "$(dir $(ICON))" && \
+		cp docs/public/logo.svg "$(ICON)" && \
 		printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Scriber' 'GenericName=Laser CAD' \
 			'Comment=2D CAD for laser cutters, made for AI agents' 'Exec="$(PREFIX)/bin/scriber" %f' \
-			'Terminal=false' 'Categories=Graphics;VectorGraphics;Engineering;' 'StartupWMClass=scriber' \
+			'Icon=scriber' 'Terminal=false' 'Categories=Graphics;VectorGraphics;Engineering;' 'StartupWMClass=scriber' \
 			> "$(DESKTOP)" && echo "Installed $(DESKTOP)"; \
 	fi
 	@echo "Installed $(BIN)"
@@ -76,4 +78,4 @@ install-dev: ## Install the debug build the same way (to try a branch as `scribe
 	$(MAKE) install DEV=1
 
 uninstall: ## Remove what install put there; settings, projects and library stay
-	rm -f "$(BIN)" "$(DESKTOP)"
+	rm -f "$(BIN)" "$(DESKTOP)" "$(ICON)"
