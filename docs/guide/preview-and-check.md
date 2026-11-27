@@ -13,12 +13,14 @@ material's colour:
 - scored lines as thin marks;
 - how dark an engraved area or scored line looks follows its laser settings (the layer's own, else
   the material's): more power, more passes, slower speed and more lines per cm burn darker, so two
-  engrave layers at 40 % and 60 % look different. Without settings they use one burn colour;
+  engrave layers at 40 % and 60 % look different. Without settings they use one burn colour. A
+  material setting can fix how dark it looks with **Preview** (see
+  [Machines and materials](./machines-and-materials)); a layer with its own numbers ignores it;
 - cut parts as separate, shadowed pieces with their holes;
 - no-output shapes and guide lines hidden; open lines on an engrave layer drawn as scores.
 
 You cannot edit while the preview is on. Press <kbd>V</kbd> again to go back. The material's colour
-comes from the material library (see [Machines and materials](./machines-and-materials)).
+and burn colour come from the material library (see [Machines and materials](./machines-and-materials)).
 
 ## Check
 

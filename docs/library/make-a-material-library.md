@@ -61,6 +61,7 @@ The numbers above are an example of the format, not tested settings.
 | `category` | Kind, for sorting and filtering: `paper`, `wood`, `plywood`, `acrylic`, `leather`, `fabric`, `metal`, `stone`, `glass` or `other`. Missing = `other` |
 | `thickness` | In mm |
 | `color` | Optional `[r, g, b]` (0–255): the sheet's colour in the laser preview. Missing = wood colour |
+| `burn_colour` | Optional `[r, g, b]` (0–255): the colour a full burn leaves in the laser preview, for example dark brown on kraft or silver on black metal card. Missing = a darker shade of the sheet |
 | `notes` | Anything useful |
 | `source` | Where the numbers come from |
 | `settings` | The laser settings, below |
@@ -80,6 +81,7 @@ Each setting is for one **machine**, one **laser module** of that machine and on
 | `passes` | How many times; missing = 1 |
 | `line_interval` | Engrave only: distance between engraved lines in **mm** |
 | `bidirectional` | Engrave only: `true` to engrave in both directions |
+| `preview_opacity` | Optional, 0–1: how dark the burn looks in the laser preview (1 = the full burn colour). Missing = worked out from power, speed, passes and lines per cm |
 
 ### Lines per cm and `line_interval`
 

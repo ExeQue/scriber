@@ -18,13 +18,23 @@ pub struct Palette {
 
 /// The material's own colour, else wood when a material is chosen, a neutral grey when not.
 pub fn palette(s: &State, lib: &Library) -> Palette {
-    if let Some(c) = s.material.as_deref().and_then(|id| lib.material(id)).and_then(|m| m.color) {
+    let material = s.material.as_deref().and_then(|id| lib.material(id));
+    let mut p = sheet_palette(material, s.material.is_some());
+    if let Some(c) = material.and_then(|m| m.burn_colour) {
+        p.burn = c;
+    }
+    p
+}
+
+/// The palette from the sheet colour alone (`chosen`: a material is set, even an unknown one).
+pub fn sheet_palette(material: Option<&crate::library::Material>, chosen: bool) -> Palette {
+    if let Some(c) = material.and_then(|m| m.color) {
         let mix = |to: f32, t: f32| c.map(|v| (v as f32 + (to - v as f32) * t).round() as u8);
         // Laser marks darken a light sheet; on a dark one (black acrylic, slate) they show lighter.
         let dark = (0.299 * c[0] as f32 + 0.587 * c[1] as f32 + 0.114 * c[2] as f32) < 60.0;
         let mark = |t: f32| if dark { mix(255.0, t) } else { mix(0.0, t) };
         Palette { sheet: c, piece: mix(255.0, 0.15), bed: [40, 40, 44], burn: mark(0.65), cut: mark(0.8), score: mark(0.5) }
-    } else if s.material.is_some() {
+    } else if chosen {
         Palette { sheet: [214, 178, 128], piece: [224, 190, 142], bed: [40, 40, 44], burn: [74, 44, 22], cut: [40, 24, 12], score: [96, 60, 30] }
     } else {
         Palette { sheet: [222, 222, 218], piece: [234, 234, 230], bed: [40, 40, 44], burn: [62, 62, 62], cut: [30, 30, 30], score: [90, 90, 90] }
@@ -34,16 +44,21 @@ pub fn palette(s: &State, lib: &Library) -> Palette {
 /// Energy that gives the full burn colour: 80 % power at 100 mm/s, one pass, 100 lines/cm.
 const FULL_BURN: f64 = 80.0;
 
-/// The colour an engraved area or scored line leaves: the material blended toward `p.burn` by its
-/// energy, power x passes / speed x lines per cm (a line counts as 100 lines/cm), relative to
-/// FULL_BURN. The settings are the item's layer's, else the material preset (as in the .xs export);
-/// without them, `fallback`.
+/// The colour an engraved area or scored line leaves: the material blended toward `p.burn` by the
+/// preset's preview_opacity, else by its energy, power x passes / speed x lines per cm (a line
+/// counts as 100 lines/cm), relative to FULL_BURN. The settings are the item's layer's, else the
+/// material preset (as in the .xs export); without them, `fallback`. A layer with its own numbers
+/// uses the energy, since the preset's opacity was set for the preset's numbers.
 pub fn mark(s: &State, lib: &Library, p: &Palette, item: &Item, fallback: [u8; 3]) -> [u8; 3] {
     let op = s.effective_op(item);
-    let setting = s.layer(item.layer).zip(super::layer::op_operation(op)).and_then(|(l, o)| l.setting(s, lib, o));
-    let Some(set) = setting.filter(|x| x.speed > 0.0) else { return fallback };
+    let Some((layer, operation)) = s.layer(item.layer).zip(super::layer::op_operation(op)) else { return fallback };
+    let Some(set) = layer.setting(s, lib, operation).filter(|x| x.speed > 0.0) else { return fallback };
+    let own = super::layer::op_operation(layer.op) == Some(operation) && (!layer.settings.is_empty() || layer.line_interval.is_some());
     let lines = if op == Op::Engrave { set.line_interval.filter(|i| *i > 0.0).map_or(100.0, |i| 10.0 / i) } else { 100.0 };
-    let t = (set.power * set.passes as f64 / set.speed * lines / FULL_BURN).clamp(0.15, 1.0);
+    let t = match set.preview_opacity.filter(|_| !own) {
+        Some(o) => o.clamp(0.0, 1.0),
+        None => (set.power * set.passes as f64 / set.speed * lines / FULL_BURN).clamp(0.15, 1.0),
+    };
     std::array::from_fn(|k| (p.sheet[k] as f64 + (p.burn[k] as f64 - p.sheet[k] as f64) * t).round() as u8)
 }
 
@@ -110,6 +125,37 @@ mod tests {
         let p = palette(&d.s, &lib);
         assert_eq!(p.sheet, [200, 30, 40]);
         assert!(p.piece.iter().zip(p.sheet).all(|(a, b)| *a >= b) && p.burn[0] < 100, "piece lighter, burn darker");
+    }
+
+    #[test]
+    fn preview_opacity_and_burn_colour() {
+        // A library file from before preview_opacity and burn_colour loads without them.
+        let file = serde_json::from_str(
+            r#"{"materials": [{"id": "kraft", "name": "Kraft", "thickness": 0.3, "color": [200, 160, 120],
+            "settings": [{"machine": "xtool-m2", "laser": "diode-10w", "operation": "engrave", "power": 40, "speed": 140, "line_interval": 0.1}]}]}"#,
+        )
+        .unwrap();
+        let mut lib = store::merged(file);
+        let mut d = Document::new(100.0, 100.0);
+        (d.s.machine, d.s.laser, d.s.material) = (Some("xtool-m2".into()), Some("diode-10w".into()), Some("kraft".into()));
+        let id = d.add("face", Op::Engrave, Shape::path(Contour::rect(10.0, 10.0, 10.0, 10.0, 0.0)));
+        let item = d.s.items.iter().find(|i| i.id == id).unwrap().clone();
+        let blend = |p: &Palette, t: f64| -> [u8; 3] { std::array::from_fn(|k| (p.sheet[k] as f64 + (p.burn[k] as f64 - p.sheet[k] as f64) * t).round() as u8) };
+
+        let p = palette(&d.s, &lib);
+        assert_eq!(p.burn, sheet_palette(lib.material("kraft"), true).burn, "no burn_colour: a darker sheet");
+        let energy = mark(&d.s, &lib, &p, &item, [0, 0, 0]);
+        assert_eq!(energy, blend(&p, 40.0 / 140.0 * 100.0 / FULL_BURN), "no preview_opacity: from the energy");
+
+        lib.material_mut("kraft").unwrap().burn_colour = Some([60, 30, 10]);
+        lib.material_mut("kraft").unwrap().settings[0].preview_opacity = Some(0.9);
+        let p = palette(&d.s, &lib);
+        assert_eq!(p.burn, [60, 30, 10]);
+        assert_eq!(mark(&d.s, &lib, &p, &item, [0, 0, 0]), blend(&p, 0.9), "preview_opacity wins over the energy");
+
+        // A layer with its own numbers no longer matches the preset the opacity was set for.
+        d.s.layer_mut(item.layer).unwrap().settings.power = Some(40.0);
+        assert_eq!(mark(&d.s, &lib, &p, &item, [0, 0, 0]), blend(&p, 40.0 / 140.0 * 100.0 / FULL_BURN));
     }
 
     #[test]

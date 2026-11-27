@@ -37,7 +37,7 @@ pub(super) fn page(ui: &mut egui::Ui, ed: &mut Editor) {
         match action {
             Some(ListAction::Add) => {
                 let category = ed.filter.category.unwrap_or_default();
-                let m = Material { id: lib.new_id("New material"), name: "New material".into(), category, thickness: 3.0, notes: String::new(), source: String::new(), color: None, settings: Vec::new() };
+                let m = Material { id: lib.new_id("New material"), name: "New material".into(), category, thickness: 3.0, notes: String::new(), source: String::new(), color: None, burn_colour: None, settings: Vec::new() };
                 lib.materials.push(m);
                 ed.material = lib.materials.len() - 1;
             }
@@ -92,6 +92,19 @@ fn form(ui: &mut egui::Ui, m: &mut Material, machines: &[Machine], index: usize,
                     ui.label(RichText::new("wood (default)").weak());
                 } else if ui.small_button("Default").on_hover_text("Back to the wood colour").clicked() {
                     m.color = None;
+                }
+            });
+            ui.end_row();
+            field_label(ui, "Burn colour").on_hover_text("The colour a full burn leaves in the laser preview, e.g. dark brown on kraft or silver on black metal card");
+            ui.horizontal(|ui| {
+                let mut c = m.burn_colour.unwrap_or(crate::model::preview::sheet_palette(Some(m), true).burn);
+                if ui.color_edit_button_srgb(&mut c).changed() {
+                    m.burn_colour = Some(c);
+                }
+                if m.burn_colour.is_none() {
+                    ui.label(RichText::new("darker sheet (default)").weak());
+                } else if ui.small_button("Default").on_hover_text("Back to a darker shade of the sheet").clicked() {
+                    m.burn_colour = None;
                 }
             });
             ui.end_row();
@@ -204,8 +217,8 @@ fn settings(ui: &mut egui::Ui, settings: &mut Vec<Setting>, machines: &[Machine]
                 });
                 let rows: Vec<usize> = (0..settings.len()).filter(|i| settings[*i].is_for(&key.0, &key.1, op)).collect();
                 if !rows.is_empty() {
-                    egui::Grid::new("profiles").num_columns(7).striped(true).spacing([12.0, 6.0]).show(ui, |ui| {
-                        let titles: &[&str] = if op == Operation::Engrave { &["Profile", "Power", "Speed", "Passes", "Lines per cm", "Both ways"] } else { &["Profile", "Power", "Speed", "Passes"] };
+                    egui::Grid::new("profiles").num_columns(8).striped(true).spacing([12.0, 6.0]).show(ui, |ui| {
+                        let titles: &[&str] = if op == Operation::Engrave { &["Profile", "Power", "Speed", "Passes", "Lines per cm", "Both ways", "Preview"] } else if op == Operation::Score { &["Profile", "Power", "Speed", "Passes", "Preview"] } else { &["Profile", "Power", "Speed", "Passes"] };
                         for t in titles {
                             column_title(ui, t);
                         }
@@ -296,4 +309,24 @@ fn setting_row(ui: &mut egui::Ui, i: usize, s: &mut Setting, first: bool) {
             .inner
             .on_hover_text("Engrave in both directions: faster, sometimes a little less crisp");
     }
+    if s.operation != Operation::Cut {
+        preview_opacity(ui, &mut s.preview_opacity);
+    }
+}
+
+/// How dark the burn looks in the preview: Auto (from the energy) or a percentage.
+fn preview_opacity(ui: &mut egui::Ui, o: &mut Option<f64>) {
+    ui.horizontal(|ui| {
+        if let Some(v) = o {
+            let mut pct = *v * 100.0;
+            if ui.add(DragValue::new(&mut pct).range(0.0..=100.0).suffix(" %")).on_hover_text("How dark the burn looks in the laser preview").changed() {
+                *v = pct / 100.0;
+            }
+            if ui.small_button("Auto").on_hover_text("Work it out from power, speed, passes and lines per cm").clicked() {
+                *o = None;
+            }
+        } else if ui.small_button("Auto").on_hover_text("Worked out from power, speed, passes and lines per cm; click to set how dark the burn looks in the laser preview").clicked() {
+            *o = Some(0.65);
+        }
+    });
 }

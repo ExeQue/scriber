@@ -39,13 +39,17 @@ built-in machines; your version wins over the built-in one.
 
 Per material: name, **kind** (paper & card, wood, plywood & MDF, acrylic, leather, fabric & felt,
 metal, stone & tile, glass, other; used to sort and filter), thickness, **colour** (the sheet's
-colour in the laser preview), notes and where the numbers came from.
+colour in the laser preview), **burn colour** (the colour a full burn leaves in the preview, for
+example dark brown on kraft or silver on black metal card; default a darker shade of the sheet),
+notes and where the numbers came from.
 
 Below that, the **laser settings** for one machine and laser at a time:
 
 - pick the machine and laser; *Also set up for* shows the other machines that have settings;
 - per operation (Cut, Score, Engrave): power %, speed mm/s, passes, and for engrave the **lines per
   cm** and **Both ways** (engrave in both directions);
+- for score and engrave, **Preview**: how dark the burn looks in the laser preview. **Auto** works it
+  out from power, speed, passes and lines per cm; click it to set a percentage instead;
 - **Add profile** adds a named setting next to the default one, for example *Light*, *Deep* or
   *Photo*. Layers can then pick a profile (see [Layers](./layers#laser-settings-per-layer));
 - **Copy from…** copies all profiles from another machine or laser as a starting point.

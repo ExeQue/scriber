@@ -679,7 +679,7 @@ mod tests {
         let doc = std::sync::Arc::new(std::sync::Mutex::new(crate::model::Document::new(100.0, 100.0)));
         let server = crate::mcp::Server::new(crate::model::workspace::Workspace::from_shared(doc), std::sync::Arc::new(|| {}));
         // Backticked snake_case words are tool names, apart from these arguments and values.
-        let not_tools = ["no_output", "use_work_area", "line_interval", "lines_per_cm", "timed_out"];
+        let not_tools = ["no_output", "use_work_area", "line_interval", "lines_per_cm", "timed_out", "preview_opacity", "burn_colour"];
         let mut tools = 0;
         for word in text.replace("```", "").split('`').skip(1).step_by(2) {
             if word.contains('_') && word.chars().all(|c| c.is_ascii_lowercase() || c == '_') && !not_tools.contains(&word) {

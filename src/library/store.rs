@@ -151,7 +151,7 @@ mod tests {
         let path = temp("rt");
         let mut lib = merged(LibraryFile::default());
         lib.put_machine(k40());
-        let mut oak = Material { id: "oak".into(), name: "Oak 4 mm".into(), category: crate::library::Category::Wood, thickness: 4.0, notes: "smoky".into(), source: String::new(), color: None, settings: vec![] };
+        let mut oak = Material { id: "oak".into(), name: "Oak 4 mm".into(), category: crate::library::Category::Wood, thickness: 4.0, notes: "smoky".into(), source: String::new(), color: None, burn_colour: None, settings: vec![] };
         let fill = Setting { power: 30.0, speed: 200.0, bidirectional: Some(true), ..Setting::new("k40", "co2", Operation::Engrave) };
         oak.put(fill.clone());
         oak.put(Setting { power: 35.0, ..fill });

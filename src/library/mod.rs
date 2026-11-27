@@ -289,6 +289,48 @@ mod tests {
     }
 
     #[test]
+    fn preview_fields_are_optional_in_every_format() {
+        let old = serde_json::json!({"id": "kraft", "name": "Kraft", "category": "paper", "thickness": 0.3, "notes": "", "source": "",
+            "settings": [{"machine": "xtool-m2", "laser": "diode-10w", "operation": "engrave", "power": 40.0, "speed": 140.0, "passes": 1, "line_interval": 0.1}]});
+        let m: Material = serde_json::from_value(old.clone()).unwrap();
+        assert_eq!((m.burn_colour, m.settings[0].preview_opacity), (None, None));
+        assert_eq!(serde_json::to_value(&m).unwrap(), old, "saved as before, without the new keys");
+        let new_keys = |text: &str| text.contains("preview_opacity") || text.contains("burn_colour");
+
+        let dir = std::env::temp_dir().join(format!("scriber-preview-fields-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut lib = store::merged(store::LibraryFile::default());
+        lib.put_material(m.clone());
+        let ids = ["kraft".to_string()];
+
+        let path = dir.join("library.json");
+        store::save(&lib, &path).unwrap();
+        assert!(!new_keys(&std::fs::read_to_string(&path).unwrap()), "library.json");
+        assert_eq!(store::load(&path).unwrap().material("kraft"), Some(&m));
+
+        let path = dir.join("kraft.scrlib");
+        exchange::write(&exchange::bundle(&lib, Some(&[][..]), Some(&ids[..])).unwrap(), &path).unwrap();
+        assert!(!new_keys(&std::fs::read_to_string(&path).unwrap()), ".scrlib");
+        assert_eq!(exchange::read(&path).unwrap().materials, [m.clone()]);
+
+        let repo = dir.join("repo");
+        sources::export_repository(&lib, &repo, Some(&[][..]), Some(&ids[..]), Some("Kraft"), None).unwrap();
+        assert!(!new_keys(&std::fs::read_to_string(repo.join(".scriber/materials/kraft.json")).unwrap()), "repository");
+        assert_eq!(sources::read_repo(&repo).unwrap().materials, [m.clone()]);
+
+        let mut with = m;
+        with.burn_colour = Some([60, 30, 10]);
+        with.settings[0].preview_opacity = Some(0.5);
+        let text = serde_json::to_string(&with).unwrap();
+        assert!(text.contains(r#""burn_colour":[60,30,10]"#) && text.contains(r#""preview_opacity":0.5"#), "{text}");
+        assert_eq!(serde_json::from_str::<Material>(&text).unwrap(), with);
+        with.settings[0].preview_opacity = Some(1.5);
+        assert!(with.check().is_err(), "preview_opacity is 0-1");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn settings_lookup() {
         let lib = store::merged(store::LibraryFile::default());
         let s = lib.setting("xtool-m2", Some("diode-10w"), "black-acrylic-3mm", Operation::Cut).unwrap();

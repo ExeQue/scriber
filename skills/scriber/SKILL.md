@@ -113,7 +113,7 @@ To follow a review:
    outside the material, details smaller than the beam, ops without settings).
 5. Look at `export_png` with `preview: true`: it shows what the laser makes (burned areas, cut-out
    pieces with their holes; engraved areas and scores are darker the more energy their settings
-   give: power × passes / speed, × lines per cm for engrave). Show it to the person before they laser.
+   give: power × passes / speed, × lines per cm for engrave, or the setting's `preview_opacity`). Show it to the person before they laser.
 6. `export_svg` (or `export_dxf` for CAD programs) writes a file for other laser software, if they want one. Scriber does not run the
    laser; the person sends the job from their laser software.
 
@@ -136,6 +136,11 @@ To follow a review:
   folder (new, or an existing git repository updated in place); the person commits and pushes.
 - Add or correct a material with `save_material` and `set_material_setting`. Ask before changing
   numbers the person already tuned.
+- How the preview looks: `save_material` `burn_colour` is the colour a full burn leaves (dark brown
+  on kraft, silver on black metal card; `[]` = a darker shade of the sheet). A setting's
+  `preview_opacity` (0-1, `set_material_setting`) says how dark it burns; without it the preview
+  works it out from power, speed, passes and lines per cm. A layer with its own numbers uses the
+  worked-out value.
 - Remove with `delete_material`, `delete_material_setting` (one profile; no name = the default one)
   and `delete_machine` (refused while materials have settings for it, unless `force`). Deleting
   cannot be undone: ask the person first, then say what was removed. Source items are read-only. A

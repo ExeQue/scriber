@@ -320,7 +320,7 @@ Render the document to PNG (preview: true shows what the laser makes). With a pa
 | `path` | string |  | Where to write the PNG. Without a path the image is returned so you can look at it. |
 | `dpi` | number |  | Resolution; default: 2048 px on the material's longest side. Images returned inline stay under 8000 px. |
 | `include_annotations` | boolean |  | Default true. |
-| `preview` | boolean |  | Render what the laser makes instead of the drawing: material colour, burned areas, thin cut and score lines, cut-out pieces shadowed with their holes open; no-output items and guides hidden. |
+| `preview` | boolean |  | Render what the laser makes instead of the drawing: material colour, burned areas, thin cut and score lines, cut-out pieces shadowed with their holes open; no-output items and guides hidden. Engraved areas and score lines are darker the more energy their laser settings give (power x passes / speed, x lines per cm for engrave). |
 | `document` | integer |  | The open document to work on (id from list_documents); missing = the active tab, the one the person sees. |
 
 ## export_svg
@@ -547,7 +547,7 @@ List the machines (laser cutters) the user has: work area in mm, laser modules w
 
 ## list_materials
 
-List the material library: each material with its thickness, color (preview sheet colour [r, g, b], missing = wood) and laser settings per machine, laser module and operation (cut, score, engrave): power %, speed mm/s, passes, and for engrave line_interval (mm between lines; tell people lines per cm = 10 / line_interval) and bidirectional.
+List the material library: each material with its thickness, color (preview sheet colour [r, g, b], missing = wood), burn_colour (the colour a full burn leaves in the preview, missing = a darker shade of the sheet) and laser settings per machine, laser module and operation (cut, score, engrave): power %, speed mm/s, passes, and for engrave line_interval (mm between lines; tell people lines per cm = 10 / line_interval) and bidirectional, and preview_opacity (0-1, how dark the burn looks in the preview; missing = from the energy).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -691,7 +691,7 @@ Add a machine or replace the one with the same id. Saved in the user's library.
 
 ## save_material
 
-Add a material (no id: name and thickness needed) or change an existing one's name, thickness, category, notes or color (the sheet colour in the laser preview, [r, g, b]; [] clears it). Returns it with its id.
+Add a material (no id: name and thickness needed) or change an existing one's name, thickness, category, notes, color (the sheet colour in the laser preview, [r, g, b]; [] clears it) or burn_colour (the colour a full burn leaves in the preview, [r, g, b]; [] clears it). Returns it with its id.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -701,6 +701,7 @@ Add a material (no id: name and thickness needed) or change an existing one's na
 | `category` | [Category](#type-category) |  | What kind of material (for filtering); a new material without one is "other". |
 | `notes` | string |  |  |
 | `color` | integer[] |  | The sheet's colour in the laser preview as [r, g, b] (0-255); [] clears it (back to wood). |
+| `burn_colour` | integer[] |  | The colour a full burn leaves in the laser preview as [r, g, b] (e.g. dark brown on kraft, silver on black metal card); [] clears it (back to a darker shade of the sheet). |
 
 ## search_xtool_materials
 
@@ -766,7 +767,7 @@ Change a library source: track (what it follows; syncs right away: {"branch": ""
 
 ## set_material_setting
 
-Add or replace a material's setting for one machine, laser module and operation (cut, score, engrave; the old "fill" means engrave): power 0-100 %, speed mm/s, passes; for engrave also line_interval and bidirectional. line_interval is the distance between engraved lines in mm; people think in lines per cm, so convert: line_interval = 10 / lines per cm (100 lines/cm = 0.1 mm), and report it back as lines per cm.
+Add or replace a material's setting for one machine, laser module and operation (cut, score, engrave; the old "fill" means engrave): power 0-100 %, speed mm/s, passes; for engrave also line_interval and bidirectional; optional preview_opacity 0-1, how dark the burn looks in the laser preview (missing = worked out from power, speed, passes and lines per cm). line_interval is the distance between engraved lines in mm; people think in lines per cm, so convert: line_interval = 10 / lines per cm (100 lines/cm = 0.1 mm), and report it back as lines per cm.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -780,6 +781,7 @@ Add or replace a material's setting for one machine, laser module and operation 
 | `passes` | integer |  |  |
 | `line_interval` | number |  | Engrave only: distance between engraved lines in mm. People see it as lines per cm = 10 / this (0.1 mm = 100 lines/cm). |
 | `bidirectional` | boolean |  | Engrave only: engrave in both directions. |
+| `preview_opacity` | number |  | How dark the burn looks in the laser preview, 0-1 (1 = the material's full burn colour); missing = worked out from power, speed, passes and lines per cm. |
 
 ## set_notes
 

@@ -282,7 +282,7 @@ mod tests {
     /// screen, with and without materials; list names stay on one line and nothing runs past the modal.
     #[test]
     fn layout_keeps_sidebar_form_and_footer() {
-        let mut material = library::Material { id: "ply-3".into(), name: "Basswood plywood 3 mm with a long name".into(), category: library::Category::Plywood, thickness: 3.0, notes: String::new(), source: String::new(), color: None, settings: Vec::new() };
+        let mut material = library::Material { id: "ply-3".into(), name: "Basswood plywood 3 mm with a long name".into(), category: library::Category::Plywood, thickness: 3.0, notes: String::new(), source: String::new(), color: None, burn_colour: None, settings: Vec::new() };
         let mut materials = vec![material.clone()];
         (material.id, material.name) = ("ply-10".into(), "Basswood plywood 10 mm".into());
         materials.push(material);

@@ -46,6 +46,9 @@ pub struct SaveMaterial {
     pub notes: Option<String>,
     /// The sheet's colour in the laser preview as [r, g, b] (0-255); [] clears it (back to wood).
     pub color: Option<Vec<u8>>,
+    /// The colour a full burn leaves in the laser preview as [r, g, b] (e.g. dark brown on kraft,
+    /// silver on black metal card); [] clears it (back to a darker shade of the sheet).
+    pub burn_colour: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -126,7 +129,7 @@ impl Server {
         ok(json!(library::get().machines))
     }
 
-    #[tool(description = "List the material library: each material with its thickness, color (preview sheet colour [r, g, b], missing = wood) and laser settings per machine, laser module and operation (cut, score, engrave): power %, speed mm/s, passes, and for engrave line_interval (mm between lines; tell people lines per cm = 10 / line_interval) and bidirectional.")]
+    #[tool(description = "List the material library: each material with its thickness, color (preview sheet colour [r, g, b], missing = wood), burn_colour (the colour a full burn leaves in the preview, missing = a darker shade of the sheet) and laser settings per machine, laser module and operation (cut, score, engrave): power %, speed mm/s, passes, and for engrave line_interval (mm between lines; tell people lines per cm = 10 / line_interval) and bidirectional, and preview_opacity (0-1, how dark the burn looks in the preview; missing = from the energy).")]
     fn list_materials(&self, Parameters(p): Parameters<ListMaterials>) -> ToolResult {
         let lib = library::get();
         let Some(machine) = p.machine else { return ok(json!(lib.materials)) };
@@ -206,7 +209,7 @@ impl Server {
         }
     }
 
-    #[tool(description = "Add a material (no id: name and thickness needed) or change an existing one's name, thickness, category, notes or color (the sheet colour in the laser preview, [r, g, b]; [] clears it). Returns it with its id.")]
+    #[tool(description = "Add a material (no id: name and thickness needed) or change an existing one's name, thickness, category, notes, color (the sheet colour in the laser preview, [r, g, b]; [] clears it) or burn_colour (the colour a full burn leaves in the preview, [r, g, b]; [] clears it). Returns it with its id.")]
     fn save_material(&self, Parameters(p): Parameters<SaveMaterial>) -> ToolResult {
         let r = library::update(|lib| {
             let mut m = match &p.id {
@@ -214,19 +217,23 @@ impl Server {
                 None => {
                     let name = p.name.clone().ok_or("a new material needs a name")?;
                     let thickness = p.thickness.ok_or("a new material needs a thickness")?;
-                    Material { id: lib.new_id(&name), name, category: Category::Other, thickness, notes: String::new(), source: String::new(), color: None, settings: Vec::new() }
+                    Material { id: lib.new_id(&name), name, category: Category::Other, thickness, notes: String::new(), source: String::new(), color: None, burn_colour: None, settings: Vec::new() }
                 }
             };
             m.name = p.name.unwrap_or(m.name);
             m.thickness = p.thickness.unwrap_or(m.thickness);
             m.category = p.category.unwrap_or(m.category);
             m.notes = p.notes.unwrap_or(m.notes);
+            let rgb = |c: Vec<u8>, what: &str| match c[..] {
+                [] => Ok(None),
+                [r, g, b] => Ok(Some([r, g, b])),
+                _ => Err(format!("{what} is [r, g, b], or [] to clear it")),
+            };
             if let Some(c) = p.color {
-                m.color = match c[..] {
-                    [] => None,
-                    [r, g, b] => Some([r, g, b]),
-                    _ => return Err("color is [r, g, b], or [] to clear it".into()),
-                };
+                m.color = rgb(c, "color")?;
+            }
+            if let Some(c) = p.burn_colour {
+                m.burn_colour = rgb(c, "burn_colour")?;
             }
             lib.put_material(m.clone());
             Ok(m)
@@ -237,13 +244,14 @@ impl Server {
         }
     }
 
-    #[tool(description = "Add or replace a material's setting for one machine, laser module and operation (cut, score, engrave; the old \"fill\" means engrave): power 0-100 %, speed mm/s, passes; for engrave also line_interval and bidirectional. line_interval is the distance between engraved lines in mm; people think in lines per cm, so convert: line_interval = 10 / lines per cm (100 lines/cm = 0.1 mm), and report it back as lines per cm.")]
+    #[tool(description = "Add or replace a material's setting for one machine, laser module and operation (cut, score, engrave; the old \"fill\" means engrave): power 0-100 %, speed mm/s, passes; for engrave also line_interval and bidirectional; optional preview_opacity 0-1, how dark the burn looks in the laser preview (missing = worked out from power, speed, passes and lines per cm). line_interval is the distance between engraved lines in mm; people think in lines per cm, so convert: line_interval = 10 / lines per cm (100 lines/cm = 0.1 mm), and report it back as lines per cm.")]
     fn set_material_setting(&self, Parameters(p): Parameters<SetMaterialSetting>) -> ToolResult {
         let r = library::update(|lib| {
             let machine = lib.machine(&p.setting.machine).ok_or(format!("no machine with id {}", p.setting.machine))?;
             if machine.laser(&p.setting.laser).is_none() {
                 return Err(format!("{} has no laser module {}", machine.name, p.setting.laser));
             }
+            p.setting.check()?;
             let m = lib.material_mut(&p.material).ok_or(format!("no material with id {}", p.material))?;
             m.put(p.setting);
             Ok(m.clone())

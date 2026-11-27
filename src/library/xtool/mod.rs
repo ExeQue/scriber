@@ -407,7 +407,7 @@ pub fn import(lib: &mut Library, x: &XtoolMaterial, origin: &str, overwrite: boo
         Some(id) if overwrite => id,
         _ => lib.new_id(&x.name),
     };
-    lib.put_material(Material { id: id.clone(), name: x.name.clone(), category: x.category, thickness: x.thickness, color: None, notes: String::new(), source: format!("{tag} ({origin}), imported {}", today()), settings });
+    lib.put_material(Material { id: id.clone(), name: x.name.clone(), category: x.category, thickness: x.thickness, color: None, burn_colour: None, notes: String::new(), source: format!("{tag} ({origin}), imported {}", today()), settings });
     Ok(id)
 }
 

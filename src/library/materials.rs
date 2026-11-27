@@ -52,6 +52,10 @@ pub struct Setting {
     /// Engrave only: engrave in both directions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bidirectional: Option<bool>,
+    /// How dark the burn looks in the laser preview, 0-1 (1 = the material's full burn colour);
+    /// missing = worked out from power, speed, passes and lines per cm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview_opacity: Option<f64>,
 }
 
 fn one() -> u32 {
@@ -72,6 +76,7 @@ impl Setting {
             passes: 1,
             line_interval: engrave.then_some(0.1),
             bidirectional: engrave.then_some(false),
+            preview_opacity: None,
         }
     }
 
@@ -98,6 +103,9 @@ impl Setting {
         }
         if self.speed <= 0.0 || self.passes == 0 || self.line_interval.is_some_and(|i| i <= 0.0) {
             return Err("speed, passes and line interval must be larger than 0".into());
+        }
+        if self.preview_opacity.is_some_and(|o| !(0.0..=1.0).contains(&o)) {
+            return Err("preview_opacity must be between 0 and 1".into());
         }
         Ok(())
     }
@@ -152,6 +160,10 @@ pub struct Material {
     /// The sheet's colour in the laser preview (RGB); none = wood.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<[u8; 3]>,
+    /// The colour a full burn leaves in the laser preview (RGB), e.g. dark brown on kraft or silver
+    /// on black metal card; none = a darker shade of the sheet (lighter on a dark sheet).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub burn_colour: Option<[u8; 3]>,
     #[serde(default)]
     pub notes: String,
     /// Where the settings come from.
@@ -233,7 +245,7 @@ mod tests {
     #[test]
     fn named_profiles() {
         let engrave = |name: &str, power: f64| Setting { name: name.into(), power, ..Setting::new("m", "l", Operation::Engrave) };
-        let mut m = Material { id: "oak".into(), name: "Oak".into(), category: Category::Wood, thickness: 3.0, notes: String::new(), source: String::new(), color: None, settings: vec![engrave("Photo", 20.0)] };
+        let mut m = Material { id: "oak".into(), name: "Oak".into(), category: Category::Wood, thickness: 3.0, notes: String::new(), source: String::new(), color: None, burn_colour: None, settings: vec![engrave("Photo", 20.0)] };
         assert_eq!(m.setting("m", None, Operation::Engrave).unwrap().name, "Photo", "without an unnamed one the first is the default");
         m.put(engrave("", 30.0));
         m.put(engrave("Dark", 60.0));
