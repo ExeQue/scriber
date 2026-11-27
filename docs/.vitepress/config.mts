@@ -3,6 +3,8 @@ import { defineConfig } from 'vitepress'
 const flag = (name: string) => process.argv.some((a) => a === name || a.startsWith(name + '='))
 
 export default defineConfig({
+  // GitHub Pages serves the site under /scriber/ (docs.yml sets DOCS_BASE); local dev stays at /.
+  base: process.env.DOCS_BASE ?? '/',
   title: 'Scriber',
   description: '2D CAD for laser cutters, made for AI agents and the people who steer them.',
   cleanUrls: true,
