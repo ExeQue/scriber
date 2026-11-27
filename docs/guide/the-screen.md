@@ -124,8 +124,11 @@ Right-click on the canvas:
 
 - **while a tool runs**: Enter, Cancel and the tool's options (for example *Close shape* and *Undo
   last point* for a polyline, *Diameter* for a circle, *Rounded corners…* for a rectangle);
-- **with no tool running**: repeat the last command, cut/copy/paste, undo/redo, select all,
-  *Dimension*, *Add constraint ▸*, *Comment on this…* and *Show whole material*.
+- **with no tool running**: repeat the last command; for a selection *Move*, *Copy with base
+  point…*, *Rotate*, *Delete*, *Comment on this…* and *Modify ▸* (scale, mirror, offset, array,
+  stretch, explode, align, …); *Cut to clipboard*, *Copy to clipboard*, *Paste*, undo and redo
+  with their keys; then *Select ▸*, *Constraints ▸* (*Dimension*, *Add constraint ▸*, …) and
+  *View ▸* (zoom, *Show whole material*).
 
 Right-clicking a shape selects it first.
 

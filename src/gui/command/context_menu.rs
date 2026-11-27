@@ -97,62 +97,97 @@ impl App {
         }
     }
 
+    /// The common edits at the top, the clipboard and undo with their keys, the rest in submenus.
     fn idle_menu(&mut self, ui: &mut egui::Ui) {
         if let Some(last) = self.cmdline.last
             && ui.button(format!("Repeat {}", title(last))).clicked()
         {
             self.start(last);
         }
-        let selected = self.doc.lock().unwrap().selection.len();
+        let (selected, grouped) = {
+            let d = self.doc.lock().unwrap();
+            (d.selection.len(), d.selection.iter().any(|id| d.s.groups.iter().any(|g| g.contains(id))))
+        };
         if selected > 0 {
             ui.separator();
-            let mut edits = vec![Cmd::Move, Cmd::Copy, Cmd::Rotate, Cmd::Scale, Cmd::Mirror, Cmd::Offset, Cmd::Array, Cmd::Erase];
-            if selected >= 2 {
-                edits.extend([Cmd::Union, Cmd::Subtract, Cmd::Intersect]);
-            }
-            for cmd in edits {
-                if ui.button(title(cmd)).clicked() {
+            // "Copy" is the clipboard's below; the COPY command places copies from a base point.
+            for (cmd, label) in [(Cmd::Move, title(Cmd::Move)), (Cmd::Copy, "Copy with base point…"), (Cmd::Rotate, title(Cmd::Rotate)), (Cmd::Erase, title(Cmd::Erase))] {
+                if ui.button(label).on_hover_text(cmd.name()).clicked() {
                     self.start(cmd);
                 }
             }
-            if ui.button("Cut").clicked() {
+            self.comment_menu(ui);
+            ui.menu_button("Modify", |ui| {
+                let mut cmds = vec![Cmd::Scale, Cmd::Mirror, Cmd::Offset, Cmd::Array, Cmd::Stretch, Cmd::Explode, Cmd::Align, Cmd::MatchProp];
+                if selected >= 2 {
+                    cmds.extend([Cmd::Join, Cmd::Group, Cmd::Union, Cmd::Subtract, Cmd::Intersect]);
+                }
+                if grouped {
+                    cmds.push(Cmd::Ungroup);
+                }
+                self.cmd_buttons(ui, &cmds);
+            });
+        }
+        ui.separator();
+        if selected > 0 {
+            if ui.add(egui::Button::new("Cut to clipboard").shortcut_text("Ctrl+X")).clicked() {
                 self.cut_selection(ui.ctx());
             }
-            if ui.button("Copy").clicked() {
+            if ui.add(egui::Button::new("Copy to clipboard").shortcut_text("Ctrl+C")).clicked() {
                 self.copy_selection(ui.ctx());
             }
-            if ui.button("Deselect all").clicked() {
-                self.doc.lock().unwrap().selection.clear();
-            }
-            self.comment_menu(ui);
         }
         if self.clip.is_some() {
-            ui.separator();
-            if ui.button("Paste").clicked() {
+            if ui.add(egui::Button::new("Paste").shortcut_text("Ctrl+V")).clicked() {
                 self.request_paste(ui.ctx(), self.menu_at, false);
             }
-            if ui.button("Paste in place").clicked() {
+            if ui.add(egui::Button::new("Paste in place").shortcut_text("Ctrl+Shift+V")).clicked() {
                 self.request_paste(ui.ctx(), None, true);
             }
         }
-        self.ux_menu(ui, selected);
-        ui.separator();
-        self.constraint_menu(ui);
-        ui.separator();
-        if ui.button("Undo").clicked() {
+        if ui.add(egui::Button::new("Undo").shortcut_text("Ctrl+Z")).clicked() {
             self.doc.lock().unwrap().undo();
         }
-        if ui.button("Redo").clicked() {
+        if ui.add(egui::Button::new("Redo").shortcut_text("Ctrl+Y")).clicked() {
             self.doc.lock().unwrap().redo();
         }
-        if ui.button("Select all").clicked() {
-            self.select_all();
-        }
-        if ui.button(title(Cmd::Parameters)).on_hover_text("PARAMETERS").clicked() {
-            self.start(Cmd::Parameters);
-        }
-        if ui.button("Show whole material").clicked() {
-            self.view.zoom_extents();
+        ui.separator();
+        ui.menu_button("Select", |ui| {
+            let mut cmds = if selected > 0 { vec![Cmd::SelectSimilar, Cmd::QuickSelect, Cmd::Isolate] } else { vec![Cmd::QuickSelect] };
+            if self.isolated.is_some() {
+                cmds.push(Cmd::Unisolate);
+            }
+            self.cmd_buttons(ui, &cmds);
+            if ui.add(egui::Button::new("Select all").shortcut_text("Ctrl+A")).clicked() {
+                self.select_all();
+            }
+            if selected > 0 && ui.button("Deselect all").clicked() {
+                self.doc.lock().unwrap().selection.clear();
+            }
+        });
+        ui.menu_button("Constraints", |ui| self.constraint_menu(ui));
+        ui.menu_button("View", |ui| {
+            if ui.button("Zoom window").clicked() {
+                self.start(Cmd::Zoom);
+            }
+            if ui.button("Previous view").clicked() {
+                self.zoom_previous();
+            }
+            if selected > 0 && ui.button("Zoom to selection").clicked() {
+                self.zoom_selection();
+            }
+            if ui.button("Show whole material").clicked() {
+                self.view.zoom_extents();
+            }
+        });
+    }
+
+    /// One button per command, titled as on the ribbon, with the typed name as tooltip.
+    fn cmd_buttons(&mut self, ui: &mut egui::Ui, cmds: &[Cmd]) {
+        for &cmd in cmds {
+            if ui.button(title(cmd)).on_hover_text(cmd.name()).clicked() {
+                self.start(cmd);
+            }
         }
     }
 
@@ -175,11 +210,7 @@ impl App {
                 }
             }
         });
-        for cmd in [Cmd::AutoConstrain, Cmd::DelConstraint, Cmd::ConstraintBar] {
-            if ui.button(title(cmd)).clicked() {
-                self.start(cmd);
-            }
-        }
+        self.cmd_buttons(ui, &[Cmd::AutoConstrain, Cmd::DelConstraint, Cmd::ConstraintBar, Cmd::Parameters]);
     }
 }
 
@@ -231,6 +262,36 @@ mod tests {
 
     fn find(widgets: &[(String, Pos2)], label: &str) -> Pos2 {
         widgets.iter().find(|(l, _)| l == label).unwrap_or_else(|| panic!("no {label:?} in {widgets:?}")).1
+    }
+
+    /// With a selection: the common edits and the clipboard (named apart from the laser's cut and
+    /// the COPY command) on top, the rest in submenus that run their command and close.
+    #[test]
+    fn idle_menu_groups_the_long_tail() {
+        let mut doc = Document::new(100.0, 100.0);
+        let id = doc.add("disc", crate::model::Op::Cut, crate::model::Shape::path(crate::model::Contour::circle(50.0, 50.0, 10.0)));
+        doc.selection = vec![id];
+        let mut app = App::new(crate::model::Workspace::new(doc), Err(String::new()));
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        frame(&ctx, &mut app, vec![]);
+        let menu = click(&ctx, &mut app, Pos2::new(600.0, 200.0), PointerButton::Secondary);
+        let labels: Vec<&str> = menu.iter().map(|(l, _)| l.as_str()).collect();
+        for want in ["Move", "Copy with base point…", "Rotate", "Delete", "Modify", "Select", "Constraints", "View"] {
+            find(&menu, want);
+        }
+        assert!(labels.iter().any(|l| l.starts_with("Cut to clipboard")) && labels.iter().any(|l| l.starts_with("Copy to clipboard")), "{labels:?}");
+        assert!(!labels.iter().any(|l| ["Copy", "Cut", "Scale", "Select all"].contains(l)), "ambiguous or long-tail entries on top: {labels:?}");
+        // Hover Modify, then click Scale in its submenu.
+        let modify = find(&menu, "Modify");
+        frame(&ctx, &mut app, vec![Event::PointerMoved(modify)]);
+        let sub = frame(&ctx, &mut app, vec![]);
+        let scale = find(&sub, "Scale");
+        assert!(scale.x > modify.x, "Scale sits in the submenu");
+        frame(&ctx, &mut app, vec![Event::PointerMoved(Pos2::new(modify.x + 60.0, modify.y)), Event::PointerMoved(scale)]);
+        let after = click(&ctx, &mut app, scale, PointerButton::Primary);
+        assert_eq!(app.cmdline.active.map(|(c, _)| c), Some(Cmd::Scale));
+        assert!(after.iter().all(|(l, _)| l != "Modify"), "running a submenu entry closes the menu");
     }
 
     #[test]

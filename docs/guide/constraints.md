@@ -52,7 +52,7 @@ and corners; every polygon gets it when drawn).
 
 They work on the selection when it fits (two lines selected + Parallel = parallel; Horizontal makes
 each selected line horizontal), otherwise they ask you to click. The first thing you pick stays put,
-the second moves. Right-click → *Add constraint ▸* offers the same.
+the second moves. Right-click → *Constraints ▸* → *Add constraint ▸* offers the same.
 
 ![The Add constraint submenu of the right-click menu, listing geometric and dimensional constraints with their icons](/screenshots/context-add-constraint.webp)
 

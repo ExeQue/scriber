@@ -361,43 +361,4 @@ impl App {
             self.quick_select_now();
         }
     }
-
-    /// Right-click menu entries of the UX pack (no command running).
-    pub(in crate::gui) fn ux_menu(&mut self, ui: &mut egui::Ui, selected: usize) {
-        ui.separator();
-        let mut cmds = Vec::new();
-        if selected > 0 {
-            cmds.extend([Cmd::SelectSimilar, Cmd::Stretch, Cmd::Align, Cmd::MatchProp, Cmd::Explode, Cmd::Isolate]);
-            if selected >= 2 {
-                cmds.extend([Cmd::Join, Cmd::Group]);
-            }
-            let grouped = {
-                let d = self.doc.lock().unwrap();
-                d.selection.iter().any(|id| d.s.groups.iter().any(|g| g.contains(id)))
-            };
-            if grouped {
-                cmds.push(Cmd::Ungroup);
-            }
-        }
-        cmds.push(Cmd::QuickSelect);
-        if self.isolated.is_some() {
-            cmds.push(Cmd::Unisolate);
-        }
-        for cmd in cmds {
-            if ui.button(title(cmd)).on_hover_text(cmd.name()).clicked() {
-                self.start(cmd);
-            }
-        }
-        ui.menu_button("Zoom", |ui| {
-            if ui.button("Zoom window").clicked() {
-                self.start(Cmd::Zoom);
-            }
-            if ui.button("Previous view").clicked() {
-                self.zoom_previous();
-            }
-            if selected > 0 && ui.button("Zoom to selection").clicked() {
-                self.zoom_selection();
-            }
-        });
-    }
 }
