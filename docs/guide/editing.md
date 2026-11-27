@@ -26,6 +26,10 @@ Ctrl+D duplicates the selection; the arrow keys nudge it by 1 mm (10 mm with Shi
 | Trim | X | Click the parts of lines that stick out past other shapes |
 | Copies in a pattern (array) | Y | Rectangular (rows and columns with spacing) or Polar (a number of copies around a centre) |
 
+The Offset card, where you set the distance:
+
+<img src="/screenshots/cards/card-o.webp" width="380" alt="The Offset command card">
+
 ## Combining shapes
 
 On Home → Combine. Select two or more closed shapes:

@@ -22,6 +22,8 @@ The dimension follows the pointer until you click to place it. Type a number (or
 press Enter to set the value; the shape changes to match. The tool repeats until Esc. *More ▾* has
 the single kinds too (horizontal or vertical distance, length, angle, radius, diameter).
 
+<img src="/screenshots/cards/card-d.webp" width="380" alt="The Dimension command card, prompting to select a line, circle or arc, or to specify a first point">
+
 ## Sizes typed while drawing
 
 A length, width, height, radius or diameter you type into

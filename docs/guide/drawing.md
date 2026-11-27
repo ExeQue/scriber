@@ -28,6 +28,19 @@ last way you used.
 | Rectangle | 2 corners · Centre and corner · 3 points (rotated) |
 | Polygon | Size to a corner · Size to a side |
 
+## Command cards
+
+Each tool's card shows its prompt and options.
+
+<p>
+<img src="/screenshots/cards/card-l.webp" width="380" alt="The Line command card">
+<img src="/screenshots/cards/card-r.webp" width="380" alt="The Rectangle command card with its ways of drawing and corner options">
+<img src="/screenshots/cards/card-c.webp" width="380" alt="The Circle command card with its three ways of drawing">
+<img src="/screenshots/cards/card-a.webp" width="380" alt="The Arc command card with its four ways of drawing">
+<img src="/screenshots/cards/card-g.webp" width="380" alt="The Polygon command card with the number of sides and two ways of sizing">
+<img src="/screenshots/cards/card-t.webp" width="380" alt="The Text command card">
+</p>
+
 ## Exact sizes
 
 Click the first point, then type: the number goes into the first measurement (length, width,

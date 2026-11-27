@@ -50,6 +50,12 @@ When a tool runs, a small card on the canvas says what to do next in plain words
 corner"), shows the tool's settings and options, and has **Done** and **Cancel** buttons. You never
 have to type a command.
 
+<img src="/screenshots/cards/card-c.webp" width="420" alt="The Circle command card: title, prompt, three ways to draw (Centre and radius selected), and Finish and Cancel buttons">
+
+*The card for Circle: the title is the tool, the line under it says what to do next, the list is
+the ways to draw it (see [Drawing](./drawing#ways-of-drawing-variants)), and **Finish** or
+**Cancel** end the tool.*
+
 ## Dynamic input
 
 Once the first point is down, the card and a small box next to the cursor show live measurements:
