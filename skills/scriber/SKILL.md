@@ -107,7 +107,7 @@ To follow a review:
 2. Settings: `get_laser_setup` and `list_layers` show the power/speed/passes each layer will use.
    Give a layer its own numbers with `update_layer` (settings), or store them for the material with
    `set_material_setting`. Engrave line spacing is `line_interval` in mm; people think in lines per
-   cm, so `line_interval = 10 / lines per cm`.
+   cm, so `line_interval = 10 / lines per cm`. `update_layer` takes it as `lines_per_cm` directly.
 3. Kerf: for parts that must fit, `offset` the outline by half the kerf and cut the copy.
 4. Run `preflight_check` and fix what it reports (open shapes set to cut, double lines, shapes
    outside the material, details smaller than the beam, ops without settings).
@@ -135,6 +135,10 @@ To follow a review:
   folder (new, or an existing git repository updated in place); the person commits and pushes.
 - Add or correct a material with `save_material` and `set_material_setting`. Ask before changing
   numbers the person already tuned.
+- Remove with `delete_material`, `delete_material_setting` (one profile; no name = the default one)
+  and `delete_machine` (refused while materials have settings for it, unless `force`). Deleting
+  cannot be undone: ask the person first, then say what was removed. Source items are read-only. A
+  deleted built-in machine comes back with `restore_machine`.
 
 ## Recipes
 

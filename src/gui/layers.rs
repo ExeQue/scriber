@@ -86,7 +86,7 @@ impl App {
                 .iter()
                 .map(|l| {
                     let op = op_operation(l.op);
-                    let preset = op.and_then(|op| Layer { settings: Overrides::default(), ..l.clone() }.setting(&d.s, &lib, op));
+                    let preset = op.and_then(|op| Layer { settings: Overrides::default(), line_interval: None, ..l.clone() }.setting(&d.s, &lib, op));
                     let names = match (op, material, d.s.machine.as_deref()) {
                         (Some(op), Some(m), Some(machine)) => m.profile_names(machine, d.s.laser.as_deref(), op),
                         _ => Vec::new(),
@@ -189,7 +189,7 @@ fn layer_row(ui: &mut egui::Ui, layer: &mut Layer, preset: Option<Setting>, prof
             ui.add_space(22.0);
             changed |= profile_combo(ui, layer, profiles);
             egui::CollapsingHeader::new(RichText::new(settings_title(layer, preset.as_ref())).small()).id_salt("settings").show(ui, |ui| {
-                changed |= settings_ui(ui, &mut layer.settings, preset.as_ref());
+                changed |= settings_ui(ui, layer, preset.as_ref());
             });
         });
     }
@@ -258,8 +258,12 @@ fn settings_title(layer: &Layer, preset: Option<&Setting>) -> String {
     let power = num(o.power.map(|p| p.to_string()), preset.map(|p| p.power.to_string()));
     let speed = num(o.speed.map(|p| p.to_string()), preset.map(|p| p.speed.to_string()));
     let passes = num(o.passes.map(|p| p.to_string()), preset.map(|p| p.passes.to_string()));
-    let own = if o.is_empty() { "" } else { " (own)" };
-    format!("{power} % · {speed} mm/s · {passes}×{own}")
+    let lines = match layer.line_interval.or(preset.and_then(|p| p.line_interval)) {
+        Some(i) if layer.op == Op::Engrave && i > 0.0 => format!(" · {} lines/cm", (100.0 / i).round() / 10.0),
+        _ => String::new(),
+    };
+    let own = if o.is_empty() && layer.line_interval.is_none() { "" } else { " (own)" };
+    format!("{power} % · {speed} mm/s · {passes}×{lines}{own}")
 }
 
 /// The material's profile for this layer (e.g. "Light", "Photo"), when it has more than one.
@@ -289,13 +293,23 @@ fn profile_combo(ui: &mut egui::Ui, layer: &mut Layer, profiles: &[String]) -> b
     true
 }
 
-fn settings_ui(ui: &mut egui::Ui, o: &mut Overrides, preset: Option<&Setting>) -> bool {
+fn settings_ui(ui: &mut egui::Ui, layer: &mut Layer, preset: Option<&Setting>) -> bool {
     let from = |f: fn(&Setting) -> f64, or: f64| preset.map_or(or, f);
     let mut changed = false;
+    let o = &mut layer.settings;
     egui::Grid::new("own").num_columns(2).show(ui, |ui| {
         changed |= own(ui, "Power", &mut o.power, from(|s| s.power, 50.0), 0.0..=100.0, " %");
         changed |= own(ui, "Speed", &mut o.speed, from(|s| s.speed, 10.0), 0.1..=1000.0, " mm/s");
         changed |= own(ui, "Passes", &mut o.passes, preset.map_or(1, |s| s.passes), 1..=50, "×");
+        if layer.op == Op::Engrave {
+            // Stored as mm between lines; people think in lines per cm (10 / mm).
+            let mut lines = layer.line_interval.map(|i| 10.0 / i);
+            let lib = preset.and_then(|s| s.line_interval).map_or(100.0, |i| 10.0 / i);
+            if own(ui, "Lines per cm", &mut lines, lib, 1.0..=1000.0, "") {
+                layer.line_interval = lines.map(|l| 10.0 / l);
+                changed = true;
+            }
+        }
     });
     let source = match preset {
         Some(p) => format!("Unticked: the material library's {} ({})", p.operation.label().to_lowercase(), p.hint()),

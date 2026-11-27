@@ -57,6 +57,41 @@ pub struct SetMaterialSetting {
     pub setting: Setting,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteMaterial {
+    /// Material id (list_materials).
+    pub id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteMaterialSetting {
+    /// Material id.
+    pub material: String,
+    /// Machine id.
+    pub machine: String,
+    /// Laser module id of that machine.
+    pub laser: String,
+    pub operation: Operation,
+    /// Profile name; "" or missing = the default (unnamed) profile.
+    #[serde(default)]
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteMachine {
+    /// Machine id (list_machines).
+    pub id: String,
+    /// Delete it even though materials have settings for it (those settings stay, unused).
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RestoreMachine {
+    /// Id of a deleted built-in machine.
+    pub id: String,
+}
+
 /// The settings that apply to the document, per operation.
 fn setup(s: &State) -> Value {
     let lib = library::get();
@@ -217,5 +252,90 @@ impl Server {
             Ok(m) => ok(json!(m)),
             Err(e) => fail(e),
         }
+    }
+
+    #[tool(description = "Delete a material and all its settings from the user's library. This cannot be undone: ask the person first. Materials from a subscribed library source are read-only and refused. Returns what was removed.")]
+    fn delete_material(&self, Parameters(p): Parameters<DeleteMaterial>) -> ToolResult {
+        match library::update(|lib| lib.delete_material(&p.id)) {
+            Ok(m) => ok(json!({"removed": format!("material \"{}\" ({}) with {} settings", m.name, m.id, m.settings.len())})),
+            Err(e) => fail(e),
+        }
+    }
+
+    #[tool(description = "Delete one profile of a material's setting: material, machine, laser, operation (cut, score, engrave) and name (\"\" or missing = the default profile). Other profiles stay. This cannot be undone: ask the person first. Materials from a subscribed library source are read-only and refused. Returns what was removed.")]
+    fn delete_material_setting(&self, Parameters(p): Parameters<DeleteMaterialSetting>) -> ToolResult {
+        match library::update(|lib| lib.delete_setting(&p.material, &p.machine, &p.laser, p.operation, &p.name)) {
+            Ok(s) => {
+                let profile = if s.name.is_empty() { "default".to_string() } else { format!("\"{}\"", s.name) };
+                ok(json!({"removed": format!("{profile} {} profile of {} for {} / {} ({})", s.operation.label().to_lowercase(), p.material, s.machine, s.laser, s.hint())}))
+            }
+            Err(e) => fail(e),
+        }
+    }
+
+    #[tool(description = "Delete a machine from the user's library. Refused while materials still have settings for it (they are listed) unless force: true, which keeps those settings unused. A built-in machine stays deleted until restore_machine brings it back; machines from a subscribed library source are read-only and refused. Deleting cannot be undone: ask the person first. Returns what was removed.")]
+    fn delete_machine(&self, Parameters(p): Parameters<DeleteMachine>) -> ToolResult {
+        let builtin = library::get().is_builtin_machine(&p.id);
+        match library::update(|lib| lib.delete_machine(&p.id, p.force)) {
+            Ok((m, kept)) => {
+                let mut out = json!({"removed": format!("machine \"{}\" ({})", m.name, m.id)});
+                if builtin {
+                    out["note"] = format!("{} is built into Scriber; it stays deleted until restore_machine {{id: \"{}\"}} brings it back", m.name, m.id).into();
+                }
+                if !kept.is_empty() {
+                    out["settings_kept_in"] = json!(kept);
+                }
+                ok(out)
+            }
+            Err(e) => fail(e),
+        }
+    }
+
+    #[tool(description = "Bring back a built-in machine that was deleted (delete_machine or the library window). Returns it.")]
+    fn restore_machine(&self, Parameters(p): Parameters<RestoreMachine>) -> ToolResult {
+        match library::update(|lib| lib.restore_machine(&p.id)) {
+            Ok(m) => ok(json!(m)),
+            Err(e) => fail(e),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Document, Workspace};
+    use rmcp::model::CallToolResult;
+    use std::sync::Arc;
+
+    fn call(r: ToolResult) -> (bool, Value) {
+        let r: CallToolResult = r.unwrap();
+        let t = r.content[0].as_text().unwrap().text.clone();
+        (r.is_error == Some(true), serde_json::from_str(&t).unwrap_or(Value::String(t)))
+    }
+
+    fn args<T: serde::de::DeserializeOwned>(v: Value) -> Parameters<T> {
+        Parameters(serde_json::from_value(v).unwrap())
+    }
+
+    #[test]
+    fn delete_material_and_profile() {
+        let s = Server::new(Workspace::new(Document::new(100.0, 100.0)), Arc::new(|| {}));
+        let (_, m) = call(s.save_material(args(json!({"name": "MDF delete test", "thickness": 3}))));
+        let id = m["id"].as_str().unwrap().to_string();
+        for name in ["", "Fast"] {
+            let set = json!({"material": id, "machine": "xtool-m2", "laser": "diode-10w", "operation": "cut", "name": name, "power": 100, "speed": 5});
+            assert!(!call(s.set_material_setting(args(set))).0);
+        }
+        let del = json!({"material": id, "machine": "xtool-m2", "laser": "diode-10w", "operation": "cut", "name": "Fast"});
+        let (err, out) = call(s.delete_material_setting(args(del.clone())));
+        assert!(!err && out["removed"].as_str().unwrap().contains("\"Fast\" cut profile"), "{out}");
+        let left = library::get().material(&id).unwrap().settings.clone();
+        assert_eq!((left.len(), left[0].name.as_str()), (1, ""), "only the named profile goes");
+        assert!(call(s.delete_material_setting(args(del))).0, "it is gone");
+
+        let (err, out) = call(s.delete_material(args(json!({"id": id}))));
+        assert!(!err && out["removed"].as_str().unwrap().contains("MDF delete test"), "{out}");
+        assert!(library::get().material(&id).is_none());
+        assert!(call(s.delete_material(args(json!({"id": id})))).0);
     }
 }

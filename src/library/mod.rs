@@ -117,25 +117,73 @@ impl Library {
         self.material(material)?.profile(machine, laser, op, name)
     }
 
-    /// Add a machine, or replace the one with the same id.
+    /// Add a machine, or replace the one with the same id (a deleted built-in with that id is back).
     pub fn put_machine(&mut self, m: Machine) {
+        self.removed_machines.retain(|r| *r != m.id);
         put(&mut self.machines, m, |m| &m.id);
     }
 
     pub fn put_material(&mut self, m: Material) {
+        self.removed_materials.retain(|r| *r != m.id);
         put(&mut self.materials, m, |m| &m.id);
+    }
+
+    /// Delete a material, as the library window does: the user's own and built-ins, not a source's.
+    pub fn delete_material(&mut self, id: &str) -> Result<Material, String> {
+        let m = self.material(id).cloned().ok_or(format!("no material with id {id}"))?;
+        read_only(&self.material_origin(id), "material", &m.name)?;
+        self.remove_material(id);
+        Ok(m)
+    }
+
+    /// Delete one profile of a material's setting (name "" = the default profile).
+    pub fn delete_setting(&mut self, material: &str, machine: &str, laser: &str, op: Operation, name: &str) -> Result<Setting, String> {
+        let m = self.material(material).ok_or(format!("no material with id {material}"))?;
+        read_only(&self.material_origin(material), "material", &m.name)?;
+        let m = self.material_mut(material).unwrap();
+        let i = m.settings.iter().position(|s| s.is_for(machine, laser, op) && s.name.trim() == name.trim());
+        let what = if name.trim().is_empty() { "default".to_string() } else { format!("\"{}\"", name.trim()) };
+        let i = i.ok_or(format!("{} has no {what} {} profile for {machine} / {laser}", m.name, op.label().to_lowercase()))?;
+        Ok(m.settings.remove(i))
+    }
+
+    /// Delete a machine; refused while materials have settings for it unless `force` (the settings
+    /// stay, so restoring the machine brings them back). Built-ins stay deleted until restored.
+    pub fn delete_machine(&mut self, id: &str, force: bool) -> Result<(Machine, Vec<String>), String> {
+        let m = self.machine(id).cloned().ok_or(format!("no machine with id {id}"))?;
+        read_only(&self.machine_origin(id), "machine", &m.name)?;
+        let users: Vec<String> = self.materials.iter().filter(|mat| mat.settings.iter().any(|s| s.machine == id)).map(|mat| mat.name.clone()).collect();
+        if !users.is_empty() && !force {
+            return Err(format!("{} still has settings in: {}. Delete those first, or pass force: true to keep them (unused) and delete the machine", m.name, users.join(", ")));
+        }
+        self.remove_machine(id);
+        Ok((m, users))
+    }
+
+    /// Bring back a deleted built-in (or source) machine.
+    pub fn restore_machine(&mut self, id: &str) -> Result<Machine, String> {
+        if !self.removed_machines.iter().any(|r| r == id) {
+            return Err(format!("no deleted machine with id {id}"));
+        }
+        let m = self.base.machines.iter().find(|(_, m)| m.id == id).map(|(_, m)| m.clone()).ok_or(format!("{id} is no longer in Scriber or a subscribed source"))?;
+        self.put_machine(m.clone());
+        Ok(m)
+    }
+
+    pub fn is_builtin_machine(&self, id: &str) -> bool {
+        self.base.machines.iter().any(|(o, m)| m.id == id && *o == Origin::Builtin)
     }
 
     pub fn remove_machine(&mut self, id: &str) {
         self.machines.retain(|m| m.id != id);
-        if self.base.machines.iter().any(|(_, m)| m.id == id) {
+        if self.base.machines.iter().any(|(_, m)| m.id == id) && !self.removed_machines.iter().any(|r| r == id) {
             self.removed_machines.push(id.into());
         }
     }
 
     pub fn remove_material(&mut self, id: &str) {
         self.materials.retain(|m| m.id != id);
-        if self.base.materials.iter().any(|(_, m)| m.id == id) {
+        if self.base.materials.iter().any(|(_, m)| m.id == id) && !self.removed_materials.iter().any(|r| r == id) {
             self.removed_materials.push(id.into());
         }
     }
@@ -160,6 +208,14 @@ impl Library {
         let base = if base.is_empty() { "item".to_string() } else { base };
         let taken = |id: &str| self.machine(id).is_some() || self.material(id).is_some();
         (1..).map(|n| if n == 1 { base.clone() } else { format!("{base}-{n}") }).find(|id| !taken(id)).unwrap()
+    }
+}
+
+/// Items from a subscribed source are read-only (the library window disables Delete for them too).
+fn read_only(origin: &Origin, noun: &str, name: &str) -> Result<(), String> {
+    match origin {
+        Origin::Source { name: source, .. } => Err(format!("the {noun} \"{name}\" comes from the library source \"{source}\" and is read-only; turn the source off (set_library_source enabled: false) to hide it")),
+        _ => Ok(()),
     }
 }
 
@@ -242,6 +298,47 @@ mod tests {
         assert!(lib.setting("xtool-m2", Some("ir-3w"), "black-acrylic-3mm", Operation::Cut).is_none());
         assert!(lib.setting("xtool-m2", None, "black-acrylic-3mm", Operation::Engrave).is_none());
         assert_eq!(lib.machine("xtool-m2").unwrap().area(Some("diode-40w")), [426.0, 312.0]);
+    }
+
+    #[test]
+    fn deleting_follows_the_library_window() {
+        let friends = Origin::Source { id: "o-r".into(), name: "Friends".into() };
+        let mut base = Base::builtin();
+        let shared = Material { id: "shared".into(), name: "Shared".into(), ..base.materials[0].1.clone() };
+        let theirs = Machine { id: "their-laser".into(), name: "Their laser".into(), ..base.machines[0].1.clone() };
+        base.materials.push((friends.clone(), shared));
+        base.machines.push((friends, theirs));
+        let mut lib = store::merged_with(store::LibraryFile::default(), base.clone());
+
+        // Source items are read-only.
+        assert!(lib.delete_material("shared").unwrap_err().contains("\"Friends\""));
+        assert!(lib.delete_setting("shared", "xtool-m2", "diode-10w", Operation::Cut, "").unwrap_err().contains("read-only"));
+        assert!(lib.delete_machine("their-laser", true).unwrap_err().contains("Friends"));
+
+        // One profile goes, the others stay.
+        let cut = |name: &str| Setting { name: name.into(), ..Setting::new("xtool-m2", "diode-10w", Operation::Cut) };
+        let mine = Material { id: "mine".into(), name: "3mm MDF (2 passes)".into(), settings: vec![cut(""), cut("Fast")], ..lib.materials[0].clone() };
+        lib.put_material(mine);
+        assert_eq!(lib.delete_setting("mine", "xtool-m2", "diode-10w", Operation::Cut, "").unwrap().name, "");
+        assert_eq!(lib.material("mine").unwrap().settings, [cut("Fast")]);
+        assert!(lib.delete_setting("mine", "xtool-m2", "diode-10w", Operation::Cut, "").is_err());
+
+        // A machine with materials is refused, listing them; force keeps their settings.
+        assert!(lib.delete_machine("xtool-m2", false).unwrap_err().contains("3mm MDF (2 passes)"));
+        let (_, kept) = lib.delete_machine("xtool-m2", true).unwrap();
+        assert!(kept.contains(&"3mm MDF (2 passes)".to_string()) && lib.machine("xtool-m2").is_none());
+        assert_eq!(lib.material("mine").unwrap().settings.len(), 1);
+        // A deleted built-in stays deleted after saving and loading, until restored.
+        let reload = |lib: &Library| store::merged_with(store::user_part(lib), base.clone());
+        assert!(reload(&lib).machine("xtool-m2").is_none());
+        assert!(lib.is_builtin_machine("xtool-m2"));
+        lib.restore_machine("xtool-m2").unwrap();
+        let back = reload(&lib);
+        assert!(back.machine("xtool-m2").is_some() && back.removed_machines.is_empty());
+        assert!(lib.restore_machine("xtool-m2").is_err(), "not deleted");
+
+        lib.delete_material("mine").unwrap();
+        assert!(reload(&lib).material("mine").is_none());
     }
 
     #[test]

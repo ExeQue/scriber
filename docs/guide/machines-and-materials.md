@@ -52,6 +52,18 @@ Below that, the **laser settings** for one machine and laser at a time:
 
 Press **Save** to keep your changes. Every delete asks first.
 
+### Deleting
+
+Delete removes a machine, a material or a single profile from your library. Machines and
+materials from a [library source](../library-repositories) are read-only: turn the source off to
+hide them. A deleted built-in machine stays deleted; an AI agent can bring it back with
+`restore_machine`.
+
+An AI agent connected to Scriber can delete too (`delete_material`, `delete_material_setting`,
+`delete_machine`). It is told to ask you first, since deleting cannot be undone. It does not delete
+a machine that materials still have settings for unless you agree; those settings are kept and work
+again if the machine comes back.
+
 ### Import and Export
 
 - **Import ▾ → From xTool Studio…** and **Laser settings from an xTool project (.xs)…**: see

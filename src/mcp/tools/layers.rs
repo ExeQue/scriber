@@ -30,6 +30,10 @@ pub struct UpdateLayer {
     /// Replaces the layer's own power (%), speed (mm/s) and passes; a missing one (or {}) uses the
     /// material library's preset for the layer's op.
     pub settings: Option<Overrides>,
+    /// Engrave layers: the layer's own line spacing in lines per cm (10 / mm between lines; 100 = 0.1 mm);
+    /// null = the material library's.
+    #[serde(default, deserialize_with = "present")]
+    pub lines_per_cm: Option<Option<f64>>,
     /// The material's profile for the layer's op (a setting's name, see list_materials); "" = the default one.
     pub profile: Option<String>,
     /// Hidden layers are not drawn, lasered or exported.
@@ -40,6 +44,11 @@ pub struct UpdateLayer {
     pub order: Option<usize>,
     /// Make it the current layer (where shapes drawn in the GUI go).
     pub current: Option<bool>,
+}
+
+/// A field that is there (even as null) is Some, so null can clear.
+fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<f64>>, D::Error> {
+    Option::<f64>::deserialize(d).map(Some)
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -60,6 +69,9 @@ pub(super) fn layers(d: &Document) -> Value {
             let mut v = serde_json::to_value(l).unwrap();
             v["items"] = d.s.items.iter().filter(|i| i.layer == l.id).count().into();
             v["current"] = (l.id == d.current_layer()).into();
+            if let Some(i) = l.line_interval {
+                v["lines_per_cm"] = (10.0 / i).into();
+            }
             v["laser_setting"] = json!(op_operation(l.op).and_then(|op| l.setting(&d.s, &lib, op)));
             v
         })
@@ -69,7 +81,7 @@ pub(super) fn layers(d: &Document) -> Value {
 
 #[tool_router(router = layers_router, vis = "pub(super)")]
 impl Server {
-    #[tool(description = "List the layers in order: id, name, op, colour, own settings (power/speed/passes that override the material library), visible, locked, number of items, whether it is current, and laser_setting: the power/speed/passes the laser uses (library preset for the op with the layer's own numbers on top; null when neither gives them).")]
+    #[tool(description = "List the layers in order: id, name, op, colour, own settings (power/speed/passes that override the material library), lines_per_cm (the layer's own engrave line spacing; line_interval is the same in mm), visible, locked, number of items, whether it is current, and laser_setting: the power/speed/passes the laser uses (library preset for the op with the layer's own numbers on top; null when neither gives them).")]
     fn list_layers(&self) -> ToolResult {
         ok(layers(&self.doc.lock().unwrap()))
     }
@@ -86,10 +98,13 @@ impl Server {
         })
     }
 
-    #[tool(description = "Change a layer: name, op (changes what the laser does with all its items), color, settings (the layer's own power/speed/passes; missing = material library), visible, locked, order (position) and current. One undo step.")]
+    #[tool(description = "Change a layer: name, op (changes what the laser does with all its items), color, settings (the layer's own power/speed/passes; missing = material library), lines_per_cm (engrave line spacing, lines per cm = 10 / mm; null = material library), visible, locked, order (position) and current. One undo step.")]
     fn update_layer(&self, Parameters(p): Parameters<UpdateLayer>) -> ToolResult {
         if let Some(e) = p.settings.as_ref().and_then(|o| o.check().err()) {
             return fail(e);
+        }
+        if p.lines_per_cm.flatten().is_some_and(|l| !(l > 0.0 && l.is_finite())) {
+            return fail("lines_per_cm must be larger than 0");
         }
         let color = match p.color.as_deref() {
             None => None,
@@ -107,6 +122,9 @@ impl Server {
             l.op = p.op.unwrap_or(l.op);
             l.color = color.unwrap_or(l.color);
             l.settings = p.settings.unwrap_or(l.settings);
+            if let Some(lines) = p.lines_per_cm {
+                l.line_interval = lines.map(|l| 10.0 / l);
+            }
             if let Some(name) = p.profile {
                 l.profile = (!name.is_empty()).then_some(name);
             }
@@ -181,6 +199,14 @@ mod tests {
             let d = doc.lock().unwrap();
             assert!(d.s.engraves_area(d.item(b).unwrap()), "the layer's op change reaches its items");
         }
+        // Lines per cm in, mm stored, lines per cm out; null clears it.
+        let list = text(server.update_layer(args(json!({"id": deep, "lines_per_cm": 200}))));
+        assert_eq!((list[0]["line_interval"].as_f64(), list[0]["lines_per_cm"].as_f64()), (Some(0.05), Some(200.0)));
+        assert_eq!(server.update_layer(args(json!({"id": deep, "lines_per_cm": 0}))).unwrap().is_error, Some(true));
+        text(server.update_layer(args(json!({"id": deep, "name": "Deep"}))));
+        assert_eq!(doc.lock().unwrap().s.layer(deep).unwrap().line_interval, Some(0.05), "missing leaves it");
+        let list = text(server.update_layer(args(json!({"id": deep, "lines_per_cm": null}))));
+        assert!(list[0].get("line_interval").is_none() && list[0].get("lines_per_cm").is_none(), "{list}");
         // update_item moves an item by layer or by op.
         let moved: Parameters<UpdateItem> = args(json!({"id": a, "op": "cut"}));
         text(server.update_item(moved));

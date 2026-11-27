@@ -45,8 +45,9 @@ lines go on the first No output layer.
 
 By default a layer uses the [material library](./machines-and-materials)'s setting for its
 operation, for the document's machine, laser module and material. In the layer's fold-out you can
-override **power** (%), **speed** (mm/s) and **passes** one by one: a ticked box means the layer's
-own value, unticked shows the library's value greyed out.
+override **power** (%), **speed** (mm/s) and **passes** one by one, and on engrave layers also
+**Lines per cm** (the line spacing; 100 lines per cm = 0.1 mm between lines): a ticked box means
+the layer's own value, unticked shows the library's value greyed out.
 
 When the material has several **profiles** for the layer's operation (for example *Light* and
 *Deep* engraving), the layer has a drop-down to pick one. Your own numbers still win over the
