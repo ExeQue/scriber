@@ -31,7 +31,7 @@ features:
   - title: Ready for the laser
     details: Layers say cut, score or engrave, and Check catches problems first.
   - title: xTool import and export
-    details: Import xTool materials and projects, export .xs, SVG and PNG.
+    details: Import xTool materials and projects, export .xs, SVG and PNG. Scriber is not affiliated with xTool.
   - title: Your material library
     details: Power, speed and passes per machine and module, to share or subscribe to.
 ---

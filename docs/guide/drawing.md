@@ -97,6 +97,8 @@ several colours is split into one row per colour.
 
 ### Opening xTool Studio projects
 
+*Scriber is an independent project, not affiliated with, endorsed by or sponsored by xTool. xTool and xTool Studio are trademarks of their owners. See [the .xs format notes](../xs-format).*
+
 An `.xs` project opens as a new, unsaved document in its own tab; save it as a Scriber project
 (`.scrbr`) to keep it. What comes over:
 

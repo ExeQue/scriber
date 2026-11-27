@@ -1,5 +1,7 @@
 # xTool Studio `.xs` project format
 
+*Scriber is an independent project, not affiliated with, endorsed by or sponsored by xTool. xTool and xTool Studio are trademarks of their owners. Scriber's `.xs` support is based on interoperability analysis of project files that users saved themselves; these notes are not an official specification.*
+
 Reverse-engineered from three real projects written by xTool Studio 1.9.11 (Linux), device M2 (`JS002`), module `laser_blue_10W`.
 Not an official spec. Everything marked **(guess)** is inference, **(unseen)** means no sample contained it.
 Samples were small: the first three had only `PATH` and `LINE`. A fourth sample (`unknowns`, same app version) added the native primitives `RECT`, `CIRCLE`, `STAR`, `REGULAR_POLYGON` (section 2b), a freehand `PATH` with `Q`/`C` segments, and the observation that elements bound to a processing type keep default fill/stroke flags.

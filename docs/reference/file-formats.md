@@ -78,6 +78,8 @@ its colour. Paper space is ignored. Units: `$INSUNITS` (none = mm). See
 
 ## xTool Studio import
 
+*Scriber is an independent project, not affiliated with, endorsed by or sponsored by xTool. xTool and xTool Studio are trademarks of their owners. See [the .xs format notes](../xs-format).*
+
 Reads the active canvas of an `.xs` project (other canvases are left out, with a note). Element
 types: `PATH` (inline `dPath` or the `vectors/svg` store; `M L H V C S Q T A Z`, absolute or
 relative), `LINE`, `RECT` (`radius` or `primitiveCornerData`), `CIRCLE`, `REGULAR_POLYGON`, `STAR`,

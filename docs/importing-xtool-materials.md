@@ -1,5 +1,7 @@
 # Importing materials from xTool Studio
 
+*Scriber is an independent project, not affiliated with, endorsed by or sponsored by xTool. xTool and xTool Studio are trademarks of their owners. See [the .xs format notes](./xs-format).*
+
 Scriber can copy laser settings (power, speed, passes, lines per cm) from xTool Studio into your
 material library. It reads what xTool Studio already keeps on your computer. Nothing is downloaded and
 you do not log in to anything from Scriber.

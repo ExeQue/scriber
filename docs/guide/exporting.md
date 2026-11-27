@@ -15,6 +15,8 @@ Text is exported as outlines, so the laser software does not need the font.
 
 ## xTool Studio projects
 
+*Scriber is an independent project, not affiliated with, endorsed by or sponsored by xTool. xTool and xTool Studio are trademarks of their owners. See [the .xs format notes](../xs-format).*
+
 The `.xs` export writes one xTool colour layer per shown Scriber layer, named after it, with the
 settings from your [material library](./machines-and-materials) (and the layer's own numbers on top):
 
